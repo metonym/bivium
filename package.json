@@ -1,0 +1,59 @@
+{
+  "name": "bivium",
+  "version": "0.0.0",
+  "license": "MIT",
+  "description": "Run only the tests a change can affect, and never miss one.",
+  "author": "Eric Liu (https://github.com/metonym)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "bivium": "./dist/cli.js"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "test": "bun test --parallel ./tests",
+    "test:package": "bun scripts/test-package.ts",
+    "bench": "ostia bench bench/bivium.bench.ts",
+    "typecheck": "bun check",
+    "knip": "knip-bun",
+    "lint": "biome ci --error-on-warnings",
+    "lint:fix": "biome check --write --unsafe ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.3",
+    "bun-types": "1.4.4",
+    "knip": "^6.43.0",
+    "ostia": "^0.2.12",
+    "typescript": "^6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/metonym/bivium.git"
+  },
+  "homepage": "https://github.com/metonym/bivium",
+  "bugs": "https://github.com/metonym/bivium/issues",
+  "keywords": [
+    "test",
+    "test-selection",
+    "test-impact-analysis",
+    "affected",
+    "changed",
+    "dependency-graph",
+    "ci",
+    "vitest",
+    "playwright",
+    "zero-dependency"
+  ]
+}
