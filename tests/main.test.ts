@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { version } from "../package.json" with { type: "json" };
 import { defineConfig, plan, type Selection } from "../src/index.ts";
 import { commandFor, main } from "../src/main.ts";
 
@@ -242,4 +243,13 @@ describe("plan", () => {
       changed: ["src/a.js"],
     });
   });
+});
+
+describe("bivium --version", () => {
+  it.each(["--version", "-v"])(
+    "%s prints the package version",
+    async (flag) => {
+      expect(await run([flag])).toEqual({ status: 0, output: version });
+    },
+  );
 });
