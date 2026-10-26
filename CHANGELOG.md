@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-10-26
 
 The first release of bivium, the test selector extracted from
 carbon-components-svelte's `test:changed`.
