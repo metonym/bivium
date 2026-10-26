@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { version } from "../package.json" with { type: "json" };
 import { check, formatReport, widening } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
@@ -12,6 +13,7 @@ const USAGE = `Usage:
   bivium run [base] [--suite <name>]       run a suite's selected tests
   bivium why <test> [file] [--base <ref>]  the chain from a change (or file) to a test
   bivium check [--max-unknown <n>]         what the graph can't read, and dead globs
+  bivium --version                         print the version
 
   base defaults to the config's base, else the upstream default branch.
 
@@ -240,6 +242,10 @@ async function runCommand(
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === "--version" || command === "-v") {
+    console.log(version);
+    return 0;
+  }
   if (!command || command === "help" || rest.includes("--help")) {
     console.log(USAGE);
     return command ? 0 : 1;

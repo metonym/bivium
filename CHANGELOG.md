@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**
+
+- `bivium --version` (and `-v`) prints the version instead of failing
+  as an unknown command.
+
 ## 0.1.0 — 2026-10-26
 
 The first release of bivium, the test selector extracted from
