@@ -207,7 +207,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # History for the merge base, without old file contents: git
+          # fetches the few a plan reads (a changed barrel or lockfile).
           fetch-depth: 0
+          filter: blob:none
       - uses: oven-sh/setup-bun@v2
       - id: merge-base
         run: echo "sha=$(git merge-base origin/main HEAD)" >> "$GITHUB_OUTPUT"
