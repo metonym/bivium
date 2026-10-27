@@ -534,3 +534,53 @@ it changes. sveld's tests read fixtures with `@reads`, and the fixtures
 import files that don't exist on purpose: `check` counted 60 of them as
 reaching a test that no plan ever widened. The walk takes `readers: false`
 there.
+
+## 38. `edges` and `reads` refer back to the matched path
+
+`edges` mapped a glob to fixed inputs, so a dependency per match needed an
+entry per match, and there was no config form of `@reads`. Two cases from
+carbon-preprocess-svelte: its e2e suite builds each `examples/*` project,
+so `examples/<name>/package.json` depends on `examples/<name>/**`; and a
+bun snapshot `tests/__snapshots__/X.test.ts.snap` belongs to
+`tests/X.test.ts`, but no test reached it, so the orphan rule ran the whole
+unit suite (8 of 150 PRs, for one golden snapshot).
+
+- **Captures.** In a value, `$1`, `$2`… are what the key's wildcards
+  matched: each `*`, `**`, `?` and `{…}`, numbered from the left by where
+  it starts, as regex groups are. `**/` captures its trailing slash, so
+  `src/**/*.ts` → `tests/$1$2.test.ts` puts a file at any depth back in
+  place. A capture is substituted as text, never as a glob, so a file
+  named `a,b.test.ts` doesn't turn into an alternation. `*` can't stand
+  for the capture, as it does in `urls`, because values are globs with
+  their own `*`; `{name}` would collide with `{a,b}`. A `$` followed by
+  digits in a value is always a capture.
+- **Bad references are config errors.** `checkConfig` rejects `$0` and a
+  number past the key's wildcards, naming the entry and the value. A
+  capture inside an alternative the match didn't take has no text; it
+  matches anything, so it can only widen.
+- **`reads` is a new key, not an option on `edges`.** It's `@reads` in the
+  config: file glob → globs of files it reads as text, seeded only by a
+  direct change, through the same `deps.reads` and the same readers loop.
+  A snapshot change now seeds its test, which also takes it off the orphan
+  rule (`reach` seeds readers). A deleted test's stale snapshot reaches no
+  test, so it still runs the suite. `edges` stays transitive: a generated
+  file is built from its inputs and what they import.
+- **Per-example tests read, they don't import.** With `edges`, an
+  example's unknown node (a page loading a bundle only its build writes)
+  sits under its test's glob, so the test ran on every change. With
+  `reads` the unknown stays the example's own: unknown nodes join a walk
+  after readers are seeded (decision 37), and a change to the example's
+  files still seeds the test. `reads` is a promise, like `@reads`: a
+  change to what the read files import, such as the library an example
+  builds against, doesn't count, so a suite that needs that keeps `edges`
+  or adds the library to its value.
+- Both apply at the end of `graphFrom`, as `edges` did, so extractions and
+  the cache are unchanged. `why` labels the edges `edges in the config`
+  and `reads in the config`, checking that the entry matches both ends
+  rather than just the node.
+- `check` now covers the config (decision 35 left `edges` out). A key that
+  matches no graph node applies to nothing. A value is evaluated over the
+  union of its expansions for every node the key matches: a snapshot glob
+  most tests have no file for is alive while one has. Both are reported
+  under the config's file, and `deadGlobs` allows them by that file and
+  the glob as written.

@@ -2,7 +2,7 @@ import { resolveConfig } from "../src/config.ts";
 import { matcher } from "../src/glob.ts";
 import type { Graph } from "../src/graph.ts";
 import { formatSelection, planTests } from "../src/plan.ts";
-import type { NarrowResult } from "../src/types.ts";
+import type { Config, NarrowResult } from "../src/types.ts";
 import { BARREL, CONFIG, config, graphOf, REPO } from "./fixture.ts";
 
 const graph = graphOf();
@@ -188,6 +188,70 @@ describe("planTests", () => {
     // which the orphan rule doesn't count.
     expect(formatSelection(suites.unit)).toBe("all");
     expect(reasons).toEqual(["src/types.d.ts: no unit test imports it"]);
+  });
+
+  it("runs only a snapshot's test, through `reads`, not the whole suite", () => {
+    const files = {
+      ...REPO,
+      "tests/Button/__snapshots__/Button.test.ts.snap": "exports[`x`] = 1;",
+    };
+    const snapshot = ["tests/Button/__snapshots__/Button.test.ts.snap"];
+    const planWith = (extra: Partial<Config>) => {
+      const resolved = resolveConfig({ ...CONFIG, ...extra });
+      const on = graphOf(files, { config: { ...CONFIG, ...extra } });
+      const { suites, reasons } = planTests(on, snapshot, resolved);
+      return { unit: formatSelection(suites.unit), reasons };
+    };
+    expect(planWith({})).toEqual({
+      unit: "all",
+      reasons: [`${snapshot[0]}: no unit test imports it`],
+    });
+    expect(
+      planWith({
+        reads: {
+          "tests/*/*.test.ts": "tests/$1/__snapshots__/$2.test.ts.snap",
+        },
+      }),
+    ).toEqual({
+      unit: "tests/Button/Button.test.ts tests/css/unknown.test.ts",
+      reasons: [],
+    });
+  });
+
+  it("runs each example's build on its own files, without its unknowns", () => {
+    const extra: Partial<Config> = {
+      suites: {
+        ...CONFIG.suites,
+        examples: { tests: "examples/*/package.json", root: "examples" },
+      },
+      roots: [...(CONFIG.roots ?? []), "examples"],
+      reads: { "examples/*/package.json": "examples/$1/**" },
+    };
+    const files = {
+      ...REPO,
+      "examples/vite/package.json": "{}",
+      "examples/vite/index.html": `<script type="module" src="./build/bundle.js"></script>`,
+      "examples/webpack/package.json": "{}",
+      "examples/webpack/src/index.js": "export {};",
+    };
+    const resolved = resolveConfig({ ...CONFIG, ...extra });
+    const on = graphOf(files, { config: { ...CONFIG, ...extra } });
+    const examples = (changed: string[]) => {
+      const { suites, reasons } = planTests(on, changed, resolved);
+      return { examples: formatSelection(suites.examples), reasons };
+    };
+    expect(examples(["examples/vite/index.html"])).toEqual({
+      examples: "examples/vite/package.json",
+      reasons: [],
+    });
+    expect(examples(["examples/webpack/src/index.js"])).toEqual({
+      examples: "examples/webpack/package.json",
+      reasons: [],
+    });
+    expect(examples(["src/Button/Button.svelte"])).toEqual({
+      examples: "none",
+      reasons: [],
+    });
   });
 
   it("selects nothing and gives no reason for no change", () => {

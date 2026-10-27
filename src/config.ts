@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { globToRegExp, type Matcher, matcher } from "./glob.ts";
+import {
+  captureGlob,
+  captureReferences,
+  expandGlob,
+  globToRegExp,
+  type Matcher,
+  matcher,
+} from "./glob.ts";
 import type {
   Config,
   Globs,
@@ -45,6 +52,16 @@ export interface ResolvedNarrower {
 
 type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
 
+// An `edges` or `reads` entry: a file glob and the globs a file it matches
+// depends on or reads, where `$1`… stand for what the key's wildcards matched.
+export interface PathMap {
+  key: string;
+  pattern: RegExp;
+  values: string[];
+  // The values' patterns for `path`, or `undefined` if the key doesn't match.
+  targets: (path: string) => RegExp[] | undefined;
+}
+
 export interface ResolvedConfig {
   suites: ResolvedSuite[];
   narrowers: ResolvedNarrower[];
@@ -52,7 +69,8 @@ export interface ResolvedConfig {
   isIgnored: Matcher;
   // Longest prefix first.
   alias: [string, string][];
-  generated: { pattern: RegExp; inputs: RegExp[] }[];
+  generated: PathMap[];
+  reads: PathMap[];
   isSelf: Matcher;
   isImportOnly: Matcher;
   isHermetic: Matcher;
@@ -62,6 +80,8 @@ export interface ResolvedConfig {
   deadGlobs: readonly DeadGlobEntry[];
   base?: string;
   cache?: boolean | string;
+  // The file it was loaded from, which `check` reports its dead globs under.
+  file?: string;
 }
 
 const DEFAULT_EXTENSIONS = [
@@ -92,6 +112,30 @@ function normalizeRoot(root: string) {
   return (
     root.replace(LEADING_DOT_SLASH, "").replace(TRAILING_SLASHES, "") || "."
   );
+}
+
+function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
+  return Object.entries(record).map(([key, globs]) => {
+    const { pattern } = captureGlob(key);
+    const values = list(globs, []);
+    // A value without references is the same for every match.
+    const fixed = values.map((value) =>
+      captureReferences(value).length === 0 ? globToRegExp(value) : undefined,
+    );
+    return {
+      key,
+      pattern,
+      values,
+      targets: (path) => {
+        const match = pattern.exec(path);
+        if (!match) return;
+        const captures = match.slice(1);
+        return values.map(
+          (value, i) => fixed[i] ?? expandGlob(value, captures),
+        );
+      },
+    };
+  });
 }
 
 export function resolveConfig(config: Config): ResolvedConfig {
@@ -138,10 +182,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     alias: Object.entries(config.alias ?? {})
       .map(([key, path]): [string, string] => [key, normalizeRoot(path)])
       .sort(([a], [b]) => b.length - a.length),
-    generated: Object.entries(config.edges ?? {}).map(([glob, inputs]) => ({
-      pattern: globToRegExp(glob),
-      inputs: list(inputs, []).map(globToRegExp),
-    })),
+    generated: pathMaps(config.edges),
+    reads: pathMaps(config.reads),
     isSelf: matcher(config.self),
     isImportOnly: matcher(config.importOnly),
     isHermetic: matcher(config.hermetic),
@@ -222,6 +264,7 @@ const CONFIG_KEYS = new Set([
   "ignore",
   "alias",
   "edges",
+  "reads",
   "self",
   "importOnly",
   "hermetic",
@@ -328,6 +371,26 @@ function checkDeadGlob(value: unknown, at: string): DeadGlobEntry {
   return { file, glob, reason };
 }
 
+// A value can only refer to a wildcard its key has: `$2` of a key with one
+// would stand for nothing.
+function checkCaptures(
+  name: string,
+  record: Readonly<Record<string, Globs>> | undefined,
+) {
+  for (const [key, globs] of Object.entries(record ?? {})) {
+    const { wildcards } = captureGlob(key);
+    for (const value of list(globs, [])) {
+      const bad = captureReferences(value).find((n) => n < 1 || n > wildcards);
+      if (bad === undefined) continue;
+      const has = `${wildcards} ${wildcards === 1 ? "wildcard" : "wildcards"}`;
+      const why = bad < 1 ? "captures count from $1" : `its key has ${has}`;
+      throw new Error(
+        `bivium config: ${name}["${key}"] refers to $${bad} in ${value}, but ${why}`,
+      );
+    }
+  }
+}
+
 // Checks a config read from a file, which nothing has type-checked.
 export function checkConfig(value: unknown): Config {
   if (!isRecord(value)) throw new Error("bivium config: not an object");
@@ -347,6 +410,10 @@ export function checkConfig(value: unknown): Config {
     suites[name] = checkSuite(name, suite);
   }
   const globs = "a glob or a list of globs";
+  const edges = field(value, "edges", isGlobsRecord, "", "a map of globs");
+  const reads = field(value, "reads", isGlobsRecord, "", "a map of globs");
+  checkCaptures("edges", edges);
+  checkCaptures("reads", reads);
   return {
     suites,
     narrowers: narrowers?.map((narrower, i) =>
@@ -355,7 +422,8 @@ export function checkConfig(value: unknown): Config {
     roots: field(value, "roots", isGlobs, "", "a path or a list of paths"),
     ignore: field(value, "ignore", isGlobs, "", globs),
     alias: field(value, "alias", isStringRecord, "", "a map of paths"),
-    edges: field(value, "edges", isGlobsRecord, "", "a map of globs"),
+    edges,
+    reads,
     self: field(value, "self", isGlobs, "", globs),
     importOnly: field(value, "importOnly", isGlobs, "", globs),
     hermetic: field(value, "hermetic", isGlobs, "", globs),

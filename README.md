@@ -73,7 +73,8 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `roots` | Paths the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe. A file some test reaches still counts |
 | `alias` | Specifier prefix → path, as the bundler aliases it. Tried before `package.json` `exports` |
-| `edges` | Generated file glob → its inputs: `{ "dist/*.css": "styles/**" }` |
+| `edges` | Generated file glob → its inputs, which it depends on transitively, as with `@depends-on`: `{ "dist/*.css": "styles/**" }`. In a value, `$1`, `$2`… are what the key's wildcards matched, counted from the left: `{ "examples/*/package.json": "examples/$1/**" }` |
+| `reads` | File glob → the files it reads as text, as with `@reads`: only a direct change to one counts, so their imports and unknowns don't spread to it. Values take `$1`… as in `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }` |
 | `self` | The selector's own files: a change to one runs everything. The config file is always one |
 | `importOnly` | Files only an import reaches: deleting one never orphans a suite |
 | `hermetic` | Files whose disk reads and non-literal imports reach no file of the repository: a library's `fs` calls on its caller's paths, a test that reads only the temporary files it writes. They add no unknown |
@@ -90,7 +91,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | Comment | Meaning |
 |:---|:---|
 | `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one is unknown, unless it's `hermetic` |
-| `// @reads <glob> [glob…]` | Files read as text. Only a direct change to one counts, not a change to what it imports |
+| `// @reads <glob> [glob…]` | Files read as text. Only a direct change to one counts, not a change to what it imports. The config's `reads` says the same for files that can't hold a comment |
 | `// @glob-registry` | This file's `import.meta.glob` is a lookup table and adds no edges: whatever loads an entry names it itself |
 
 ## CLI
@@ -114,14 +115,14 @@ tests/Modal.test.ts
 
 ## Dead globs
 
-A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads` and `import.meta.glob` pattern against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
+A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads` and `import.meta.glob` pattern, and every `edges` and `reads` value, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
 
 | Problem | Means |
 |:---|:---|
 | matches nothing | No file matches: a typo or a stale path |
 | matches only ignored files, partly ignored | Some matches are ignored and not in the graph, so a change to one selects nothing |
 
-An ignored file the graph reads still seeds a walk, and a change outside the roots runs everything, so neither is dead. A glob that's dead on purpose goes in `deadGlobs` with a reason:
+A config value with captures is dead only when it matches nothing for every file its key matches, and a key that matches no file the graph reads is reported too, under the config's file. An ignored file the graph reads still seeds a walk, and a change outside the roots runs everything, so neither is dead. A glob that's dead on purpose goes in `deadGlobs` with a reason:
 
 ```ts
 deadGlobs: [

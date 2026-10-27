@@ -15,7 +15,7 @@ interface Unknown {
   tests: string[];
 }
 
-type GlobKind = "depends-on" | "reads" | "glob";
+type GlobKind = "depends-on" | "reads" | "glob" | "edges";
 
 interface Declared {
   kind: GlobKind;
@@ -54,6 +54,7 @@ const TAGS: Record<GlobKind, string> = {
   "depends-on": "@depends-on",
   reads: "@reads",
   glob: "import.meta.glob",
+  edges: "edges",
 };
 
 const QUOTED = /"([^"]+)"/;
@@ -87,7 +88,6 @@ function fixFor(cause: string) {
   return "see the cause";
 }
 
-// Config `edges` are left out: their inputs are the config's, not a node's.
 function declaredGlobs(node: string, extraction: Extraction): Declared[] {
   const relative = finish(node, extraction).globs;
   return [
@@ -124,55 +124,134 @@ function problemOf(
   return ignored === matches ? "matches only ignored files" : "partly ignored";
 }
 
+type Found = Omit<DeadGlob, "at">;
+
 // A glob is dead when a change it names can't select its node: it matches
 // no file, or a file the planner skips. `ignore` means "not a seed", never
 // "not a node" (`classify`), so a skipped file is an ignored one outside the
 // graph. A match outside the roots that isn't ignored runs everything, which
 // selects the node too.
+function deadOf(
+  node: string,
+  kind: GlobKind,
+  glob: string,
+  patterns: RegExp[],
+  listed: string[],
+  skipped: (file: string) => boolean,
+): Found | undefined {
+  const matches = listed.filter((file) => patterns.some((re) => re.test(file)));
+  const ignored = sorted(matches.filter(skipped));
+  const problem = problemOf(matches.length, ignored.length);
+  if (problem === undefined) return undefined;
+  return {
+    node,
+    kind,
+    glob,
+    problem,
+    matches: matches.length,
+    ignored: ignored.length,
+    examples: ignored.slice(0, EXAMPLES),
+    fix:
+      problem === "matches nothing"
+        ? "fix the path"
+        : "point it at files the selector reads, or allowlist it in `deadGlobs` with a reason",
+  };
+}
+
+// The config's `edges` and `reads`, under the config's file. A key no node
+// matches applies to nothing. A value is dead as an annotation's glob is,
+// over what it matches for every node its key matches: a snapshot glob that
+// most tests' captures miss is alive while some test's hits.
+function configDeadGlobs(
+  config: ResolvedConfig,
+  { graph, listed }: Computed,
+  skipped: (file: string) => boolean,
+): Found[] {
+  const file = config.file ?? "the config";
+  const found: Found[] = [];
+  const entries = [
+    ...config.generated.map((map) => ["edges", map] as const),
+    ...config.reads.map((map) => ["reads", map] as const),
+  ];
+  for (const [kind, map] of entries) {
+    // Each value's patterns, once per distinct expansion.
+    const patterns = map.values.map(() => new Map<string, RegExp>());
+    let matched = false;
+    for (const node of graph.keys()) {
+      const targets = map.targets(node);
+      if (!targets) continue;
+      matched = true;
+      for (const [i, re] of targets.entries()) patterns[i]?.set(re.source, re);
+    }
+    if (!matched) {
+      found.push({
+        node: file,
+        kind,
+        glob: map.key,
+        problem: "matches nothing",
+        matches: 0,
+        ignored: 0,
+        examples: [],
+        fix: "fix the path: no file the graph reads matches it",
+      });
+      continue;
+    }
+    for (const [i, glob] of map.values.entries()) {
+      const expanded = [...(patterns[i]?.values() ?? [])];
+      const dead = deadOf(file, kind, glob, expanded, listed, skipped);
+      if (dead) found.push(dead);
+    }
+  }
+  return found;
+}
+
 async function findDeadGlobs(
   root: string,
   config: ResolvedConfig,
-  { graph, extractions, listed }: Computed,
+  computed: Computed,
 ): Promise<DeadGlob[]> {
+  const { graph, extractions, listed } = computed;
   const skipped = (file: string) => config.isIgnored(file) && !graph.has(file);
-  const found: Omit<DeadGlob, "at">[] = [];
+  const found: Found[] = [];
   for (const node of graph.keys()) {
     const extraction = extractions.get(node);
     if (!extraction) continue;
     for (const { kind, glob, pattern } of declaredGlobs(node, extraction)) {
-      const matches = listed.filter((file) => pattern.test(file));
-      const ignored = sorted(matches.filter(skipped));
-      const problem = problemOf(matches.length, ignored.length);
-      if (problem === undefined) continue;
-      found.push({
-        node,
-        kind,
-        glob,
-        problem,
-        matches: matches.length,
-        ignored: ignored.length,
-        examples: ignored.slice(0, EXAMPLES),
-        fix:
-          problem === "matches nothing"
-            ? "fix the path"
-            : "point it at files the selector reads, or allowlist it in `deadGlobs` with a reason",
-      });
+      const dead = deadOf(node, kind, glob, [pattern], listed, skipped);
+      if (dead) found.push(dead);
     }
   }
-  const nodes = [...new Set(found.map(({ node }) => node))];
+  const configured = configDeadGlobs(config, computed, skipped);
+  const nodes = [
+    ...new Set([
+      ...found.map(({ node }) => node),
+      ...configured.map(({ node }) => node),
+    ]),
+  ];
   const texts = await Promise.all(nodes.map((node) => sourceOf(root, node)));
   const sources = new Map(
     nodes.map((node, i): [string, string | undefined] => [node, texts[i]]),
   );
-  return found.map((dead) => {
+  const locate = (
+    dead: Found,
+    line: (source: string) => number | undefined,
+  ) => {
     const source = sources.get(dead.node);
-    if (source === undefined) return dead;
-    const line =
-      dead.kind === "glob"
-        ? specifierLine(source, dead.glob)
-        : annotationLine(source, TAGS[dead.kind], dead.glob);
-    return line === undefined ? dead : { ...dead, at: `${dead.node}:${line}` };
-  });
+    const at = source === undefined ? undefined : line(source);
+    return at === undefined ? dead : { ...dead, at: `${dead.node}:${at}` };
+  };
+  return [
+    ...found.map((dead) =>
+      locate(dead, (source) =>
+        dead.kind === "glob"
+          ? specifierLine(source, dead.glob)
+          : annotationLine(source, TAGS[dead.kind], dead.glob),
+      ),
+    ),
+    ...configured.map((dead) =>
+      locate(dead, (source) => specifierLine(source, dead.glob)),
+    ),
+  ];
 }
 
 // Every node with unknown dependencies, with where and how to fix each

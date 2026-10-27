@@ -350,6 +350,7 @@ export async function prepare({
     const isSelf = loaded.config.isSelf;
     resolved = {
       ...loaded.config,
+      file: loaded.file,
       isSelf: (path) => path === loaded.file || isSelf(path),
     };
   }
