@@ -106,9 +106,60 @@ export const config: Config<"unit" | "e2e"> = {
   roots: ["src", "tests", "e2e"],
 };
 
-// The repository on disk as a git checkout, with one component edited
-// since the commit, as a pull request's working tree is.
-export function checkout(files: Map<string, string>): string {
+// Files that read others besides importing them, for `check`, which
+// evaluates every declared glob against the listing: a test that reads
+// the components as text, and a page that globs them.
+export function annotated(files: Map<string, string>): Map<string, string> {
+  const out = new Map(files);
+  out.set(
+    "tests/markup.test.ts",
+    '// @reads src/components/**/*.svelte\nimport { readFileSync } from "node:fs";\ntest("markup", () => readFileSync);\n',
+  );
+  out.set(
+    "e2e/fixtures/gallery.ts",
+    'const pages = import.meta.glob("../../src/components/*/*.svelte");\nexport default pages;\n',
+  );
+  return out;
+}
+
+// A `bun.lock` with `count` packages, each depending on up to three
+// earlier ones, so a bump reaches dependents transitively. `bumped`
+// raises those packages' versions.
+export function lockfile(count = 800, bumped: string[] = []): string {
+  const next = random(7);
+  const names = Array.from({ length: count }, (_, i) => `pkg-${i}`);
+  const entries = names.map((name, i) => {
+    const deps: Record<string, string> = {};
+    for (let d = 0; d < 3 && i > 0; d++)
+      deps[names[Math.floor(next() * i)]] = "^1.0.0";
+    const version = bumped.includes(name) ? "1.0.1" : "1.0.0";
+    const info = JSON.stringify(i > 0 ? { dependencies: deps } : {});
+    return `    "${name}": ["${name}@${version}", "", ${info}, "sha512-${name}${version}"],`;
+  });
+  const declared = Object.fromEntries(
+    names.slice(-40).map((name) => [name, "^1.0.0"]),
+  );
+  return `{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "fixture",
+      "devDependencies": ${JSON.stringify(declared)},
+    },
+  },
+  "packages": {
+${entries.join("\n")}
+  },
+}
+`;
+}
+
+// The repository on disk as a git checkout, with `edited` changed since
+// the commit, as a pull request's working tree is.
+export function checkout(
+  files: Map<string, string>,
+  edited: string[] = ["src/components/Component7/Component7.svelte"],
+): string {
   const dir = mkdtempSync(join(tmpdir(), "bivium-bench-"));
   for (const [path, text] of files) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -130,7 +181,9 @@ export function checkout(files: Map<string, string>): string {
     "-m",
     "base",
   );
-  const edited = "src/components/Component7/Component7.svelte";
-  writeFileSync(join(dir, edited), `${files.get(edited)}\n<p>edited</p>\n`);
+  for (const path of edited) {
+    const mark = path.endsWith(".svelte") ? "<p>edited</p>" : "// edited";
+    writeFileSync(join(dir, path), `${files.get(path)}\n${mark}\n`);
+  }
   return dir;
 }

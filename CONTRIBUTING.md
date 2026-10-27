@@ -63,10 +63,25 @@ A behavior fix needs a test that fails before the fix and passes after.
 ## Benchmarks
 
 ```sh
-bun run bench    # ostia: scan, graph build, cold and warm plans, on bench/fixture.ts
+bun run bench                     # ostia, on bench/fixture.ts
+bun run bench --peak-mem          # plus each task's RSS rise
+bun bench/phases.ts <repo> [base] # one plan's phases on a real repository
+bun bench/phases.ts <repo> --cold # the same without the extraction cache
 ```
 
-The fixture is a generated, carbon-shaped repository with a fixed seed, so runs compare. On a shared machine, report the load average with any number, and prefer `ostia ab` to compare a change with `HEAD`.
+The fixture is a generated, carbon-shaped repository with a fixed seed, so runs compare. The suite covers each stage a plan pays for, and the commands built on it:
+
+| Group | Times |
+| --- | --- |
+| `scan` | The lexer and the regex extractor over every file |
+| `graph` | Extraction and resolution, and resolution alone |
+| `walk` | `affectedBy` from a narrow and a wide seed, and with the reverse index rebuilt |
+| `git` | `readRevision` on a checkout, with and without blob OIDs |
+| `plan` | Cold and warm plans for one changed component, and a warm one for a change that reaches most tests through a util and the barrel |
+| `lockfile` | Parsing and diffing an 800-package `bun.lock` bump |
+| `inspect` | `check`, and `why --all` across four changes |
+
+On a real repository git is most of a warm plan (carbon-components-svelte: about 45 of 70 ms), which the fixture's small history understates, so check a change that touches git or resolution with `bench/phases.ts` too. On a shared machine, report the load average with any number, compare `Instr/call` (it holds steady under load where times don't), and prefer `ostia ab` to compare a change with `HEAD`.
 
 ## Golden check on carbon-components-svelte
 
