@@ -65,6 +65,9 @@ function fixFor(cause: string) {
     if (specifier.startsWith(".")) {
       return "no file at that path: fix the import, or add an `edges` entry if a build generates it";
     }
+    if (specifier.startsWith("#")) {
+      return "map it in the `imports` of the file's package.json, or with `alias`";
+    }
     return "declare the package in a package.json, list it in `external` if a dependency installs it, or map it with `alias`";
   }
   if (cause === "non-literal dynamic import") {

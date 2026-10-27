@@ -50,6 +50,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | `import.meta.glob()` | Every matching file, now and later |
 | JSDoc `@type {import("x")}` and `@import` | Edges (TypeScript reads them) |
 | `page.goto("/x.html")` in a suite with `urls` | An edge to the page |
+| `#name` subpath imports, through the `imports` of the importing file's own `package.json` | Edges to every condition's target that exists; an unmatched `#name` is unknown |
 | Named imports from a module made only of re-exports | An edge to the one file that exports each name, when the package declares `sideEffects` |
 | A file's own package and its ancestors' `package.json` dependencies, and builtins | `pkg:` nodes |
 | Anything else | Unknown: the file depends on every change |

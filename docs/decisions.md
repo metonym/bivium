@@ -584,3 +584,21 @@ unit suite (8 of 150 PRs, for one golden snapshot).
   most tests have no file for is alive while one has. Both are reported
   under the config's file, and `deadGlobs` allows them by that file and
   the glob as written.
+
+## 39. Subpath imports resolve through the owning `package.json`
+
+A `#name` specifier is the importing file's own package's business: Node
+reads the `imports` of the nearest `package.json` above the file, and no
+other. bivium does the same with the package that owns the file (the one
+`sideEffects` and declared dependencies already use), and matches keys as
+`exports` does: an exact key, else the `*` pattern with the longest
+prefix. Every condition's target counts, as in decision 3. A `./` target is
+an exact path in the package, skipped when missing as long as another
+exists; a package target (`"#dep": { "node": "dep-native" }`) resolves as
+the bare specifier would, and one that can't makes the whole specifier
+unknown, since that condition's file is then unknown. Files beat a `pkg:`
+node when a key has both: a `pkg:` node is a leaf no change reaches.
+
+`alias` is still tried first, so a config can map a `#` prefix itself. A
+`#name` no key matches, or whose targets are all missing or `null`, is
+unresolved: unknown, as Node would fail to load it.

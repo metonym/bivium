@@ -4,6 +4,7 @@ import {
   exportTargets,
   type PackageJson,
   type Packages,
+  toPackageJson,
 } from "../src/resolve.ts";
 import type { Config } from "../src/types.ts";
 
@@ -198,5 +199,84 @@ describe("package specifiers", () => {
   it("accepts configured externals without a declaration", () => {
     const resolve = resolver([], { config: { external: ["axe-core"] } });
     expect(resolve("x.ts", "axe-core")).toEqual({ pkg: "axe-core" });
+  });
+});
+
+describe("subpath imports", () => {
+  const app: PackageJson = {
+    name: "app",
+    imports: {
+      "#config": "./src/config.js",
+      "#lib/*": "./src/lib/*",
+      "#lib/internal/*": null,
+      "#env": {
+        types: "./src/env.d.ts",
+        node: "./src/env-node.js",
+        default: "./src/env-browser.js",
+      },
+      "#dep": { node: "dep-native", default: "./src/dep-polyfill.js" },
+      "#native": "dep-native",
+      "#unknown": { node: "undeclared", default: "./src/dep-polyfill.js" },
+    },
+    dependencies: { "dep-native": "1" },
+  };
+  const files = [
+    "src/config.js",
+    "src/lib/ActionButton.svelte",
+    "src/lib/internal/x.js",
+    "src/env.d.ts",
+    "src/env-node.js",
+    "src/dep-polyfill.js",
+    "examples/kit/src/lib/Button.svelte",
+  ];
+  const resolve = resolver(files, {
+    packages: {
+      ".": app,
+      "examples/kit": { imports: { "#lib/*": "./src/lib/*" } },
+    },
+  });
+
+  it("resolves an exact key and a pattern in the owning package", () => {
+    expect(resolve("src/x.ts", "#config")).toEqual({
+      files: ["src/config.js"],
+    });
+    expect(resolve("tests/x.test.ts", "#lib/ActionButton.svelte")).toEqual({
+      files: ["src/lib/ActionButton.svelte"],
+    });
+    expect(resolve("tests/x.test.ts", "#lib/ActionButton.svelte?raw")).toEqual({
+      files: ["src/lib/ActionButton.svelte"],
+    });
+    expect(
+      resolve("examples/kit/src/routes/+page.svelte", "#lib/Button.svelte"),
+    ).toEqual({ files: ["examples/kit/src/lib/Button.svelte"] });
+  });
+
+  it("takes every condition's target that exists", () => {
+    expect(resolve("src/x.ts", "#env")).toEqual({
+      files: ["src/env.d.ts", "src/env-node.js"],
+    });
+    expect(resolve("src/x.ts", "#dep")).toEqual({
+      files: ["src/dep-polyfill.js"],
+    });
+    expect(resolve("src/x.ts", "#native")).toEqual({ pkg: "dep-native" });
+  });
+
+  it("leaves an unmatched, null, missing or unknown target unresolved", () => {
+    expect(resolve("src/x.ts", "#nope")).toBeUndefined();
+    expect(resolve("src/x.ts", "#lib/missing.svelte")).toBeUndefined();
+    expect(resolve("src/x.ts", "#lib/internal/x.js")).toBeUndefined();
+    expect(resolve("src/x.ts", "#unknown")).toBeUndefined();
+    // Another package's `imports` don't apply.
+    expect(
+      resolve("examples/kit/src/x.ts", "#lib/ActionButton.svelte"),
+    ).toBeUndefined();
+    expect(resolver(files)("src/x.ts", "#config")).toBeUndefined();
+  });
+
+  it("reads `imports` from package.json only when it's an object", () => {
+    expect(toPackageJson({ imports: { "#a": "./a.js" } }).imports).toEqual({
+      "#a": "./a.js",
+    });
+    expect(toPackageJson({ imports: "./a.js" }).imports).toBeUndefined();
   });
 });
