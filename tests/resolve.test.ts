@@ -6,6 +6,7 @@ import {
   type Packages,
   toPackageJson,
 } from "../src/resolve.ts";
+import { parseJsonc, readTsconfigs, type TsConfigs } from "../src/tsconfig.ts";
 import type { Config } from "../src/types.ts";
 
 const BASE: Config = { suites: { unit: { tests: "**/*.test.ts" } } };
@@ -15,6 +16,7 @@ function resolver(
   options: {
     config?: Partial<Config>;
     packages?: Record<string, PackageJson>;
+    tsconfigs?: TsConfigs;
   } = {},
 ) {
   const packages: Packages = new Map(
@@ -24,6 +26,7 @@ function resolver(
     files: new Set(files),
     config: resolveConfig({ ...BASE, ...options.config }),
     packages,
+    tsconfigs: options.tsconfigs,
   });
 }
 
@@ -278,5 +281,125 @@ describe("subpath imports", () => {
       "#a": "./a.js",
     });
     expect(toPackageJson({ imports: "./a.js" }).imports).toBeUndefined();
+  });
+});
+
+describe("tsconfig paths", () => {
+  // `tsconfig.json` files by path, read as `readTsconfigs` reads them.
+  async function tsconfigs(texts: Record<string, string>) {
+    const read = async (file: string) => texts[file];
+    return readTsconfigs(
+      Object.keys(texts).filter((file) => file.endsWith("tsconfig.json")),
+      read,
+    );
+  }
+
+  it("parses comments and trailing commas, and not inside strings", () => {
+    expect(
+      parseJsonc(`\uFEFF{
+        // a comment
+        "a": "x // not a comment", /* block */
+        "b": ["/* kept */", "y,}",],
+      }`),
+    ).toEqual({ a: "x // not a comment", b: ["/* kept */", "y,}"] });
+    expect(() => parseJsonc(`{ "a": 1 /* never closed }`)).toThrow();
+  });
+
+  it("maps a package name to the source, before the package's exports", async () => {
+    const { tsconfigs: ts } = await tsconfigs({
+      "tsconfig.json": `{
+        "compilerOptions": {
+          // The tests import the package by name.
+          "paths": { "carbon-preprocess-svelte/*": ["./src/*"], "exact": ["./src/index.ts"] },
+        },
+      }`,
+    });
+    const resolve = resolver(["src/index.ts", "src/utils/a.ts", "dist/a.js"], {
+      packages: {
+        ".": {
+          name: "carbon-preprocess-svelte",
+          exports: { "./*": "./dist/*.js" },
+        },
+      },
+      tsconfigs: ts,
+    });
+    expect(
+      resolve("tests/x.test.ts", "carbon-preprocess-svelte/utils/a"),
+    ).toEqual({ files: ["src/utils/a.ts"] });
+    expect(resolve("tests/x.test.ts", "exact")).toEqual({
+      files: ["src/index.ts"],
+    });
+    // No `src/a`: the exports map is next.
+    expect(resolve("tests/x.test.ts", "carbon-preprocess-svelte/a")).toEqual({
+      files: ["dist/a.js"],
+    });
+  });
+
+  it("resolves targets against baseUrl, and bare specifiers under it", async () => {
+    const { tsconfigs: ts } = await tsconfigs({
+      "tsconfig.json": `{ "compilerOptions": { "baseUrl": "src", "paths": { "@/*": ["*"] } } }`,
+    });
+    const resolve = resolver(["src/lib/a.ts", "src/utils.ts"], {
+      tsconfigs: ts,
+    });
+    expect(resolve("src/x.ts", "@/lib/a")).toEqual({ files: ["src/lib/a.ts"] });
+    expect(resolve("src/x.ts", "utils")).toEqual({ files: ["src/utils.ts"] });
+    expect(resolve("src/x.ts", "missing")).toBeUndefined();
+  });
+
+  it("takes every target that exists", async () => {
+    const { tsconfigs: ts } = await tsconfigs({
+      "tsconfig.json": `{ "compilerOptions": { "paths": { "~/*": ["./src/*", "./generated/*", "./missing/*"] } } }`,
+    });
+    const resolve = resolver(["src/a.ts", "generated/a.d.ts"], {
+      tsconfigs: ts,
+    });
+    expect(resolve("x.ts", "~/a")).toEqual({
+      files: ["src/a.ts", "generated/a.d.ts"],
+    });
+  });
+
+  it("uses the nearest tsconfig.json, with its relative extends", async () => {
+    const { tsconfigs: ts } = await tsconfigs({
+      "tsconfig.base.json": `{ "compilerOptions": { "baseUrl": ".", "paths": { "@ui/*": ["packages/ui/src/*"] } } }`,
+      "tsconfig.json": `{ "extends": "./tsconfig.base", "compilerOptions": { "paths": { "@root/*": ["src/*"] } } }`,
+      "packages/app/tsconfig.json": `{ "extends": ["@tsconfig/svelte/tsconfig.json", "../../tsconfig.base.json"] }`,
+    });
+    const resolve = resolver(["packages/ui/src/Button.ts", "src/a.ts"], {
+      tsconfigs: ts,
+    });
+    expect(resolve("packages/app/src/x.ts", "@ui/Button")).toEqual({
+      files: ["packages/ui/src/Button.ts"],
+    });
+    expect(resolve("packages/app/src/x.ts", "@root/a")).toBeUndefined();
+    // The root's own `paths` replace the base's, relative to its baseUrl.
+    expect(resolve("src/x.ts", "@root/a")).toEqual({ files: ["src/a.ts"] });
+    expect(resolve("src/x.ts", "@ui/Button")).toBeUndefined();
+  });
+
+  it("ignores paths in a file that doesn't parse, or extends one that doesn't", async () => {
+    const result = await tsconfigs({
+      "tsconfig.json": `{ "compilerOptions": { "paths": { "@/*": ["src/*"] } }`,
+      "app/tsconfig.json": `{ "extends": "./broken.json", "compilerOptions": { "paths": { "@/*": ["src/*"] } } }`,
+      "app/broken.json": "{ nope }",
+    });
+    expect(result.unparsed.map(({ file }) => file)).toEqual([
+      "app/broken.json",
+      "tsconfig.json",
+    ]);
+    const resolve = resolver(["src/a.ts", "app/src/a.ts"], {
+      tsconfigs: result.tsconfigs,
+    });
+    expect(resolve("src/x.ts", "@/a")).toBeUndefined();
+    // Not the root's either: the nearest config is the one that applies.
+    expect(resolve("app/src/x.ts", "@/a")).toBeUndefined();
+  });
+
+  it("ends a cycle of extends, with no paths", async () => {
+    const result = await tsconfigs({
+      "tsconfig.json": `{ "extends": "./b.json", "compilerOptions": { "paths": { "@/*": ["src/*"] } } }`,
+      "b.json": `{ "extends": "./tsconfig.json" }`,
+    });
+    expect(result.tsconfigs.get(".")).toEqual({ paths: {} });
   });
 });

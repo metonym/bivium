@@ -97,6 +97,7 @@ async function edgeAt(
     files: new Set(computed.graph.keys()),
     config,
     packages: computed.packages,
+    tsconfigs: computed.tsconfigs,
   });
   const target = fileOf(via.from);
   for (const { specifier } of extraction.imports) {

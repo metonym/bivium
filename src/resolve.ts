@@ -2,6 +2,7 @@ import { builtinModules } from "node:module";
 import { posix } from "node:path";
 import type { ResolvedConfig } from "./config.ts";
 import { QUERY } from "./syntax.ts";
+import type { TsConfigs, TsPaths } from "./tsconfig.ts";
 
 export interface PackageJson {
   name?: string;
@@ -17,7 +18,7 @@ export interface PackageJson {
   optionalDependencies?: Record<string, string>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -181,11 +182,13 @@ export function createResolver({
   files,
   config,
   packages,
+  tsconfigs = new Map(),
 }: {
   // The repo-relative files in the graph.
   files: ReadonlySet<string>;
   config: ResolvedConfig;
   packages: Packages;
+  tsconfigs?: TsConfigs | undefined;
 }): Resolver {
   const generated = (path: string) =>
     config.generated.some(({ pattern }) => pattern.test(path));
@@ -248,6 +251,13 @@ export function createResolver({
     }
     return found;
   };
+
+  // The nearest `tsconfig.json` above a file.
+  const tsDeepestFirst = [...tsconfigs].sort(([a], [b]) => b.length - a.length);
+  const tsconfigFor = (from: string): TsPaths | undefined =>
+    tsDeepestFirst.find(
+      ([dir]) => dir === "." || from.startsWith(`${dir}/`),
+    )?.[1];
 
   const inPackage = (dir: string, path: string) =>
     dir === "." ? path : posix.join(dir, path);
@@ -323,6 +333,13 @@ export function createResolver({
       const found = probe(aliased(target, bare.slice(key.length + 1)));
       if (found.length > 0) return { files: found };
     }
+    const ts = tsconfigFor(from);
+    const mapped = ts && mapTargets(ts.paths, bare);
+    if (mapped) {
+      // Every target that exists, where TypeScript takes the first.
+      const found = [...new Set(mapped.flatMap(probe))];
+      if (found.length > 0) return { files: found };
+    }
     if (bare.startsWith("#")) return resolveImport(from, fromDir, bare);
     const name = packageName(bare);
     const dir = local.get(name);
@@ -330,6 +347,10 @@ export function createResolver({
       const subpath = `.${bare.slice(name.length)}`;
       const found = resolveLocal(dir, packages.get(dir) ?? {}, subpath);
       return found.length > 0 ? { files: found } : undefined;
+    }
+    if (ts?.baseUrl !== undefined) {
+      const found = probe(posix.join(ts.baseUrl, bare));
+      if (found.length > 0) return { files: found };
     }
     const node = builtin(bare);
     if (node) return { pkg: node };

@@ -255,6 +255,24 @@ describe("bivium check", () => {
     ]);
   });
 
+  it("lists tsconfig files that don't parse, and leaves what they map unknown", async () => {
+    const dir = repo();
+    write(dir, {
+      "tsconfig.json": `{ "compilerOptions": { "paths": { "~/*": ["./src/*"] } }`,
+      "test/p.test.js": `import { a } from "~/a.js";\n`,
+    });
+    const { output } = await run(["check", "--cwd", dir]);
+    expect(output).toContain(
+      "tsconfig files that don't parse, whose `paths` are ignored:\n  tsconfig.json: ",
+    );
+    expect(output).toContain(`test/p.test.js\n  ✗ unresolved "~/a.js"`);
+    const json = await run(["check", "--json", "--cwd", dir]);
+    const report: Report = JSON.parse(json.output);
+    expect(report.unparsedTsconfigs.map(({ file }) => file)).toEqual([
+      "tsconfig.json",
+    ]);
+  });
+
   it("doesn't count a test that reads an unknown node as text", async () => {
     const dir = repo();
     write(dir, {
