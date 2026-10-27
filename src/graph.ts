@@ -52,6 +52,13 @@ const leaf = (): FileDeps => ({
 
 const LEADING_DOT_SLASH = /^\.\//;
 
+// The causes a `hermetic` file vouches for: what it reads or imports this way
+// is never a file of the repository.
+const HERMETIC_CAUSES = new Set([
+  "reads the disk without @depends-on",
+  "non-literal dynamic import",
+]);
+
 // Webpack's `sideEffects` globs: one without a `/` matches at any depth;
 // one with a `/` is relative to the package's directory.
 function sideEffectful(
@@ -195,7 +202,11 @@ export function graphFrom(
         }
       }
     }
-    deps.unknown.push(...found.unknown);
+    deps.unknown.push(
+      ...(config.isHermetic(path)
+        ? found.unknown.filter((cause) => !HERMETIC_CAUSES.has(cause))
+        : found.unknown),
+    );
     for (const glob of found.globs) deps.patterns.push(globToRegExp(glob));
 
     const suite = found.gotos.length > 0 ? gotoSuite(config, path) : undefined;

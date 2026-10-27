@@ -1,7 +1,7 @@
 import { globToRegExp } from "../src/glob.ts";
 import { affectedBy, changedBarrelNames } from "../src/graph.ts";
 import { sorted } from "../src/sorted.ts";
-import { BARREL, deps, graphOf, REPO } from "./fixture.ts";
+import { BARREL, CONFIG, deps, graphOf, REPO } from "./fixture.ts";
 
 const graph = graphOf();
 
@@ -288,6 +288,38 @@ describe("dependencies", () => {
       String(globToRegExp("src/*.{js,ts}")),
       String(globToRegExp("css/**")),
     ]);
+  });
+
+  it("trusts a hermetic file's disk reads and non-literal imports, and nothing else", () => {
+    const source = [
+      `import { readFileSync } from "node:fs";`,
+      "const config = await import(path);",
+      "const g = import.meta.glob(patterns);",
+      `import missing from "./missing";`,
+    ].join("\n");
+    const hermetic = { config: { ...CONFIG, hermetic: "src/**" } };
+    expect(deps("src/load.ts", source, {}, hermetic).unknown).toEqual([
+      `unresolved "./missing"`,
+      "non-literal glob import",
+    ]);
+    expect(deps("tests/load.ts", source, {}, hermetic).unknown).toEqual([
+      `unresolved "./missing"`,
+      "non-literal dynamic import",
+      "non-literal glob import",
+      "reads the disk without @depends-on",
+    ]);
+  });
+
+  it("keeps a hermetic file's declared reads", () => {
+    const hermetic = { config: { ...CONFIG, hermetic: "tests/**" } };
+    expect(
+      deps(
+        "tests/x.test.ts",
+        `// @depends-on css/**\nimport { readFileSync } from "node:fs";`,
+        {},
+        hermetic,
+      ).patterns,
+    ).toEqual([String(globToRegExp("css/**"))]);
   });
 
   it("builds a generated file from its configured inputs", () => {

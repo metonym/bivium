@@ -500,3 +500,26 @@ On carbon, two of the old test's five entries remain:
 ignored docs files) and `docs/svelte.config.ts`. The DatePicker examples
 are under a root, so they're nodes, and `bun.lock` is outside the roots and
 not ignored, so a change to it runs everything.
+
+## 36. `hermetic` vouches for reads outside the repository
+
+A library that works on its user's files, such as a documentation
+generator, imports `fs` in most of its modules and `import()`s a config
+file by path, but reads none of its own repository's files that way: its
+tests pass it fixtures or temporary directories. Each such module was
+unknown, so every test that reaches it ran on every change. On sveld, 51
+unknown nodes reached a test, and the e2e harness, which reaches all of
+`src/`, could never be skipped.
+
+`hermetic` (globs) lists the files whose disk reads and non-literal
+imports reach no file of the repository. For them, `graphFrom` drops
+"reads the disk without @depends-on" and "non-literal dynamic import";
+every other cause (an unresolved specifier, a non-literal glob or `goto()`)
+stays, and so does what an `@depends-on` or `@reads` declares. A file that
+does read repository files names them with an annotation, hermetic or not.
+
+It's config, not an annotation, so one glob covers a library's `src/**`,
+and it's applied in `graphFrom`, not `extract`, so cached extractions
+don't depend on the config. It's a promise the graph can't check: a
+hermetic file that reads a repository file without declaring it is missed.
+The fix hints in `check` name it as the alternative to an annotation.

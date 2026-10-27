@@ -67,13 +67,13 @@ function fixFor(cause: string) {
     return "declare the package in a package.json, list it in `external` if a dependency installs it, or map it with `alias`";
   }
   if (cause === "non-literal dynamic import") {
-    return "spell the path as a string literal, or load the files with `import.meta.glob` and literal patterns";
+    return "spell the path as a string literal, load the files with `import.meta.glob` and literal patterns, or list the file in `hermetic` if it only imports paths its caller passes";
   }
   if (cause === "non-literal glob import") {
     return "pass `import.meta.glob` literal patterns";
   }
   if (cause === "reads the disk without @depends-on") {
-    return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text";
+    return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text; list the file in `hermetic` if it reads no file of the repository";
   }
   if (cause.startsWith("non-literal goto(")) {
     return "pass `goto()` a literal URL, or a template whose path before `?` or `#` is literal";

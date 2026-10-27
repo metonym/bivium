@@ -55,6 +55,7 @@ export interface ResolvedConfig {
   generated: { pattern: RegExp; inputs: RegExp[] }[];
   isSelf: Matcher;
   isImportOnly: Matcher;
+  isHermetic: Matcher;
   isBarrel: Matcher;
   external: Set<string>;
   extensions: readonly string[];
@@ -143,6 +144,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     })),
     isSelf: matcher(config.self),
     isImportOnly: matcher(config.importOnly),
+    isHermetic: matcher(config.hermetic),
     isBarrel: config.barrels ? matcher(config.barrels) : () => true,
     external: new Set(config.external),
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
@@ -222,6 +224,7 @@ const CONFIG_KEYS = new Set([
   "edges",
   "self",
   "importOnly",
+  "hermetic",
   "barrels",
   "external",
   "extensions",
@@ -355,6 +358,7 @@ export function checkConfig(value: unknown): Config {
     edges: field(value, "edges", isGlobsRecord, "", "a map of globs"),
     self: field(value, "self", isGlobs, "", globs),
     importOnly: field(value, "importOnly", isGlobs, "", globs),
+    hermetic: field(value, "hermetic", isGlobs, "", globs),
     barrels: field(value, "barrels", isGlobs, "", globs),
     external: field(value, "external", isStrings, "", "a list of packages"),
     extensions: field(value, "extensions", isStrings, "", "a list"),

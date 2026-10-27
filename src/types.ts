@@ -46,6 +46,13 @@ export interface Config<Suite extends string = string> {
   self?: Globs;
   /** Files only an import reaches. Deleting one never orphans a suite: an importer left pointing at it doesn't resolve, so it runs anyway. */
   importOnly?: Globs;
+  /**
+   * Files whose disk reads and non-literal imports reach no file of the
+   * repository: a library's `fs` calls on the paths its caller passes, a
+   * test that reads only the temporary files it writes. Those add no
+   * unknown; an `@depends-on` or `@reads` still declares what one does read.
+   */
+  hermetic?: Globs;
   /** Modules that may bind named imports as barrels. Default: every module made only of re-exports. */
   barrels?: Globs;
   /** Packages to treat as external though no `package.json` declares them: ones a dependency installs. Any other undeclared bare specifier is unknown. */
