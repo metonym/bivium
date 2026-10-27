@@ -1,6 +1,6 @@
 {
   "name": "bivium",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "Run only the tests a change can affect, and never miss one.",
   "author": "Eric Liu (https://github.com/metonym)",

@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.2.0 — 2026-10-27
+
+**Breaking changes**
+
+- `bivium check` now reports an `edges` or `reads` key that matches no
+  node, and a value that matches nothing for any match, so a config
+  with a stale `edges` entry fails it. Allow one in `deadGlobs`.
+- tsconfig `paths` and `baseUrl` are read, after `alias` and before
+  `package.json` `exports`, so a specifier that was unresolved (and
+  ran its tests on every change) may now resolve.
+- `bivium why --json` reports the finer edge kinds and new fields.
+
+**Features**
+
+- A changed root `bun.lock` or `package-lock.json` seeds the packages
+  it changed and their dependents instead of running everything. A
+  changed package no test imports still runs everything unless it's
+  listed in the new `inert` key.
+- `edges` values can use `$1`, `$2`… for what the key's wildcards
+  matched, and the new `reads` key is `@reads` in the config, for
+  files that can't hold a comment (snapshots, `package.json`).
+- `#name` subpath imports resolve through the importing file's own
+  `package.json` `imports`.
+- `%sveltekit.assets%/x` in an `app.html` maps to the project's
+  `static/x`.
+- `bivium why` names what spells each edge (`goto`, `html`, `name`,
+  `export`, `depends-on`, `edges`, `reads`), aligns its columns, says
+  how many other changes reach the test, and takes `--format
+  tree|chain|source` and `--all`. A test that isn't selected says
+  what the file's chains reach instead.
+
+**Fixes**
+
+- `bivium why` cites the call that spells an edge, not a comment that
+  mentions the file.
+
 ## 0.1.2 — 2026-10-27
 
 **Features**
