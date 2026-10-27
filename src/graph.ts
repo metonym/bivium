@@ -107,6 +107,19 @@ function mapUrl(suite: ResolvedSuite, url: string): string | undefined {
   return undefined;
 }
 
+// The page a `goto()` argument in `path` opens, when its suite maps the URL.
+export function gotoPage(
+  config: ResolvedConfig,
+  path: string,
+  argument: string,
+): string | undefined {
+  const suite = gotoSuite(config, path);
+  const url = gotoUrl(argument);
+  return suite === undefined || url === undefined
+    ? undefined
+    : mapUrl(suite, url.replace(QUERY, ""));
+}
+
 // Parses every source file; non-code files become leaves.
 export function buildGraph(
   sources: Map<string, string>,

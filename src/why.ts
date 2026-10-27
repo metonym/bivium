@@ -3,8 +3,14 @@ import { isAbsolute, join } from "node:path";
 import type { Computed } from "./compute.ts";
 import type { PathMap, ResolvedConfig } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
-import { affectedBy, type Via } from "./graph.ts";
-import { causeLine, specifierLine, textLine } from "./locate.ts";
+import { affectedBy, gotoPage, type Via } from "./graph.ts";
+import {
+  callLine,
+  causeLine,
+  gotoLine,
+  specifierLine,
+  textLine,
+} from "./locate.ts";
 import { createResolver } from "./resolve.ts";
 import { extract, formatOf, SCANNED } from "./scan.ts";
 
@@ -83,7 +89,7 @@ async function edgeAt(
     if (names(extraction.dependsOn)) return at(textLine(source, "@depends-on"));
     if (configured(config.generated)) return "edges in the config";
     if (extraction.globs.length > 0)
-      return at(textLine(source, "import.meta.glob"));
+      return at(callLine(source, "import.meta.glob"));
     return "edges in the config";
   }
   if (node.includes("#")) {
@@ -106,8 +112,11 @@ async function edgeAt(
       return at(specifierLine(source, specifier));
     }
   }
-  // A page a `goto()` opens, by its name in the URL.
-  return at(textLine(source, target.slice(target.lastIndexOf("/") + 1)));
+  // A page a `goto()` opens.
+  const argument = extraction.gotos.find(
+    (candidate) => gotoPage(config, file, candidate) === target,
+  );
+  return at(gotoLine(source, argument, target));
 }
 
 function rootCause(
