@@ -5,6 +5,10 @@
 // line that looks like the edge (`goto(`, `import`, `src=`), over one in a
 // comment or prose that merely mentions it.
 
+import { readFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
+import type { Computed } from "./compute.ts";
+
 const DISK_READ =
   /\bfrom\s*["'](?:node:)?(?:fs|fs\/promises|child_process)["']|\brequire\s*\(\s*["'](?:node:)?(?:fs|fs\/promises|child_process)["']|\bBun\.(?:file|Glob|spawn)/;
 const NON_LITERAL_IMPORT =
@@ -137,7 +141,7 @@ export function callLine(source: string, call: string): number | undefined {
 }
 
 /** The line behind one of a file's unknown causes. */
-export function causeLine(source: string, cause: string): number | undefined {
+function causeLine(source: string, cause: string): number | undefined {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED_CAUSE.exec(cause)?.[1];
     return specifier === undefined
@@ -171,4 +175,48 @@ export function annotationLine(
     .split("\n")
     .findIndex((line) => line.includes(tag) && line.includes(glob));
   return index === -1 ? undefined : index + 1;
+}
+
+/** The text of line `line` (1-based), trimmed. */
+export function lineText(source: string, line: number): string {
+  let start = 0;
+  for (let n = 1; n < line; n++) {
+    const next = source.indexOf("\n", start);
+    if (next === -1) return "";
+    start = next + 1;
+  }
+  const end = source.indexOf("\n", start);
+  return source.slice(start, end === -1 ? source.length : end).trim();
+}
+
+export async function sourceOf(root: string, file: string) {
+  try {
+    // A config file outside the repository is absolute.
+    return await readFile(isAbsolute(file) ? file : join(root, file), "utf-8");
+  } catch {
+    return;
+  }
+}
+
+/** The file a node is in: a barrel name's barrel, or the node itself. */
+export function fileOf(node: string): string {
+  const hash = node.indexOf("#");
+  return hash === -1 ? node : node.slice(0, hash);
+}
+
+/** Why a node depends on every change, and where each cause is spelled. */
+export async function causesOf(
+  root: string,
+  computed: Computed,
+  node: string,
+): Promise<{ cause: string; at?: string; text?: string }[]> {
+  const file = fileOf(node);
+  const source = await sourceOf(root, file);
+  return (computed.graph.get(node)?.unknown ?? []).map((cause) => {
+    if (source === undefined) return { cause };
+    const line = causeLine(source, cause);
+    return line === undefined
+      ? { cause }
+      : { cause, at: `${file}:${line}`, text: lineText(source, line) };
+  });
 }

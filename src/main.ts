@@ -6,12 +6,13 @@ import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { formatSelection } from "./plan.ts";
 import type { Selection } from "./types.ts";
-import { explain, formatExplanation } from "./why.ts";
+import { explain, formatExplanation, isFormat } from "./why.ts";
 
 const USAGE = `Usage:
   bivium plan [base] [--json] [--github]   print the tests a change can affect
   bivium run [base] [--suite <name>]       run a suite's selected tests
   bivium why <test> [file] [--base <ref>]  the chain from a change (or file) to a test
+             [--format <f>] [--all]
   bivium check [--max-unknown <n>]         what the graph can't read, and dead globs
   bivium --version                         print the version
 
@@ -26,6 +27,10 @@ Options:
   --github          for plan: also write each suite's selection to
                     $GITHUB_OUTPUT as <output>=all|none|<files>
   --base <ref>      for why and check: the base ref
+  --format <f>      for why: tree (default), chain (from the change to the
+                    test) or source (each hop's line of source)
+  --all             for why: every change's chain to the test, not only the
+                    shortest
   --max-unknown <n> for check: fail when more unknown nodes than this reach
                     a test`;
 
@@ -35,13 +40,14 @@ const VALUED = new Set([
   "--cwd",
   "--suite",
   "--base",
+  "--format",
   "--max-unknown",
 ]);
 const COMMON = ["--config", "--cwd", "--no-cache"];
 const FLAGS: Record<string, readonly string[]> = {
   plan: [...COMMON, "--json", "--github"],
   run: [...COMMON, "--suite"],
-  why: [...COMMON, "--base", "--json"],
+  why: [...COMMON, "--base", "--json", "--format", "--all"],
   check: [...COMMON, "--base", "--max-unknown", "--json"],
 };
 // Positional arguments each command takes at most.
@@ -133,6 +139,10 @@ async function inspect(
   command: "why" | "check",
   { flags, positional }: Args,
 ): Promise<0 | 1> {
+  const format = flags.get("--format") ?? "tree";
+  if (!isFormat(format)) {
+    throw new Error("bivium why: --format takes tree, chain or source");
+  }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
     // What the graph can't read doesn't depend on the base.
@@ -162,11 +172,13 @@ async function inspect(
   }
   const [test, file] = positional;
   if (test === undefined) throw new Error("bivium why: which test?");
-  const explanation = await explain(root, config, computed, test, file);
+  const explanation = await explain(root, config, computed, test, file, {
+    all: flags.has("--all"),
+  });
   console.log(
     flags.has("--json")
       ? JSON.stringify(explanation, null, 2)
-      : formatExplanation(explanation),
+      : formatExplanation(explanation, format),
   );
   return 0;
 }

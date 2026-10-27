@@ -755,3 +755,44 @@ reformatted example and golden files reach), and the sveast bump selects
 everything, for rolldown (which `examples/rolldown` imports and no test
 reaches), `carbon-components-svelte` (which the tests read as an
 installed fixture), or a declared `sveast` nothing imports any more.
+
+## 43. why names what spells each edge, and tree stays the default
+
+`why` said `import` for every edge to a file and `glob` for every
+pattern, so a chain through a page read as five imports, and a config
+`edges` hop looked like an `import.meta.glob`. `Via.kind` now names what
+spells the edge: `import`, `goto`, `html` (an HTML page's `script[src]`,
+`link[href]`, `iframe[src]` or inline script import), `name` (a named
+import bound to a barrel name), `export` (a barrel name to the file that
+exports it, or to a re-export with side effects), `glob`
+(`import.meta.glob`), `depends-on`, `edges`, `reads` and `unknown`.
+
+Selection doesn't change: every kind is followed the same way, and the
+walk computes a kind only when asked for `parents`. `name`, `export` and
+`html` follow from the node ids. The rest needed two fields in
+`graphFrom`, outside the extraction (so no `SCANNER_VERSION` bump): the
+`files` only a `goto()` opens (`pages`), and which `patterns` an
+`@depends-on` or the config's `edges` spells (`patternKinds`). A page a
+file both imports and opens is an `import`.
+
+Line lookup still searches (34), but now prefers an occurrence in code,
+on a line that loads the thing (`goto(`, an import, `src=`), over one in
+a comment: on carbon, `e2e/helpers/host.ts:9`, a JSDoc line that names
+`host.html`, became the `page.goto()` on line 50. A `goto()` is found by
+the argument that maps to the page.
+
+`--format chain` reads from the change to the test, one verb per hop,
+each path once; for a test that depends on every change it gives the
+cause, its line and `check`'s fix first. `--format source` prints each
+hop's line of source under it. `tree` stays the default: it is what
+users and scripts have seen since 0.1, and the other two haven't been
+used yet. Making `chain` the default is a later, separate change.
+
+`why` also says how many other changes reach the test (`--all` shows
+each one's chain). A walk from many seeds reaches what the walks from
+each reach, so it walks from each other seed alone, with the same
+narrower walks; on carbon with four changed components that adds well
+under a tenth of a second. A test that depends on every change skips
+it: every change reaches it. A given file that doesn't reach the test
+reports how many tests its chains do reach, leaving out the ones that
+run on every change, which any file would select.

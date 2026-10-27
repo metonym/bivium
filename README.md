@@ -120,17 +120,60 @@ unit tests: 4 files
 |:---|:---|
 | `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results and changed packages. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
-| `bivium why <test> [file]` | The shortest chain of edges from a changed file, or from `file`, to the test, with the line that spells each edge |
+| `bivium why <test> [file] [--format tree\|chain\|source] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
 | `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
 
-`--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option is an error.
+`--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
+
+`why` names each edge by what spells it: `import`, `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
 
 ```console
-$ bunx bivium why tests/Modal.test.ts
-tests/Modal.test.ts
-└─ import  src/Modal/Modal.svelte    tests/Modal.test.ts:3
-   └─ import  src/Button/Button.svelte    src/Modal/Modal.svelte:12
-      ● changed
+$ bunx bivium why e2e/accordion.test.ts
+e2e/accordion.test.ts
+└─ goto    e2e/fixtures/accordion.html             e2e/accordion.test.ts:13
+   └─ html    e2e/fixtures/accordion.ts            e2e/fixtures/accordion.html:10
+      └─ import  e2e/fixtures/Fixture.svelte       e2e/fixtures/accordion.ts:1
+         └─ name    src/index.js#AccordionItem     e2e/fixtures/Fixture.svelte:2
+            └─ export  src/AccordionItem.svelte    src/index.js:2
+               ● changed
++ 1 more change reaches this test: css/_accordion.scss (--all shows each chain)
+
+$ bunx bivium why e2e/accordion.test.ts --format chain
+src/AccordionItem.svelte changed
+  exported as AccordionItem  src/index.js:2
+  imported by                e2e/fixtures/Fixture.svelte:2
+  imported by                e2e/fixtures/accordion.ts:1
+  loaded by page             e2e/fixtures/accordion.html:10
+  opened by                  e2e/accordion.test.ts:13  ← selected
++ 1 more change reaches this test: css/_accordion.scss (--all shows each chain)
+
+$ bunx bivium why e2e/accordion.test.ts --format source
+selected: e2e/accordion.test.ts ← src/AccordionItem.svelte (5 hops)
+
+  --> e2e/accordion.test.ts:13  goto
+13 | await page.goto("/accordion.html");
+  --> e2e/fixtures/accordion.html:10  html
+10 | <script type="module" src="./accordion.ts"></script>
+  --> e2e/fixtures/accordion.ts:1  import
+ 1 | import Fixture from "./Fixture.svelte";
+  --> e2e/fixtures/Fixture.svelte:2  name
+ 2 | import { Accordion, AccordionItem } from "carbon-components-svelte";
+  --> src/index.js:2  export
+ 2 | export { default as AccordionItem } from "./AccordionItem.svelte";
+  ● src/AccordionItem.svelte: changed
++ 1 more change reaches this test: css/_accordion.scss (--all shows each chain)
+```
+
+For a test that depends on every change, `chain` says why, where, and how to fix it, as `check` does:
+
+```console
+$ bunx bivium why tests/e2e.test.ts --format chain
+tests/e2e.test.ts runs on every change
+  because scripts/launcher.js:10  unresolved "./cli-entry.js"
+    fix: no file at that path: fix the import, or add an `edges` entry if a build generates it
+  reached via scripts/launcher.js
+    depended on by  scripts/build.ts:1
+    depended on by  tests/e2e.test.ts:2  ← selected
 ```
 
 ## Dead globs

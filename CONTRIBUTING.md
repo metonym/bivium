@@ -55,7 +55,7 @@ bun src/cli.ts plan   # the CLI from source
 | `tests/config.test.ts` | Loading, checking and resolving configs |
 | `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, unreadable lockfiles, `package-lock.json` |
 | `tests/main.test.ts` | `plan` and `run`, their outputs and options, and `plan()` from code |
-| `tests/why.test.ts` | `why` and `check`, dead globs included |
+| `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs included |
 | `scripts/test-package.ts` | `bun run test:package`: the packed tarball installs, imports only builtins, plans a repository from Node and Bun, and type-checks for a consumer |
 
 A behavior fix needs a test that fails before the fix and passes after.
