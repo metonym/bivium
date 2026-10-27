@@ -208,6 +208,29 @@ describe("bivium check", () => {
       { node: "test/u.test.js", tests: ["test/u.test.js"] },
     ]);
   });
+
+  it("doesn't count a test that reads an unknown node as text", async () => {
+    const dir = repo();
+    write(dir, {
+      "test/fixtures/x.js": `import gone from "./gone.js";\n`,
+      "test/f.test.js": "// @reads test/fixtures/**\nexport {};\n",
+    });
+    const json = await run(["check", "--json", "--cwd", dir]);
+    const report: Report = JSON.parse(json.output);
+    expect(report.unknown.map(({ node, tests }) => ({ node, tests }))).toEqual([
+      { node: "test/fixtures/x.js", tests: [] },
+      { node: "test/u.test.js", tests: ["test/u.test.js"] },
+    ]);
+    // The plan agrees: the reader runs only when the fixture changes.
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "fixture");
+    write(dir, { "src/b.js": "export const b = 2;" });
+    const plan = await run(["plan", "HEAD", "--json", "--cwd", dir]);
+    expect(JSON.parse(plan.output).suites.unit).toEqual({
+      mode: "some",
+      files: ["test/u.test.js"],
+    });
+  });
 });
 
 // test/a.test.js declares the globs. docs/ is outside the roots and

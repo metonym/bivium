@@ -197,7 +197,10 @@ export async function check(
         })),
         tests: sorted(
           [
-            ...affectedBy(computed.graph, [node], { includeUnknown: false }),
+            ...affectedBy(computed.graph, [node], {
+              includeUnknown: false,
+              readers: false,
+            }),
           ].filter(isTest),
         ),
       }),

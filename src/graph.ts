@@ -343,6 +343,9 @@ export interface Via {
 
 interface Walk {
   includeUnknown?: boolean;
+  // Whether `changed` seeds the files that read them as text. An unknown
+  // node isn't a change, so what it puts on every change skips its readers.
+  readers?: boolean;
   opaque?: (path: string) => boolean;
   // Filled with how each node other than a seed was first reached. The walk
   // is breadth-first, so following them back is a shortest chain.
@@ -355,7 +358,12 @@ interface Walk {
 export function affectedBy(
   graph: Graph,
   changed: Iterable<string>,
-  { includeUnknown = true, opaque, parents }: Walk = {},
+  {
+    includeUnknown = true,
+    readers: seedReaders = true,
+    opaque,
+    parents,
+  }: Walk = {},
 ): Set<string> {
   const { dependents, globbers, readers, unknown } = reverseIndex(graph);
   const affected = new Set<string>();
@@ -370,7 +378,7 @@ export function affectedBy(
   const changedPaths = [...changed];
   for (const path of changedPaths) visit(path);
   // Text reads only see the files themselves, not what they import.
-  for (const [reader, patterns] of readers) {
+  for (const [reader, patterns] of seedReaders ? readers : []) {
     const read = changedPaths.find((path) =>
       patterns.some((re) => re.test(path)),
     );
