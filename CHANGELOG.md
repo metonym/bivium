@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.2 — 2026-10-27
+
+**Features**
+
+- `hermetic` (globs) lists files whose disk reads and non-literal
+  imports reach no file of the repository, such as a library's `fs`
+  calls on its caller's paths. They no longer count as unknown; an
+  unresolved import, a non-literal glob or `goto()`, and any
+  `@depends-on` or `@reads` still do.
+
+**Fixes**
+
+- `bivium check` no longer counts a test that only `@reads` an
+  unknown node as running on any change, which `plan` never does.
+
 ## 0.1.1 — 2026-10-26
 
 **Fixes**
