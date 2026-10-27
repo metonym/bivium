@@ -4,6 +4,7 @@ import {
   type ResolvedNarrower,
 } from "./config.ts";
 import { affectedBy, type Graph } from "./graph.ts";
+import { type PackageDiff, packageSeeds } from "./lockfile.ts";
 import type { NarrowResult, Selection } from "./types.ts";
 
 export interface Plan {
@@ -12,9 +13,14 @@ export interface Plan {
   reasons: string[];
   // The suites forced to run in full, by a reason.
   full: string[];
+  // What a lockfile or `package.json` change seeded or left out, a line per
+  // changed package.
+  packages: string[];
   // What the walk started from, and each narrowed suite's narrowers: enough
   // to walk again and explain a selection.
   seeds: string[];
+  // `pkg:` seed → the package change it stands for.
+  packageCauses: Map<string, string>;
   narrowings: Map<string, Narrowing[]>;
 }
 
@@ -27,6 +33,8 @@ export interface PlanOptions {
   // Barrel-name nodes (`src/index.js#Button`) whose target moved.
   barrelNames?: string[];
   narrowed?: Narrowed[];
+  // What the changed lockfiles and `package.json` files changed.
+  packages?: PackageDiff;
 }
 
 // `all`, `none`, or the space-separated files, as CI step outputs.
@@ -50,6 +58,10 @@ interface Narrowing {
 export interface Changes {
   // Changed files the graph places: the walk's seeds.
   relevant: string[];
+  // Changed lockfiles and `package.json` files whose package diff stands in
+  // for them. Each seeds the walk, for the files that read it, but isn't
+  // subject to the orphan rule: the packages it changed are how it's wired.
+  packageFiles: string[];
   reasons: string[];
   // Suites that run in full.
   full: Set<string>;
@@ -59,6 +71,7 @@ export function classify(
   graph: Graph,
   changed: string[],
   config: ResolvedConfig,
+  packages?: PackageDiff,
 ): Changes {
   const reasons: string[] = [];
   const full = new Set<string>();
@@ -66,19 +79,32 @@ export function classify(
     for (const suite of config.suites) full.add(suite.name);
   };
   const relevant: string[] = [];
+  const packageFiles: string[] = [];
   for (const file of changed) {
     // `ignore` means "not a seed", never "not a node": a file some test
     // reaches still counts.
     const read = graph.has(file);
     if (!read && config.isIgnored(file)) continue;
     const wired = config.suites.filter((suite) => suite.isWiring(file));
+    const diffed = packages?.files.has(file) ?? false;
     if (config.isSelf(file)) {
       reasons.push(`${file}: test selector changed`);
       runAll();
-    } else if (wired.length > 0) {
-      for (const suite of wired) {
-        reasons.push(`${file}: wires the ${suite.name} suite`);
-        full.add(suite.name);
+      continue;
+    }
+    for (const suite of wired) {
+      reasons.push(`${file}: wires the ${suite.name} suite`);
+      full.add(suite.name);
+    }
+    // A wired lockfile still changes packages the other suites import.
+    if (wired.length > 0 && !diffed) continue;
+    if (diffed) {
+      const reason = packages?.files.get(file);
+      if (reason === undefined) {
+        packageFiles.push(file);
+      } else {
+        reasons.push(`${file}: ${reason}`);
+        runAll();
       }
     } else if (read || config.roots.some((root) => inRoot(file, root))) {
       relevant.push(file);
@@ -87,7 +113,7 @@ export function classify(
       runAll();
     }
   }
-  return { relevant, reasons, full };
+  return { relevant, packageFiles, reasons, full };
 }
 
 // What a suite's narrowers select: the walk from the matched files stops at
@@ -119,10 +145,28 @@ export function planTests(
   graph: Graph,
   changed: string[],
   config: ResolvedConfig,
-  { barrelNames = [], narrowed = [] }: PlanOptions = {},
+  { barrelNames = [], narrowed = [], packages }: PlanOptions = {},
 ): Plan {
-  const { relevant, reasons, full } = classify(graph, changed, config);
-  const seeds = [...relevant, ...barrelNames];
+  const { relevant, packageFiles, reasons, full } = classify(
+    graph,
+    changed,
+    config,
+    packages,
+  );
+  const bumped =
+    packages && packageFiles.length > 0
+      ? packageSeeds(graph, config, packages, packageFiles)
+      : { seeds: new Map<string, string>(), notes: [], reasons: [] };
+  reasons.push(...bumped.reasons);
+  if (bumped.reasons.length > 0) {
+    for (const suite of config.suites) full.add(suite.name);
+  }
+  const seeds = [
+    ...relevant,
+    ...barrelNames,
+    ...packageFiles,
+    ...bumped.seeds.keys(),
+  ];
   const affected = affectedBy(graph, seeds);
   const nodes = [...graph.keys()];
   const tests = new Map(
@@ -184,5 +228,13 @@ export function planTests(
           tests.get(suite.name) ?? [],
         );
   }
-  return { suites, reasons, full: [...full], seeds, narrowings };
+  return {
+    suites,
+    reasons,
+    full: [...full],
+    packages: bumped.notes,
+    seeds,
+    packageCauses: bumped.seeds,
+    narrowings,
+  };
 }
