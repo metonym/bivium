@@ -64,6 +64,8 @@ today a lockfile change already runs everything, so it costs nothing to accept
 them. bivium reads the declaring `package.json` files (the file's package and
 its ancestors) and an `external` config list. Reading lockfiles is Phase 6.
 
+Decision 42 reads them.
+
 ## 6. Every re-export-only module is a barrel
 
 As planned (§4.3). Named imports bind to `barrel#Name` when the owning
@@ -669,3 +671,87 @@ scanner doesn't read, so they never were references; a test pins that.
 A custom `kit.files.assets` isn't read: its files are unresolved unless
 `static/` has the same name, which `check`'s hint for the cause points
 out. An `%sveltekit.env.PUBLIC_X%` in a `src` or `href` stays unresolved.
+
+## 42. A lockfile change seeds the packages it changed
+
+A changed `bun.lock` was outside the roots in most configs, so it ran
+everything: on sveld 31 of the last 150 merged PRs and on
+carbon-preprocess-svelte 49, nearly all dev-dependency bumps. Decision 5
+deferred reading lockfiles; this reads them.
+
+When a root `bun.lock` or `package-lock.json` (v2 or v3) changed,
+`readPackageDiff` (`src/lockfile.ts`) reads it at the merge base and in
+the working tree, and lists the packages whose entries differ: a version,
+an integrity, a resolution or a dependency, compared by the whole entry,
+and the dependency ranges a workspace declares. `planTests` then:
+
+- Seeds `pkg:<name>` for the changed package and for every package that
+  depends on it, transitively, through the lockfiles' dependency lists in
+  either revision (`dependencies`, `optionalDependencies`,
+  `peerDependencies`), that some file imports. Packages are matched by
+  the name they're installed as, so two versions of one name merge, which
+  only adds seeds.
+- Seeds the lockfile itself, so a file that `@reads` or `@depends-on` it,
+  and every file with unknown dependencies, still runs. It isn't subject
+  to the orphan rule: the packages it changed are how it's wired.
+- Runs everything when a package the change reaches is used some way the
+  graph can't see. That's each package in the change's dependents closure
+  that a workspace declares, that nothing depends on, or that some file
+  imports, and that reaches no test through an import (a CLI a script
+  spawns, a runner, a type package, a dependency only a runner config
+  imports). The reason names it: `bun.lock: rolldown 1.2.13 → 1.2.15 (and
+  16 more packages rolldown depends on), and no test imports it`.
+- `inert` (globs over package names) lists the packages no test uses
+  except by importing them: linters, formatters, type packages, tools CI
+  runs on its own. Such a package counts as covered, so a change only
+  they reach selects nothing beyond the files that import them (and the
+  unknown files, as any change does). It's a promise the graph can't
+  check, like `hermetic`, and it's config, not a guess: bivium has no
+  list of "dev tools", since a `devDependency` such as `svelte-check` or
+  `playwright` is exactly what an e2e harness runs.
+
+A changed `package.json` (the root's or a workspace's) whose only change
+is to its dependency fields, and whose changed names every lockfile the
+working tree has records the same way for its directory, is handled the
+same way: the names whose ranges changed count as changed packages, and
+it seeds itself without the orphan rule. Any other `package.json` change
+is classified as before.
+
+Fail-closed rules:
+
+- A lockfile that can't be parsed, that was added or deleted, or whose
+  settings other than its packages and workspaces changed (`overrides`,
+  `patchedDependencies`, `trustedDependencies`, the format version) runs
+  everything, with the reason.
+- A `package.json` dependency change that the lockfiles don't record (no
+  lockfile, a stale one, or one in a format bivium doesn't read in the
+  repository) isn't explained, so it's classified as before: outside the
+  roots, it runs everything.
+- `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock` and nested lockfiles are
+  read as before: a change to one outside the roots runs everything.
+- An ignored lockfile is still skipped (`ignore` says no test observes
+  it), and a `self` one still runs everything. A wired one runs its
+  suites and still seeds the others.
+
+What it can still miss, by design: a package some test imports is assumed
+to reach the other tests only through imports too. One that a suite's
+harness also runs as a tool (a dev server a unit helper imports) is caught
+only if the tool's own package depends on the change and no test imports
+that package, or if the harness's file is unknown. A CLI used without
+being declared (a phantom binary) is the hazard decision 5 describes for
+phantom imports.
+
+`plan` prints a line per changed package it seeded or found inert
+(`bun.lock: svelte 5.1.0 → 5.2.0`, `bun.lock: knip 6.43.0 → 6.44.0,
+inert`), `--json` and `plan()` return them as `packages`, and `why` names
+the change at the root of a chain that starts at a `pkg:` node.
+Extraction is unchanged, so the cache and `SCANNER_VERSION` are too.
+
+On carbon-preprocess-svelte, replaying six dependency-bump commits with
+`inert` set to Biome, knip, ostia, bivium and `@types/*`: in the two
+Biome bumps the lockfile selects nothing (the plans still run what the
+reformatted example and golden files reach), and the sveast bump selects
+21 of 31 unit tests and no package test. The other three still run
+everything, for rolldown (which `examples/rolldown` imports and no test
+reaches), `carbon-components-svelte` (which the tests read as an
+installed fixture), or a declared `sveast` nothing imports any more.

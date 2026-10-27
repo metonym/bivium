@@ -109,6 +109,7 @@ function logSelection(label: string, selection: Selection) {
 
 function logPlan({ plan, narrowed }: Computed) {
   for (const reason of plan.reasons) console.log(`Full run: ${reason}`);
+  for (const line of plan.packages) console.log(line);
   for (const { narrower, result } of narrowed) {
     if ("note" in result && result.note) {
       console.log(`${narrower.name}: ${result.note}`);
@@ -196,7 +197,7 @@ async function runCommand(
 
   if (command === "plan") {
     if (flags.has("--json")) {
-      const { suites, reasons } = computed.plan;
+      const { suites, reasons, packages } = computed.plan;
       const narrowed = computed.narrowed.map((ran) => ({
         name: ran.narrower.name,
         result: ran.result,
@@ -209,6 +210,7 @@ async function runCommand(
             changed: computed.changed,
             suites,
             reasons,
+            packages,
             narrowed,
           },
           null,

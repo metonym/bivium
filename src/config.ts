@@ -76,6 +76,7 @@ export interface ResolvedConfig {
   isHermetic: Matcher;
   isBarrel: Matcher;
   external: Set<string>;
+  isInert: Matcher;
   extensions: readonly string[];
   deadGlobs: readonly DeadGlobEntry[];
   base?: string;
@@ -189,6 +190,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     isHermetic: matcher(config.hermetic),
     isBarrel: config.barrels ? matcher(config.barrels) : () => true,
     external: new Set(config.external),
+    isInert: matcher(config.inert),
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
     deadGlobs: config.deadGlobs ?? [],
     base: config.base,
@@ -270,6 +272,7 @@ const CONFIG_KEYS = new Set([
   "hermetic",
   "barrels",
   "external",
+  "inert",
   "extensions",
   "deadGlobs",
   "base",
@@ -429,6 +432,7 @@ export function checkConfig(value: unknown): Config {
     hermetic: field(value, "hermetic", isGlobs, "", globs),
     barrels: field(value, "barrels", isGlobs, "", globs),
     external: field(value, "external", isStrings, "", "a list of packages"),
+    inert: field(value, "inert", isGlobs, "", globs),
     extensions: field(value, "extensions", isStrings, "", "a list"),
     deadGlobs: deadGlobs?.map((entry: unknown, i) =>
       checkDeadGlob(entry, `deadGlobs[${i}]`),

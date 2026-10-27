@@ -69,6 +69,15 @@ export interface Config<Suite extends string = string> {
   barrels?: Globs;
   /** Packages to treat as external though no `package.json` declares them: ones a dependency installs. Any other undeclared bare specifier is unknown. */
   external?: readonly string[];
+  /**
+   * Packages no test uses except by importing them: linters, formatters,
+   * type packages and other tools CI runs on its own (`@biomejs/biome`,
+   * `knip`, `@types/*`). Globs over package names. A lockfile change selects
+   * the importers of each package it changes, and of each package that
+   * depends on one; a changed package that reaches a declared or imported
+   * package no test imports runs everything, unless that package is here.
+   */
+  inert?: Globs;
   /** Suffixes tried after a specifier, in order. */
   extensions?: readonly string[];
   /**
@@ -110,6 +119,8 @@ export interface PlanResult<Suite extends string = string> {
   suites: Record<Suite, Selection>;
   /** Why a suite runs in full. */
   reasons: string[];
+  /** A line per package a lockfile or `package.json` change changed, and that selects through its importers or nothing: `bun.lock: svelte 5.1.0 → 5.2.0`. */
+  packages: string[];
   /** The base ref. */
   base: string;
   /** The merge base of `base` and `HEAD`, which the working tree is compared with. */

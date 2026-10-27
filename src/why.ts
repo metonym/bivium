@@ -117,6 +117,8 @@ function rootCause(
 ) {
   if (from !== undefined) return "given";
   if (computed.changed.includes(rootNode)) return "changed";
+  const bumped = computed.plan.packageCauses.get(rootNode);
+  if (bumped !== undefined) return bumped;
   if (computed.barrelNames.includes(rootNode)) return "barrel name moved";
   for (const { narrower, result } of computed.narrowed) {
     if ("seeds" in result && result.seeds.includes(rootNode)) {

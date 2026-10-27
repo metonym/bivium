@@ -57,6 +57,8 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | A file's own package and its ancestors' `package.json` dependencies, and builtins | `pkg:` nodes |
 | Anything else | Unknown: the file depends on every change |
 
+A root `bun.lock` or `package-lock.json` isn't a source file: a change to one seeds the packages it changed (see [Lockfiles](#lockfiles)).
+
 A file it can't lex cleanly is read by a regex extractor instead, which over-approximates. CSS isn't scanned: generated stylesheets reach their inputs through `edges`, and a [narrower](#narrowers) can do better.
 
 ## Config
@@ -83,11 +85,26 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `hermetic` | Files whose disk reads and non-literal imports reach no file of the repository: a library's `fs` calls on its caller's paths, a test that reads only the temporary files it writes. They add no unknown |
 | `barrels` | Modules that may bind named imports. Default: every module made only of re-exports |
 | `external` | Packages a dependency installs that your code imports without declaring |
+| `inert` | Packages no test uses except by importing them: linters, formatters, type packages (`["@biomejs/biome", "knip", "@types/*"]`). A [lockfile change](#lockfiles) that only they reach selects nothing |
 | `extensions` | Suffixes tried after a specifier |
 | `deadGlobs` | Dead globs `check` allows, each `{ file, glob, reason }`, the glob as `file` spells it |
 | `narrowers` | See [Narrowers](#narrowers) |
 | `base` | The default base ref. Otherwise the upstream default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`) |
 | `cache` | The cache's directory, or `false`. Default: `node_modules/.cache/bivium`, or `.bivium/cache` |
+
+## Lockfiles
+
+A dependency bump changes a lockfile, which no file imports. When a root `bun.lock` or `package-lock.json` (v2 or v3) changes, bivium diffs it against the merge base and seeds the walk with the `pkg:` nodes of the packages whose entries changed, and of every package that depends on one, so a `svelte` bump selects what imports `svelte`, or a package built on it. A `package.json` whose only change is to dependencies the lockfile records the same way counts as those packages changing.
+
+A changed package can also be used in ways the graph can't see: a CLI a test spawns, a runner, a type package. So when a change reaches a package that a `package.json` declares, or that some file imports, and that no test imports, everything runs, with the reason (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`), unless the package is `inert`. Everything also runs for a lockfile bivium can't parse, one whose settings other than its packages changed (`overrides`, patches), and a `package.json` change the lockfile doesn't record. Other lockfiles (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) are files like any other: outside the roots, a change to one runs everything.
+
+```console
+$ bunx bivium plan
+bun.lock: @biomejs/biome 2.5.14 → 2.6.3, inert
+bun.lock: svelte 5.57.1 → 5.57.2
+unit tests: 4 files
+…
+```
 
 ## Annotations
 
@@ -101,7 +118,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 
 | Command | Does |
 |:---|:---|
-| `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files and narrower results. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
+| `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results and changed packages. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
 | `bivium why <test> [file]` | The shortest chain of edges from a changed file, or from `file`, to the test, with the line that spells each edge |
 | `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
@@ -202,7 +219,7 @@ const result = await plan({ config, base: "origin/main" });
 result.suites.unit; // { mode: "some", files: [...] }; result.suites.e2e is a type error
 ```
 
-`plan(options?)` takes `cwd`, `base`, `config` (default: the config file in `cwd`) and `cache`, and returns each suite's selection, the reasons, the base, merge base and changed files, and what each narrower returned. Given a config, the suite names carry through to the result's type. The package exports only `plan`, `defineConfig` and their types.
+`plan(options?)` takes `cwd`, `base`, `config` (default: the config file in `cwd`) and `cache`, and returns each suite's selection, the reasons, the packages a lockfile change seeded or found inert, the base, merge base and changed files, and what each narrower returned. Given a config, the suite names carry through to the result's type. The package exports only `plan`, `defineConfig` and their types.
 
 ## Compared with
 

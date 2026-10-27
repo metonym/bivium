@@ -16,6 +16,7 @@ import {
   graphFrom,
   importersOf,
 } from "./graph.ts";
+import { type PackageDiff, readPackageDiff } from "./lockfile.ts";
 import { classify, type Narrowed, type Plan, planTests } from "./plan.ts";
 import { type PackageJson, type Packages, toPackageJson } from "./resolve.ts";
 import { type Extraction, extract, formatOf, SCANNED } from "./scan.ts";
@@ -218,8 +219,9 @@ async function runNarrowers(
   graph: Graph,
   config: ResolvedConfig,
   suites: readonly string[] | undefined,
+  packages: PackageDiff | undefined,
 ): Promise<Narrowed[]> {
-  const { relevant } = classify(graph, revision.changed, config);
+  const { relevant } = classify(graph, revision.changed, config, packages);
   const wanted = config.narrowers.filter(
     (narrower) =>
       relevant.some(narrower.match) &&
@@ -277,16 +279,23 @@ export async function computePlan(
     }
     return readIfFile(join(root, file));
   };
-  const [{ files, extractions, manifests, extracted }, ts] = await Promise.all([
-    extractRevision(root, revision, cache),
-    readTsconfigs(
-      [
-        "tsconfig.json",
-        ...revision.files.filter((file) => file.endsWith("/tsconfig.json")),
-      ],
-      readTsconfig,
-    ),
-  ]);
+  const [{ files, extractions, manifests, extracted }, ts, packageDiff] =
+    await Promise.all([
+      extractRevision(root, revision, cache),
+      readTsconfigs(
+        [
+          "tsconfig.json",
+          ...revision.files.filter((file) => file.endsWith("/tsconfig.json")),
+        ],
+        readTsconfig,
+      ),
+      readPackageDiff(
+        revision.changed,
+        revision.listed,
+        (path) => showAt(root, revision.mergeBase, path),
+        (path) => readIfFile(join(root, path)),
+      ),
+    ]);
   const { tsconfigs } = ts;
   // Changed barrels need their base version; fetched while the graph builds.
   const basePending = new Map(
@@ -320,10 +329,18 @@ export async function computePlan(
   );
   const barrelNames = moved.flat();
 
-  const narrowed = await runNarrowers(root, revision, graph, config, suites);
+  const narrowed = await runNarrowers(
+    root,
+    revision,
+    graph,
+    config,
+    suites,
+    packageDiff,
+  );
   const planned = planTests(graph, revision.changed, config, {
     barrelNames,
     narrowed,
+    packages: packageDiff,
   });
   await saved;
   return {
@@ -403,6 +420,7 @@ export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   return {
     suites: computed.plan.suites,
     reasons: computed.plan.reasons,
+    packages: computed.plan.packages,
     base,
     mergeBase: computed.mergeBase,
     changed: computed.changed,
