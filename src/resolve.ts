@@ -6,6 +6,9 @@ import { QUERY } from "./syntax.ts";
 export interface PackageJson {
   name?: string;
   exports?: unknown;
+  // Subpath imports: `#name` or `#pattern/*` → targets, as `exports` spells
+  // them.
+  imports?: Record<string, unknown>;
   main?: string;
   sideEffects?: boolean | string[];
   dependencies?: Record<string, string>;
@@ -32,6 +35,7 @@ export function toPackageJson(value: unknown): PackageJson {
   const json: PackageJson = {};
   if (typeof value.name === "string") json.name = value.name;
   if (value.exports !== undefined) json.exports = value.exports;
+  if (isRecord(value.imports)) json.imports = value.imports;
   if (typeof value.main === "string") json.main = value.main;
   const { sideEffects } = value;
   if (
@@ -62,6 +66,7 @@ const BUILTINS = new Set(builtinModules);
 const RUNTIME_BUILTIN = /^(?:node:|bun(?:$|:))/;
 const JS_EXTENSION = /\.([cm]?)js(x?)$/;
 const NODE_PREFIX = /^node:/;
+const INVALID_IMPORT_TARGET = /^[./#]/;
 const DEP_FIELDS = [
   "dependencies",
   "devDependencies",
@@ -108,14 +113,13 @@ function subpathMap(exports: unknown): Record<string, unknown> | undefined {
   return bySubpath ? exports : { ".": exports };
 }
 
-// The targets `exports` maps `subpath` (`.` or `./x`) to, with Node's key
-// matching: an exact key, else the `*` pattern with the longest prefix.
-export function exportTargets(
-  exports: unknown,
+// The targets `map` (`exports` by subpath, or `imports`) gives `subpath`,
+// with Node's key matching: an exact key, else the `*` pattern with the
+// longest prefix.
+function mapTargets(
+  map: Record<string, unknown>,
   subpath: string,
 ): string[] | undefined {
-  const map = subpathMap(exports);
-  if (!map) return undefined;
   if (subpath in map && !subpath.includes("*")) return targets(map[subpath]);
   let best: { key: string; match: string } | undefined;
   for (const key of Object.keys(map)) {
@@ -141,6 +145,15 @@ export function exportTargets(
   if (!best) return undefined;
   const { match } = best;
   return targets(map[best.key]).map((target) => target.replaceAll("*", match));
+}
+
+// The targets `exports` maps `subpath` (`.` or `./x`) to.
+export function exportTargets(
+  exports: unknown,
+  subpath: string,
+): string[] | undefined {
+  const map = subpathMap(exports);
+  return map && mapTargets(map, subpath);
 }
 
 // Package directories from the deepest, for owner lookups.
@@ -253,9 +266,54 @@ export function createResolver({
     return probe(inPackage(dir, subpath.slice(2)));
   };
 
-  const resolve = (from: string, fromDir: string, specifier: string) => {
-    const bare = specifier.replace(QUERY, "");
-    if (bare === "") return;
+  // `#name` through the owning package's `imports`: every condition's
+  // target, like `exports`. A `./` target is an exact path in the package; a
+  // package target resolves as a bare specifier would, and one that can't
+  // makes the whole specifier unknown.
+  const resolveImport = (
+    from: string,
+    fromDir: string,
+    bare: string,
+  ): Resolution => {
+    const owning = owner(packages, from);
+    const imports = owning?.[1].imports;
+    const list = owning && imports && mapTargets(imports, bare);
+    if (!list) return;
+    const found: string[] = [];
+    let pkg: string | undefined;
+    for (const target of list) {
+      if (target.startsWith("./")) {
+        const path = inPackage(owning[0], posix.normalize(target));
+        if ((generated(path) || exists(path)) && !found.includes(path)) {
+          found.push(path);
+        }
+        continue;
+      }
+      // Node rejects any other relative, absolute or `#` target.
+      if (INVALID_IMPORT_TARGET.test(target)) continue;
+      const resolved = resolve(from, fromDir, target);
+      if (resolved === undefined) return;
+      if ("pkg" in resolved) pkg ??= resolved.pkg;
+      else {
+        for (const file of resolved.files) {
+          if (!found.includes(file)) found.push(file);
+        }
+      }
+    }
+    // A `pkg:` node is a leaf no change reaches: the files are the edges.
+    if (found.length > 0) return { files: found };
+    return pkg === undefined ? undefined : { pkg };
+  };
+
+  const resolve = (
+    from: string,
+    fromDir: string,
+    specifier: string,
+  ): Resolution => {
+    // A subpath import's leading `#` isn't a hash.
+    const hash = specifier.startsWith("#") ? "#" : "";
+    const bare = hash + specifier.slice(hash.length).replace(QUERY, "");
+    if (bare === "" || bare === "#") return;
     if (bare.startsWith(".")) {
       const found = probe(posix.join(fromDir, bare));
       return found.length > 0 ? { files: found } : undefined;
@@ -265,6 +323,7 @@ export function createResolver({
       const found = probe(aliased(target, bare.slice(key.length + 1)));
       if (found.length > 0) return { files: found };
     }
+    if (bare.startsWith("#")) return resolveImport(from, fromDir, bare);
     const name = packageName(bare);
     const dir = local.get(name);
     if (dir !== undefined) {
