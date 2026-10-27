@@ -68,6 +68,12 @@ const RUNTIME_BUILTIN = /^(?:node:|bun(?:$|:))/;
 const JS_EXTENSION = /\.([cm]?)js(x?)$/;
 const NODE_PREFIX = /^node:/;
 const INVALID_IMPORT_TARGET = /^[./#]/;
+// SvelteKit replaces it in `app.html` with the assets directory; the scanner
+// reads `href="%sveltekit.assets%/x"` as a relative reference.
+const SVELTEKIT_ASSETS = "./%sveltekit.assets%/";
+const SVELTE_CONFIGS = ["js", "mjs", "cjs", "ts", "mts"].map(
+  (ext) => `svelte.config.${ext}`,
+);
 const DEP_FIELDS = [
   "dependencies",
   "devDependencies",
@@ -259,6 +265,15 @@ export function createResolver({
       ([dir]) => dir === "." || from.startsWith(`${dir}/`),
     )?.[1];
 
+  // A SvelteKit project's directory: the nearest one above `dir` with a
+  // `svelte.config.*` or a `package.json`.
+  const svelteKitRoot = (dir: string): string => {
+    for (let at = dir; ; at = posix.dirname(at)) {
+      if (at === "." || packages.has(at)) return at;
+      if (SVELTE_CONFIGS.some((name) => exists(`${at}/${name}`))) return at;
+    }
+  };
+
   const inPackage = (dir: string, path: string) =>
     dir === "." ? path : posix.join(dir, path);
 
@@ -324,6 +339,12 @@ export function createResolver({
     const hash = specifier.startsWith("#") ? "#" : "";
     const bare = hash + specifier.slice(hash.length).replace(QUERY, "");
     if (bare === "" || bare === "#") return;
+    if (bare.startsWith(SVELTEKIT_ASSETS)) {
+      // The default `kit.files.assets`: `static/` in the project.
+      const rest = bare.slice(SVELTEKIT_ASSETS.length);
+      const found = probe(posix.join(svelteKitRoot(fromDir), "static", rest));
+      return found.length > 0 ? { files: found } : undefined;
+    }
     if (bare.startsWith(".")) {
       const found = probe(posix.join(fromDir, bare));
       return found.length > 0 ? { files: found } : undefined;

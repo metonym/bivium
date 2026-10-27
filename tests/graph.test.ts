@@ -272,6 +272,67 @@ describe("dependencies", () => {
     ).toEqual(["e2e/fixtures/accordion.html"]);
   });
 
+  describe("SvelteKit app.html", () => {
+    const APP_HTML = [
+      "<!doctype html>",
+      "<html>",
+      "  <head>",
+      `    <meta charset="utf-8" />`,
+      `    <link rel="icon" href="%sveltekit.assets%/favicon.png" />`,
+      `    <meta name="viewport" content="width=device-width" />`,
+      `    <script nonce="%sveltekit.nonce%">window.x = 1;</script>`,
+      "    %sveltekit.head%",
+      "  </head>",
+      `  <body data-sveltekit-preload-data="hover">`,
+      `    <div style="display: contents">%sveltekit.body%</div>`,
+      "  </body>",
+      "</html>",
+    ].join("\n");
+    // The app.html node, among `files`.
+    const appHtml = (
+      files: Record<string, string>,
+      options: Parameters<typeof graphOf>[1] = {},
+    ) =>
+      graphOf({ ...files, "examples/kit/src/app.html": APP_HTML }, options).get(
+        "examples/kit/src/app.html",
+      );
+
+    it("maps %sveltekit.assets% to the project's static/, and reads nothing else", () => {
+      expect(
+        appHtml({
+          "examples/kit/svelte.config.js": "export default {};",
+          "examples/kit/static/favicon.png": "",
+        }),
+      ).toMatchObject({
+        files: new Set(["examples/kit/static/favicon.png"]),
+        unknown: [],
+      });
+    });
+
+    it("finds the project by its package.json too", () => {
+      expect(
+        appHtml(
+          { "examples/kit/static/favicon.png": "" },
+          {
+            packages: new Map([
+              [".", {}],
+              ["examples/kit", {}],
+            ]),
+          },
+        )?.files,
+      ).toEqual(new Set(["examples/kit/static/favicon.png"]));
+    });
+
+    it("leaves a missing asset unresolved", () => {
+      expect(
+        appHtml({
+          "examples/kit/svelte.config.js": "export default {};",
+          "static/favicon.png": "",
+        })?.unknown,
+      ).toEqual([`unresolved "./%sveltekit.assets%/favicon.png"`]);
+    });
+  });
+
   it("requires a @depends-on declaration to read the disk", () => {
     expect(
       deps("tests/x.test.ts", `import { readFileSync } from "node:fs";`)
