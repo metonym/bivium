@@ -65,6 +65,9 @@ const QUOTED = /"([^"]+)"/;
 function fixFor(cause: string) {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED.exec(cause)?.[1] ?? "";
+    if (specifier.startsWith("./%sveltekit.assets%/")) {
+      return "no file in the SvelteKit project's `static/` (a custom `kit.files.assets` isn't read): fix the path, or add an `edges` entry for it";
+    }
     if (specifier.startsWith(".")) {
       return "no file at that path: fix the import, or add an `edges` entry if a build generates it";
     }

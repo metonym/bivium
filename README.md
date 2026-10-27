@@ -49,6 +49,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | `vi.mock()`, `vi.importActual()` and the rest of the family | Edges |
 | `import.meta.glob()` | Every matching file, now and later |
 | JSDoc `@type {import("x")}` and `@import` | Edges (TypeScript reads them) |
+| `%sveltekit.assets%/x` in a SvelteKit `app.html` | An edge to `static/x` in the project, the nearest directory with a `svelte.config.*` or a `package.json`. `%sveltekit.head%`, `%sveltekit.body%` and the rest aren't references |
 | `page.goto("/x.html")` in a suite with `urls` | An edge to the page |
 | `compilerOptions.paths` and `baseUrl` of the nearest `tsconfig.json`, with its relative `extends` | Edges to every target that exists, tried after `alias` and before `package.json` `exports`. A `tsconfig.json` that doesn't parse maps nothing, and `check` lists it |
 | `#name` subpath imports, through the `imports` of the importing file's own `package.json` | Edges to every condition's target that exists; an unmatched `#name` is unknown |

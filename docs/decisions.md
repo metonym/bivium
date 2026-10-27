@@ -650,3 +650,22 @@ TypeScript's `include` and `files` aren't read, nor `references` to other
 configs: the nearest file is an approximation, and when it's wrong the
 specifier is unresolved rather than mapped elsewhere, unless that
 config's own `paths` happen to match it.
+
+## 41. `%sveltekit.assets%` is the project's `static/`
+
+SvelteKit's `app.html` links its icon as
+`href="%sveltekit.assets%/favicon.png"`, which the scanner reads, like any
+relative `href`, as `./%sveltekit.assets%/favicon.png`: unresolved, so the
+file depended on every change. SvelteKit replaces the placeholder with the
+assets directory, `static/` in the project unless `kit.files.assets` says
+otherwise. The resolver maps the prefix to `static/` in the nearest
+directory above the file with a `svelte.config.*` or a `package.json`, and
+a missing file stays unresolved.
+
+The mapping is in the resolver, not the scanner, so extractions (and the
+cache) are unchanged. The other placeholders (`%sveltekit.head%`,
+`%sveltekit.body%`, `%sveltekit.nonce%`) sit in text or in attributes the
+scanner doesn't read, so they never were references; a test pins that.
+A custom `kit.files.assets` isn't read: its files are unresolved unless
+`static/` has the same name, which `check`'s hint for the cause points
+out. An `%sveltekit.env.PUBLIC_X%` in a `src` or `href` stays unresolved.

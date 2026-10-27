@@ -270,6 +270,21 @@ describe("host formats", () => {
       "./d",
     ]);
   });
+
+  it("reads SvelteKit's %sveltekit.assets% refs, and no other placeholder", () => {
+    const source = [
+      `<link rel="icon" href="%sveltekit.assets%/favicon.png" />`,
+      `<script nonce="%sveltekit.nonce%">window.x = 1;</script>`,
+      "%sveltekit.head%",
+      `<div style="display: contents">%sveltekit.body%</div>`,
+    ].join("\n");
+    const expected = {
+      imports: [{ specifier: "./%sveltekit.assets%/favicon.png" }],
+      unknown: [],
+    };
+    expect(lexed("src/app.html", source)).toMatchObject(expected);
+    expect(scanRegex("src/app.html", source)).toMatchObject(expected);
+  });
 });
 
 describe("fallback", () => {
