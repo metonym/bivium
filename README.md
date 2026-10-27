@@ -76,6 +76,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `edges` | Generated file glob → its inputs: `{ "dist/*.css": "styles/**" }` |
 | `self` | The selector's own files: a change to one runs everything. The config file is always one |
 | `importOnly` | Files only an import reaches: deleting one never orphans a suite |
+| `hermetic` | Files whose disk reads and non-literal imports reach no file of the repository: a library's `fs` calls on its caller's paths, a test that reads only the temporary files it writes. They add no unknown |
 | `barrels` | Modules that may bind named imports. Default: every module made only of re-exports |
 | `external` | Packages a dependency installs that your code imports without declaring |
 | `extensions` | Suffixes tried after a specifier |
@@ -88,7 +89,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 
 | Comment | Meaning |
 |:---|:---|
-| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one is unknown |
+| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one is unknown, unless it's `hermetic` |
 | `// @reads <glob> [glob…]` | Files read as text. Only a direct change to one counts, not a change to what it imports |
 | `// @glob-registry` | This file's `import.meta.glob` is a lookup table and adds no edges: whatever loads an entry names it itself |
 

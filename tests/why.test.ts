@@ -169,7 +169,7 @@ describe("bivium check", () => {
         `  ✗ unresolved "./gone.js"    test/u.test.js:2`,
         "    fix: no file at that path: fix the import, or add an `edges` entry if a build generates it",
         "  ✗ reads the disk without @depends-on    test/u.test.js:1",
-        "    fix: name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text",
+        "    fix: name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text; list the file in `hermetic` if it reads no file of the repository",
         "  runs on any change: test/u.test.js",
         "",
         "1 node with unknown dependencies reaches a test (at most 0): each such test runs on any change.",
