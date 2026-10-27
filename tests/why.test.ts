@@ -52,6 +52,55 @@ function repo() {
   return dir;
 }
 
+// An e2e suite whose helper opens a page: comments mention the page and the
+// module before the code that loads them.
+function e2eRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "bivium-why-e2e-"));
+  dirs.push(dir);
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "user.email", "t@example.com");
+  git(dir, "config", "user.name", "t");
+  write(dir, {
+    "bivium.config.json": JSON.stringify({
+      suites: {
+        e2e: {
+          tests: "e2e/**/*.test.ts",
+          root: "e2e",
+          urls: { "/*": "e2e/fixtures/*" },
+        },
+      },
+      roots: ["src", "e2e"],
+    }),
+    "src/a.js": "export const a = 1;",
+    "e2e/host.test.ts": `import { open } from "./helpers/host";\n`,
+    "e2e/helpers/host.ts": [
+      "/**",
+      " * Opens host.html, which mounts a fixture.",
+      " */",
+      "export async function open(page) {",
+      "  // Not `host.html?x`: the query is dropped.",
+      `  await page.goto("/host.html");`,
+      "}",
+      "",
+    ].join("\n"),
+    "e2e/fixtures/host.html": [
+      `<!-- Loads <script src="./host.ts">. -->`,
+      `<script type="module" src="./host.ts"></script>`,
+      "",
+    ].join("\n"),
+    "e2e/fixtures/host.ts": [
+      `// Like "../../src/a.js", but mounted.`,
+      `const path = "../../src/a.js";`,
+      `import "../../src/a.js";`,
+      "",
+    ].join("\n"),
+  });
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "base");
+  write(dir, { "src/a.js": "export const a = 2;" });
+  return dir;
+}
+
 async function run(args: string[]) {
   const log = jest.spyOn(console, "log").mockImplementation(() => undefined);
   try {
@@ -133,6 +182,28 @@ describe("bivium why", () => {
       dir,
     ]);
     expect(changed.output.split("\n").at(-1)).toBe("      ● given");
+  });
+
+  it("cites the call, not a comment that mentions the file", async () => {
+    const dir = e2eRepo();
+    const { output } = await run([
+      "why",
+      "e2e/host.test.ts",
+      "--base",
+      "HEAD",
+      "--cwd",
+      dir,
+    ]);
+    expect(output).toBe(
+      [
+        "e2e/host.test.ts",
+        "└─ import  e2e/helpers/host.ts    e2e/host.test.ts:1",
+        "   └─ import  e2e/fixtures/host.html    e2e/helpers/host.ts:6",
+        "      └─ import  e2e/fixtures/host.ts    e2e/fixtures/host.html:2",
+        "         └─ import  src/a.js    e2e/fixtures/host.ts:3",
+        "            ● changed",
+      ].join("\n"),
+    );
   });
 
   it("lists the reasons for a suite that runs in full", async () => {
