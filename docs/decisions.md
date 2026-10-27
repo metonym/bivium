@@ -523,3 +523,14 @@ and it's applied in `graphFrom`, not `extract`, so cached extractions
 don't depend on the config. It's a promise the graph can't check: a
 hermetic file that reads a repository file without declaring it is missed.
 The fix hints in `check` name it as the alternative to an annotation.
+
+## 37. check reaches tests the way plan does
+
+`check` lists the tests each unknown node makes run on any change by
+walking from the node as if it had changed. That also seeded the files
+that read it as text, but an unknown node isn't a change: `plan` adds it
+to every walk after the readers are seeded, so its readers only run when
+it changes. sveld's tests read fixtures with `@reads`, and the fixtures
+import files that don't exist on purpose: `check` counted 60 of them as
+reaching a test that no plan ever widened. The walk takes `readers: false`
+there.
