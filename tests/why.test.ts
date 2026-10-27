@@ -150,6 +150,52 @@ describe("bivium why", () => {
       "The unit suite runs in full:\n  package.json: outside the dependency graph",
     );
   });
+  it("shows a config `reads` edge, from a scanned file and from a leaf", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bivium-why-"));
+    dirs.push(dir);
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "t@example.com");
+    git(dir, "config", "user.name", "t");
+    write(dir, {
+      "bivium.config.json": JSON.stringify({
+        suites: {
+          unit: { tests: "test/*.test.js", root: "test" },
+          examples: { tests: "examples/*/package.json", root: "examples" },
+        },
+        roots: ["test", "examples"],
+        reads: {
+          "test/*.test.js": "test/__snapshots__/$1.test.js.snap",
+          "examples/*/package.json": "examples/$1/**",
+        },
+      }),
+      "test/x.test.js": "export {};",
+      "test/__snapshots__/x.test.js.snap": "exports[`x`] = 1;",
+      "examples/vite/package.json": "{}",
+      "examples/vite/index.html": "<h1>vite</h1>",
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    write(dir, {
+      "test/__snapshots__/x.test.js.snap": "exports[`x`] = 2;",
+      "examples/vite/index.html": "<h1>vite 2</h1>",
+    });
+    const why = (test: string) =>
+      run(["why", test, "--base", "HEAD", "--cwd", dir]);
+    expect((await why("test/x.test.js")).output).toBe(
+      [
+        "test/x.test.js",
+        "└─ reads   test/__snapshots__/x.test.js.snap    reads in the config",
+        "   ● changed",
+      ].join("\n"),
+    );
+    expect((await why("examples/vite/package.json")).output).toBe(
+      [
+        "examples/vite/package.json",
+        "└─ reads   examples/vite/index.html    reads in the config",
+        "   ● changed",
+      ].join("\n"),
+    );
+  });
 });
 
 describe("bivium check", () => {
@@ -343,6 +389,47 @@ describe("bivium check: dead globs", () => {
         at: "test/a.test.js:2",
       },
     ]);
+  });
+
+  it("reports a config key or value that matches nothing for every match", async () => {
+    const dir = globRepo("export {};\n", {
+      edges: { "src/*.js": ["src/$1.js", "gen/$1/**"] },
+      reads: {
+        "test/*.test.js": "test/__snapshots__/$1.test.js.snap",
+        "tset/*.test.js": "test/**",
+      },
+    });
+    const dead = (
+      kind: "edges" | "reads",
+      glob: string,
+      fix = "fix the path",
+    ): Report["deadGlobs"][number] => ({
+      node: "bivium.config.json",
+      kind,
+      glob,
+      problem: "matches nothing",
+      matches: 0,
+      ignored: 0,
+      examples: [],
+      fix,
+      at: "bivium.config.json:1",
+    });
+    const snapshot = dead("reads", "test/__snapshots__/$1.test.js.snap");
+    const key = dead(
+      "reads",
+      "tset/*.test.js",
+      "fix the path: no file the graph reads matches it",
+    );
+    expect(await checkJson(dir)).toEqual({
+      status: 1,
+      deadGlobs: [dead("edges", "gen/$1/**"), snapshot, key],
+      staleDeadGlobs: [],
+    });
+    // One test's snapshot keeps the glob alive for the tests without one.
+    write(dir, { "test/__snapshots__/a.test.js.snap": "" });
+    const { deadGlobs } = await checkJson(dir);
+    expect(deadGlobs).not.toContainEqual(snapshot);
+    expect(deadGlobs).toContainEqual(key);
   });
 
   it("passes an allowlisted dead glob, and fails a stale entry", async () => {

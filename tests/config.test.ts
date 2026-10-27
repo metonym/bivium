@@ -44,6 +44,19 @@ describe("checkConfig", () => {
     [{ suites: { unit: { tests: 1 } } }, "suites.unit.tests must be"],
     [{ suites: { unit: {} } }, "suite unit has no tests"],
     [{ suites: SUITES, edges: { "a/*.css": [1] } }, "edges must be"],
+    [{ suites: SUITES, reads: { "a/*.ts": 1 } }, "reads must be"],
+    [
+      { suites: SUITES, edges: { "a/*.css": ["b/**", "b/$1/$2.scss"] } },
+      `edges["a/*.css"] refers to $2 in b/$1/$2.scss, but its key has 1 wildcard`,
+    ],
+    [
+      { suites: SUITES, reads: { "a/x.ts": "b/$1.snap" } },
+      `reads["a/x.ts"] refers to $1 in b/$1.snap, but its key has 0 wildcards`,
+    ],
+    [
+      { suites: SUITES, reads: { "a/*.ts": "b/$0.snap" } },
+      `reads["a/*.ts"] refers to $0 in b/$0.snap, but captures count from $1`,
+    ],
     [
       { suites: SUITES, deadGlobs: [{ file: "a.ts", glob: "b/**" }] },
       "deadGlobs[0] needs a file, glob and reason",
@@ -51,6 +64,15 @@ describe("checkConfig", () => {
     [[], "not an object"],
   ])("rejects %j", (config, message) => {
     expect(() => checkConfig(config)).toThrow(message);
+  });
+
+  it("accepts captures a key has, and values without any", () => {
+    const config = {
+      suites: SUITES,
+      edges: { "dist/*.css": ["styles/**", "styles/$1.scss"] },
+      reads: { "test/**/*.test.ts": "test/$1__snapshots__/$2.test.ts.snap" },
+    };
+    expect(checkConfig(config)).toMatchObject(config);
   });
 });
 

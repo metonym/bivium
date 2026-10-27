@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { Computed } from "./compute.ts";
-import type { ResolvedConfig } from "./config.ts";
+import type { PathMap, ResolvedConfig } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
 import { affectedBy, type Via } from "./graph.ts";
 import { causeLine, specifierLine, textLine } from "./locate.ts";
@@ -33,7 +33,8 @@ export type Explanation =
 
 export async function sourceOf(root: string, file: string) {
   try {
-    return await readFile(join(root, file), "utf-8");
+    // A config file outside the repository is absolute.
+    return await readFile(isAbsolute(file) ? file : join(root, file), "utf-8");
   } catch {
     return;
   }
@@ -53,23 +54,34 @@ async function edgeAt(
   via: Via,
 ): Promise<string | undefined> {
   const file = fileOf(node);
+  // Whether a config `edges` or `reads` entry gives `node` this edge.
+  const configured = (maps: PathMap[]) =>
+    maps.some((map) => map.targets(node)?.some((re) => re.test(via.from)));
   const source = SCANNED.test(file) ? await sourceOf(root, file) : undefined;
   if (source === undefined) {
-    return via.kind === "glob" &&
-      config.generated.some(({ pattern }) => pattern.test(node))
-      ? "edges in the config"
-      : undefined;
+    if (via.kind === "glob" && configured(config.generated)) {
+      return "edges in the config";
+    }
+    if (via.kind === "reads" && configured(config.reads)) {
+      return "reads in the config";
+    }
+    return undefined;
   }
   const extraction = extract(formatOf(file), source);
   const at = (line: number | undefined) =>
     line === undefined ? undefined : `${file}:${line}`;
-  if (via.kind === "reads") return at(textLine(source, "@reads"));
+  const names = (globs: string[]) =>
+    globs.some((glob) => globToRegExp(glob).test(via.from));
+  if (via.kind === "reads") {
+    if (!names(extraction.reads) && configured(config.reads)) {
+      return "reads in the config";
+    }
+    return at(textLine(source, "@reads"));
+  }
   if (via.kind === "unknown") return undefined;
   if (via.kind === "glob") {
-    const declared = extraction.dependsOn.some((glob) =>
-      globToRegExp(glob).test(via.from),
-    );
-    if (declared) return at(textLine(source, "@depends-on"));
+    if (names(extraction.dependsOn)) return at(textLine(source, "@depends-on"));
+    if (configured(config.generated)) return "edges in the config";
     if (extraction.globs.length > 0)
       return at(textLine(source, "import.meta.glob"));
     return "edges in the config";

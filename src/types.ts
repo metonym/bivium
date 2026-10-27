@@ -40,8 +40,20 @@ export interface Config<Suite extends string = string> {
   ignore?: Globs;
   /** Specifier prefix → path, as the bundler aliases it: `{ "my-package": "src" }`. Tried before `package.json` `exports`. */
   alias?: Readonly<Record<string, string>>;
-  /** Generated file glob → its inputs: `{ "dist/*.css": ["styles/**"] }`. */
+  /**
+   * Generated file glob → its inputs, which it depends on transitively, as
+   * with `@depends-on`: `{ "dist/*.css": ["styles/**"] }`. In an input,
+   * `$1`, `$2`… stand for what the key's wildcards (`*`, `**`, `?`, `{…}`,
+   * numbered from the left) matched: `{ "dist/*.css": "styles/$1.scss" }`.
+   */
   edges?: Readonly<Record<string, Globs>>;
+  /**
+   * File glob → the files it reads as text, as with `@reads`: only a direct
+   * change to one of them counts, not a change to what it imports, and
+   * their unknown dependencies don't spread to it. Values take `$1`… as in
+   * `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }`.
+   */
+  reads?: Readonly<Record<string, Globs>>;
   /** The selector's own files, which can't be trusted to select themselves. The config file is always one. */
   self?: Globs;
   /** Files only an import reaches. Deleting one never orphans a suite: an importer left pointing at it doesn't resolve, so it runs anyway. */
@@ -61,7 +73,8 @@ export interface Config<Suite extends string = string> {
   extensions?: readonly string[];
   /**
    * Globs `bivium check` allows to be dead: an `@depends-on`, `@reads` or
-   * `import.meta.glob` pattern in `file`, as written there, that matches no
+   * `import.meta.glob` pattern in `file`, or an `edges` or `reads` key or
+   * value when `file` is the config's, as written there, that matches no
    * file or matches files a change to which selects nothing (ignored, and
    * not in the graph). Each needs a reason, and an entry that matches no
    * dead glob fails the check, so the list stays current.

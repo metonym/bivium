@@ -251,8 +251,13 @@ export function graphFrom(
     }
   }
   for (const [path, deps] of graph) {
-    for (const { pattern, inputs } of config.generated) {
-      if (pattern.test(path)) deps.patterns.push(...inputs);
+    for (const edge of config.generated) {
+      const inputs = edge.targets(path);
+      if (inputs) deps.patterns.push(...inputs);
+    }
+    for (const read of config.reads) {
+      const globs = read.targets(path);
+      if (globs) deps.reads.push(...globs);
     }
   }
   return graph;
@@ -334,8 +339,9 @@ export function importersOf(graph: Graph, node: string): readonly string[] {
 
 // How the walk reached a node: through an import (any edge to a file:
 // imports, pages a `goto()` opens, barrel names), a glob it depends on
-// (`import.meta.glob`, `@depends-on`, `edges`), a file it reads as text, or
-// because its dependencies are unknown, so it depends on any change.
+// (`import.meta.glob`, `@depends-on`, `edges`), a file it reads as text
+// (`@reads`, `reads`), or because its dependencies are unknown, so it
+// depends on any change.
 export interface Via {
   from: string;
   kind: "import" | "glob" | "reads" | "unknown";

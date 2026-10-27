@@ -1,6 +1,7 @@
-import { globToRegExp } from "../src/glob.ts";
+import { captureGlob, expandGlob, globToRegExp } from "../src/glob.ts";
 import { affectedBy, changedBarrelNames } from "../src/graph.ts";
 import { sorted } from "../src/sorted.ts";
+import type { Config } from "../src/types.ts";
 import { BARREL, CONFIG, deps, graphOf, REPO } from "./fixture.ts";
 
 const graph = graphOf();
@@ -13,6 +14,29 @@ describe("globToRegExp", () => {
     expect(globToRegExp("src/*.js").test("src/a/b.js")).toBe(false);
     expect(globToRegExp("src/*.{js,ts}").test("src/a.ts")).toBe(true);
     expect(globToRegExp("a.b").test("axb")).toBe(false);
+  });
+});
+
+describe("captures", () => {
+  it("captures each wildcard, `**/` with its slash, and puts it back literally", () => {
+    const { pattern, wildcards } = captureGlob("src/**/*.{ts,js}");
+    expect(wildcards).toBe(3);
+    const captures = pattern.exec("src/a/b/x.ts")?.slice(1) ?? [];
+    expect(captures).toEqual(["a/b/", "x", "ts"]);
+    const value = expandGlob("tests/$1$2.test.$3", captures);
+    expect(value.test("tests/a/b/x.test.ts")).toBe(true);
+    expect(value.test("tests/a/b/y.test.ts")).toBe(false);
+    // A captured `{a,b}` or `.` is text, not a glob.
+    const literal = expandGlob("snap/$1.snap", ["{a,b}"]);
+    expect(literal.test("snap/{a,b}.snap")).toBe(true);
+    expect(literal.test("snap/a.snap")).toBe(false);
+  });
+
+  it("widens a capture inside an alternative not taken to anything", () => {
+    const { pattern } = captureGlob("{lib/*.ts,src/**}");
+    const captures = pattern.exec("src/a/b.ts")?.slice(1) ?? [];
+    expect(captures[1]).toBeUndefined();
+    expect(expandGlob("out/$2.css", captures).test("out/x/y.css")).toBe(true);
   });
 });
 
@@ -330,6 +354,69 @@ describe("dependencies", () => {
     ]);
     expect(affectedBy(graph, ["scripts/build-css.ts"])).toContain(
       "e2e/modal.test.ts",
+    );
+  });
+});
+
+// Each example's own build is its suite's test, and an example's index.html
+// loads a bundle only its build writes, so the page is unknown.
+describe("per-match edges and reads", () => {
+  const files = {
+    ...REPO,
+    "examples/vite/package.json": "{}",
+    "examples/vite/index.html": `<script type="module" src="./build/bundle.js"></script>`,
+    "examples/vite/src/App.svelte": "<h1>vite</h1>",
+    "examples/webpack/package.json": "{}",
+    "examples/webpack/src/index.js": "export {};",
+    "tests/__snapshots__/golden.test.ts.snap": "exports[`x`] = 1;",
+    "tests/golden.test.ts": `import { uid } from "../src/utils/uid.js";`,
+    "tests/other.test.ts": "export {};",
+  };
+  const withConfig = (extra: Partial<Config>) =>
+    graphOf(files, { config: { ...CONFIG, ...extra } });
+  const edges = withConfig({
+    edges: { ...CONFIG.edges, "examples/*/package.json": "examples/$1/**" },
+  });
+  const reads = withConfig({
+    reads: {
+      "examples/*/package.json": "examples/$1/**",
+      "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap",
+    },
+  });
+
+  it("resolves an edge's captures for each file its key matches", () => {
+    expect(edges.get("examples/vite/package.json")?.patterns).toEqual([
+      globToRegExp("examples/vite/**"),
+    ]);
+    expect(edges.get("examples/webpack/package.json")?.patterns).toEqual([
+      globToRegExp("examples/webpack/**"),
+    ]);
+    // A value without captures is the same for every match.
+    expect(edges.get("css/all.css")?.patterns.map(String)).toEqual([
+      String(globToRegExp("css/**")),
+      String(globToRegExp("scripts/build-css.ts")),
+    ]);
+    const affected = affectedBy(edges, ["examples/webpack/src/index.js"]);
+    expect(affected).toContain("examples/webpack/package.json");
+    // Transitive: the example's unknown page spreads to its build.
+    expect(affected).toContain("examples/vite/package.json");
+  });
+
+  it("seeds a reader only with a direct change to a file it reads", () => {
+    expect(reads.get("tests/golden.test.ts")?.reads).toEqual([
+      globToRegExp("tests/__snapshots__/golden.test.ts.snap"),
+    ]);
+    const snapshot = affectedBy(reads, [
+      "tests/__snapshots__/golden.test.ts.snap",
+    ]);
+    expect(snapshot).toContain("tests/golden.test.ts");
+    expect(snapshot).not.toContain("tests/other.test.ts");
+    const example = affectedBy(reads, ["examples/webpack/src/index.js"]);
+    expect(example).toContain("examples/webpack/package.json");
+    // Not transitive: the vite page's unknown dependencies stay its own.
+    expect(example).not.toContain("examples/vite/package.json");
+    expect(affectedBy(reads, ["examples/vite/index.html"])).toContain(
+      "examples/vite/package.json",
     );
   });
 });
