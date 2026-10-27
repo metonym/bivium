@@ -19,6 +19,7 @@ import {
 import { classify, type Narrowed, type Plan, planTests } from "./plan.ts";
 import { type PackageJson, type Packages, toPackageJson } from "./resolve.ts";
 import { type Extraction, extract, formatOf, SCANNED } from "./scan.ts";
+import { readTsconfigs, type TsConfigs } from "./tsconfig.ts";
 import type { Config, GraphView, PlanOptions, PlanResult } from "./types.ts";
 
 function hasCode(error: unknown, codes: readonly string[]): boolean {
@@ -87,6 +88,9 @@ export interface Computed {
   barrelNames: string[];
   narrowed: Narrowed[];
   packages: Packages;
+  tsconfigs: TsConfigs;
+  // `tsconfig.json` files (or files they extend) that don't parse.
+  unparsedTsconfigs: { file: string; reason: string }[];
   // What each scanned file declares, globs as written: `check` reports a
   // dead glob by its source text, which the graph's RegExps lose.
   extractions: Map<string, Extraction>;
@@ -263,11 +267,27 @@ export async function computePlan(
     readFile(join(root, "package.json"), "utf-8").catch(() => undefined),
     ExtractionCache.open(dir),
   ]);
-  const { files, extractions, manifests, extracted } = await extractRevision(
-    root,
-    revision,
-    cache,
-  );
+  // A file an `extends` names is read only if git lists it, so that a
+  // change to it is a change (an ignored `.svelte-kit/tsconfig.json` isn't).
+  let listed: Set<string> | undefined;
+  const readTsconfig = async (file: string, extended: boolean) => {
+    if (extended) {
+      listed ??= new Set(revision.listed);
+      if (!listed.has(file)) return;
+    }
+    return readIfFile(join(root, file));
+  };
+  const [{ files, extractions, manifests, extracted }, ts] = await Promise.all([
+    extractRevision(root, revision, cache),
+    readTsconfigs(
+      [
+        "tsconfig.json",
+        ...revision.files.filter((file) => file.endsWith("/tsconfig.json")),
+      ],
+      readTsconfig,
+    ),
+  ]);
+  const { tsconfigs } = ts;
   // Changed barrels need their base version; fetched while the graph builds.
   const basePending = new Map(
     revision.changed
@@ -275,7 +295,11 @@ export async function computePlan(
       .map((file) => [file, showAt(root, revision.mergeBase, file)] as const),
   );
   const packages = collectPackages(rootJson, manifests);
-  const graph = graphFrom(files, extractions, { config, packages });
+  const graph = graphFrom(files, extractions, {
+    config,
+    packages,
+    tsconfigs,
+  });
   const saved = cache.save();
 
   const moved = await Promise.all(
@@ -285,7 +309,7 @@ export async function computePlan(
       const before = baseBarrelNames(
         file,
         await pending,
-        { config, packages },
+        { config, packages, tsconfigs },
         graph,
       );
       const names = before
@@ -310,6 +334,8 @@ export async function computePlan(
     barrelNames,
     narrowed,
     packages,
+    tsconfigs,
+    unparsedTsconfigs: ts.unparsed,
     extractions,
     listed: revision.listed,
     fallbacks: new Map(

@@ -43,6 +43,9 @@ export interface Report {
   unknown: Unknown[];
   // Files the lexer couldn't read, which the regex extractor read instead.
   fallbacks: { file: string; reason: string }[];
+  // `tsconfig.json` files, or files they extend, that don't parse: their
+  // `paths` are ignored, so what they map is unresolved.
+  unparsedTsconfigs: { file: string; reason: string }[];
   // Globs that miss changes they name, less those `deadGlobs` allows.
   deadGlobs: DeadGlob[];
   // `deadGlobs` entries that match no dead glob.
@@ -68,7 +71,7 @@ function fixFor(cause: string) {
     if (specifier.startsWith("#")) {
       return "map it in the `imports` of the file's package.json, or with `alias`";
     }
-    return "declare the package in a package.json, list it in `external` if a dependency installs it, or map it with `alias`";
+    return "declare the package in a package.json, list it in `external` if a dependency installs it, or map it with `alias` or tsconfig `paths`";
   }
   if (cause === "non-literal dynamic import") {
     return "spell the path as a string literal, load the files with `import.meta.glob` and literal patterns, or list the file in `hermetic` if it only imports paths its caller passes";
@@ -298,6 +301,7 @@ export async function check(
   return {
     unknown,
     fallbacks,
+    unparsedTsconfigs: computed.unparsedTsconfigs,
     deadGlobs: dead.filter(
       (found) => !config.deadGlobs.some((entry) => allows(entry, found)),
     ),
@@ -352,6 +356,15 @@ export function formatReport(report: Report, max: number | undefined): string {
       "Read by the regex extractor, which the lexer couldn't read:",
     );
     for (const { file, reason } of report.fallbacks) {
+      lines.push(`  ${file}: ${reason}`);
+    }
+  }
+  if (report.unparsedTsconfigs.length > 0) {
+    lines.push(
+      "",
+      "tsconfig files that don't parse, whose `paths` are ignored:",
+    );
+    for (const { file, reason } of report.unparsedTsconfigs) {
       lines.push(`  ${file}: ${reason}`);
     }
   }

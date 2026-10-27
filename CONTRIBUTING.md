@@ -23,7 +23,7 @@ bun src/cli.ts plan   # the CLI from source
 
 1. **Git.** `readRevision` (`src/git.ts`) lists the files under the roots and the changed files, with one `ls-files` call and two diffs against the merge base, and each unchanged file's blob OID.
 2. **Extraction.** For each file the scanner reads, `extract` (`src/scan.ts`) returns its raw specifiers, globs, `goto()` arguments and annotations, from the one-pass lexer (`src/lex.ts`, with `src/host.ts` for files that embed scripts), or from the regex extractor (`src/scan-regex.ts`) when the lexer can't read the file. The cache (`src/cache.ts`) stores extractions by blob OID, so only files git can't vouch for are read. Leaves are never read.
-3. **Resolution.** `graphFrom` (`src/graph.ts`) resolves every specifier (`src/resolve.ts`) to the files it can load, a `pkg:` node, or unknown, binds named imports to barrel names, and applies `edges` and `reads`. It runs every time: it depends on which files exist.
+3. **Resolution.** `graphFrom` (`src/graph.ts`) resolves every specifier (`src/resolve.ts`) to the files it can load, a `pkg:` node, or unknown, binds named imports to barrel names, and applies `edges` and `reads`. Resolution runs every time: it depends on which files exist, and on the `package.json` and `tsconfig.json` files (`src/tsconfig.ts`), which are read on every run.
 4. **Narrowers.** Each narrower whose files changed runs (`runNarrowers`), with the graph and both trees.
 5. **Selection.** `planTests` (`src/plan.ts`) classifies the changes (ignored, the selector's own, wiring, outside the roots, or seeds), walks the graph backwards from the seeds (`affectedBy`), applies the orphan rule and the narrowers, and picks each suite's tests.
 
@@ -44,7 +44,7 @@ bun src/cli.ts plan   # the CLI from source
 | File | Covers |
 |:---|:---|
 | `tests/lex.test.ts` | The lexer: regexes and division, strings, templates, comments, JSX, host formats, and the fallback, against the regex extractor |
-| `tests/resolve.test.ts` | Relative specifiers, aliases, `exports`, packages, builtins |
+| `tests/resolve.test.ts` | Relative specifiers, aliases, tsconfig `paths`, `exports`, packages, builtins |
 | `tests/barrel.test.ts` | Barrel names, `sideEffects`, and `barrels` |
 | `tests/graph.test.ts` | Graph edges and the walk |
 | `tests/plan.test.ts` | Selection on a carbon-like fixture (`tests/fixture.ts`): the orphan rule, wiring, pages, ignore, narrowed seeds |

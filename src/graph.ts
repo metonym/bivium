@@ -16,6 +16,7 @@ import {
   SCANNED,
 } from "./scan.ts";
 import { QUERY, type Scan } from "./syntax.ts";
+import type { TsConfigs } from "./tsconfig.ts";
 
 // Static file-level dependency graph. A node is a repo-relative file, a
 // barrel name (`src/index.js#Button`), or an external package (`pkg:svelte`,
@@ -41,6 +42,8 @@ export interface BuildOptions {
   config: ResolvedConfig;
   // `package.json` files by directory, the root's at `.`.
   packages: Packages;
+  // `tsconfig.json` paths by directory.
+  tsconfigs?: TsConfigs | undefined;
 }
 
 const leaf = (): FileDeps => ({
@@ -124,12 +127,17 @@ export function buildGraph(
 export function graphFrom(
   files: Iterable<string>,
   extractions: Map<string, Extraction>,
-  { config, packages }: BuildOptions,
+  { config, packages, tsconfigs }: BuildOptions,
 ): Graph {
   const graph: Graph = new Map();
   const paths = [...files];
   const exists = new Set(paths);
-  const resolve = createResolver({ files: exists, config, packages });
+  const resolve = createResolver({
+    files: exists,
+    config,
+    packages,
+    tsconfigs,
+  });
   const scans = new Map<string, Scan>();
   const barrels = new Map<string, Barrel>();
   for (const path of paths) {
@@ -284,7 +292,7 @@ export function changedBarrelNames(
 export function baseBarrelNames(
   path: string,
   source: string | undefined,
-  { config, packages }: BuildOptions,
+  { config, packages, tsconfigs }: BuildOptions,
   graph: Graph,
 ): Map<string, string[]> | undefined {
   const barrel = source === undefined ? undefined : parseBarrel(path, source);
@@ -293,6 +301,7 @@ export function baseBarrelNames(
     files: new Set(graph.keys()),
     config,
     packages,
+    tsconfigs,
   });
   const names = new Map<string, string[]>();
   for (const [name, specifier] of barrel.names) {

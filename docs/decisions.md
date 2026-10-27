@@ -602,3 +602,51 @@ node when a key has both: a `pkg:` node is a leaf no change reaches.
 `alias` is still tried first, so a config can map a `#` prefix itself. A
 `#name` no key matches, or whose targets are all missing or `null`, is
 unresolved: unknown, as Node would fail to load it.
+
+## 40. tsconfig `paths` after `alias`, before `exports`
+
+A repository whose tests import its package by name through
+`compilerOptions.paths` (`"carbon-preprocess-svelte/*": ["./src/*"]`) had
+to repeat the mapping as `alias`. bivium now reads `paths` and `baseUrl`
+from every `tsconfig.json` git lists at the root or under the roots, and a
+file uses the nearest one above it, as TypeScript and
+`vite-tsconfig-paths` pick a project for a file.
+
+- Order: relative, `alias`, `paths`, `#` imports (decision 39), the repo's
+  own packages by name, a file under `baseUrl`, builtins, declared
+  packages. `alias` is the config, so it wins. `paths` comes before
+  `exports` because that's the case it exists for: `exports` names a
+  build output (`dist/`) the tests never load from source. As with an
+  alias, a key that matches but whose targets don't exist falls through.
+  `baseUrl` lookups come after the repo's packages, which a bundler
+  resolves without reading `tsconfig.json`, and before `pkg:` nodes: an
+  edge to a file is the cautious choice when TypeScript would load one.
+- Keys match as TypeScript matches them (exact, else the longest
+  prefix). TypeScript loads the first target that exists; bivium takes
+  every one that exists, as decision 3 does for conditions.
+- Targets are relative to `baseUrl` when one is set anywhere in the
+  chain, else to the file that sets `paths`. A file's own options
+  override what it extends, and a later `extends` entry an earlier one.
+- `extends` is followed when it's a relative path (with TypeScript's
+  `.json` fallback) to a file git lists. A package (`@tsconfig/svelte`)
+  lives in `node_modules`, and an ignored file (SvelteKit's generated
+  `.svelte-kit/tsconfig.json`) changes without the diff seeing it, so
+  both are skipped: what only they would map stays unresolved, which is
+  unknown.
+- The files are JSON with comments and trailing commas, parsed without a
+  dependency. One that doesn't parse, or a chain with such a file in it,
+  maps nothing: `paths` from a parent would be a guess, and an unmapped
+  specifier is unknown. `check` lists them, without failing.
+- tsconfig files are read on every run, like `package.json`, and never
+  cached, so an edit takes effect on the next plan. A change to one is a
+  leaf the graph places nowhere, like a `package.json`: outside the roots
+  it runs everything, under a suite's `root` the orphan rule runs the
+  suite. An edge from each file that resolved through `paths` would look
+  more precise, but it would stop the orphan rule from firing, and the
+  files whose resolution an edit moved away from `paths` would have no
+  such edge.
+
+TypeScript's `include` and `files` aren't read, nor `references` to other
+configs: the nearest file is an approximation, and when it's wrong the
+specifier is unresolved rather than mapped elsewhere, unless that
+config's own `paths` happen to match it.

@@ -116,6 +116,29 @@ describe("bivium plan", () => {
     });
   });
 
+  it("resolves through tsconfig paths, skipping an extends git doesn't list", async () => {
+    const dir = repo();
+    write(dir, {
+      ".gitignore": ".svelte-kit/\n",
+      // If it were read, its baseUrl would point the paths elsewhere.
+      ".svelte-kit/tsconfig.json": `{ "compilerOptions": { "baseUrl": "elsewhere" } }`,
+      "tsconfig.json": `{
+        "extends": "./.svelte-kit/tsconfig.json",
+        // Tests import the package's source by name.
+        "compilerOptions": { "paths": { "lib/*": ["./src/*"] } },
+      }`,
+      "test/c.test.js": `import { b } from "lib/b.js";`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "paths");
+    git(dir, "branch", "-f", "base");
+    write(dir, { "src/b.js": "export const b = 3;" });
+    expect((await planJson(dir)).suites.unit).toEqual({
+      mode: "some",
+      files: ["test/b.test.js", "test/c.test.js"],
+    });
+  });
+
   it("runs everything for a change outside the roots or to its config", async () => {
     const dir = repo();
     write(dir, { "README.md": "x", "package.json": "{}" });

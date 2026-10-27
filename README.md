@@ -50,6 +50,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | `import.meta.glob()` | Every matching file, now and later |
 | JSDoc `@type {import("x")}` and `@import` | Edges (TypeScript reads them) |
 | `page.goto("/x.html")` in a suite with `urls` | An edge to the page |
+| `compilerOptions.paths` and `baseUrl` of the nearest `tsconfig.json`, with its relative `extends` | Edges to every target that exists, tried after `alias` and before `package.json` `exports`. A `tsconfig.json` that doesn't parse maps nothing, and `check` lists it |
 | `#name` subpath imports, through the `imports` of the importing file's own `package.json` | Edges to every condition's target that exists; an unmatched `#name` is unknown |
 | Named imports from a module made only of re-exports | An edge to the one file that exports each name, when the package declares `sideEffects` |
 | A file's own package and its ancestors' `package.json` dependencies, and builtins | `pkg:` nodes |
@@ -73,7 +74,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.output` | The step output `plan --github` writes. Default: `<name>-tests` |
 | `roots` | Paths the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe. A file some test reaches still counts |
-| `alias` | Specifier prefix → path, as the bundler aliases it. Tried before `package.json` `exports` |
+| `alias` | Specifier prefix → path, as the bundler aliases it. Tried before tsconfig `paths` and `package.json` `exports` |
 | `edges` | Generated file glob → its inputs, which it depends on transitively, as with `@depends-on`: `{ "dist/*.css": "styles/**" }`. In a value, `$1`, `$2`… are what the key's wildcards matched, counted from the left: `{ "examples/*/package.json": "examples/$1/**" }` |
 | `reads` | File glob → the files it reads as text, as with `@reads`: only a direct change to one counts, so their imports and unknowns don't spread to it. Values take `$1`… as in `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }` |
 | `self` | The selector's own files: a change to one runs everything. The config file is always one |
@@ -102,7 +103,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files and narrower results. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
 | `bivium why <test> [file]` | The shortest chain of edges from a changed file, or from `file`, to the test, with the line that spells each edge |
-| `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
+| `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
 
 `--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option is an error.
 
