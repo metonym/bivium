@@ -24,7 +24,7 @@ function git(dir: string, ...args: string[]) {
 
 // test/a.test.js reaches src/a.js through a barrel name; test/u.test.js
 // can't be read, so it depends on every change.
-function repo() {
+function repo(extra: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "bivium-why-"));
   dirs.push(dir);
   git(dir, "init", "-q", "-b", "main");
@@ -45,6 +45,7 @@ function repo() {
     "src/b.js": "export const b = 1;",
     "test/a.test.js": `// The barrel, by name.\nimport { a } from "lib";\n`,
     "test/u.test.js": `import { readFileSync } from "node:fs";\nimport x from "./gone.js";\n`,
+    ...extra,
   });
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "base");
@@ -114,22 +115,32 @@ async function run(args: string[]) {
   }
 }
 
+function why(dir: string, ...args: string[]) {
+  return run(["why", ...args, "--base", "HEAD", "--cwd", dir]);
+}
+
+// Kinds of chain: links as `kind at`, from `why --json`.
+async function links(dir: string, test: string) {
+  const { output } = await why(dir, test, "--json");
+  const explanation: { links: { kind: string; at?: string }[] } =
+    JSON.parse(output);
+  return explanation.links.map(({ kind, at }) => `${kind} ${at}`);
+}
+
+const UNRESOLVED_FIX =
+  "no file at that path: fix the import, or add an `edges` entry if a build generates it";
+const DISK_FIX =
+  "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text; list the file in `hermetic` if it reads no file of the repository";
+
 describe("bivium why", () => {
   it("prints the shortest chain to the change, with where each edge is", async () => {
     const dir = repo();
-    const { output } = await run([
-      "why",
-      "test/a.test.js",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
+    const { output } = await why(dir, "test/a.test.js");
     expect(output).toBe(
       [
         "test/a.test.js",
-        "└─ import  src/index.js#a    test/a.test.js:2",
-        "   └─ import  src/a.js    src/index.js:1",
+        "└─ name    src/index.js#a    test/a.test.js:2",
+        "   └─ export  src/a.js       src/index.js:1",
         "      ● changed",
       ].join("\n"),
     );
@@ -137,19 +148,12 @@ describe("bivium why", () => {
 
   it("says why a test depends on every change", async () => {
     const dir = repo();
-    const { output } = await run([
-      "why",
-      "test/u.test.js",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
+    const { output } = await why(dir, "test/u.test.js");
     expect(output).toBe(
       [
         "test/u.test.js",
         "└─ depends on every change:",
-        `   ✗ unresolved "./gone.js"    test/u.test.js:2`,
+        `   ✗ unresolved "./gone.js"                test/u.test.js:2`,
         "   ✗ reads the disk without @depends-on    test/u.test.js:1",
         "   └─ src/a.js",
         "      ● changed",
@@ -157,66 +161,212 @@ describe("bivium why", () => {
     );
   });
 
-  it("explains a given file, and says when nothing reaches the test", async () => {
-    const dir = repo();
-    const given = await run([
-      "why",
-      "test/a.test.js",
-      "src/b.js",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
-    expect(given.output).toBe(
-      "Not selected by a change to src/b.js: no chain reaches it.",
+  it("explains a given file, and says what it reaches when not this test", async () => {
+    const dir = repo({ "test/b.test.js": `import { b } from "lib";\n` });
+    expect((await why(dir, "test/a.test.js", "src/b.js")).output).toBe(
+      [
+        "Not selected by a change to src/b.js: no chain reaches it.",
+        "Its chains reach 1 test (1 unit), such as test/b.test.js.",
+      ].join("\n"),
+    );
+    expect((await why(dir, "test/b.test.js")).output).toBe(
+      "Not selected: the changed file doesn't reach it.",
+    );
+    write(dir, { "src/c.js": "export const c = 1;" });
+    expect((await why(dir, "test/b.test.js", "src/c.js")).output).toBe(
+      [
+        "Not selected by a change to src/c.js: no chain reaches it.",
+        "Its chains reach no test.",
+      ].join("\n"),
     );
     write(dir, { "test/a.test.js": `import { a } from "lib";\nexport {};\n` });
-    const changed = await run([
-      "why",
-      "test/a.test.js",
-      "src/a.js",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
-    expect(changed.output.split("\n").at(-1)).toBe("      ● given");
+    const given = await why(dir, "test/a.test.js", "src/a.js");
+    expect(given.output.split("\n").at(-1)).toBe("      ● given");
   });
 
   it("cites the call, not a comment that mentions the file", async () => {
     const dir = e2eRepo();
-    const { output } = await run([
-      "why",
-      "e2e/host.test.ts",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
+    const { output } = await why(dir, "e2e/host.test.ts");
     expect(output).toBe(
       [
         "e2e/host.test.ts",
-        "└─ import  e2e/helpers/host.ts    e2e/host.test.ts:1",
-        "   └─ import  e2e/fixtures/host.html    e2e/helpers/host.ts:6",
-        "      └─ import  e2e/fixtures/host.ts    e2e/fixtures/host.html:2",
-        "         └─ import  src/a.js    e2e/fixtures/host.ts:3",
+        "└─ import  e2e/helpers/host.ts           e2e/host.test.ts:1",
+        "   └─ goto    e2e/fixtures/host.html     e2e/helpers/host.ts:6",
+        "      └─ html    e2e/fixtures/host.ts    e2e/fixtures/host.html:2",
+        "         └─ import  src/a.js             e2e/fixtures/host.ts:3",
         "            ● changed",
       ].join("\n"),
     );
   });
 
+  it("names globs, annotations and config edges apart", async () => {
+    const dir = repo({
+      "bivium.config.json": JSON.stringify({
+        suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
+        roots: ["src", "test"],
+        edges: { "dist/out.css": "src/*.js" },
+      }),
+      "test/glob.test.js": `const all = import.meta.glob("../src/*.js");\n`,
+      "test/dep.test.js": "// @depends-on src/a.js\nexport {};\n",
+      "test/read.test.js": "export {};\n// @reads src/*.js\n",
+      "test/css.test.js": `import "../dist/out.css";\n`,
+    });
+    expect(await links(dir, "test/glob.test.js")).toEqual([
+      "glob test/glob.test.js:1",
+    ]);
+    expect(await links(dir, "test/dep.test.js")).toEqual([
+      "depends-on test/dep.test.js:1",
+    ]);
+    expect(await links(dir, "test/read.test.js")).toEqual([
+      "reads test/read.test.js:2",
+    ]);
+    expect(await links(dir, "test/css.test.js")).toEqual([
+      "import test/css.test.js:1",
+      "edges edges in the config",
+    ]);
+  });
+
+  it("says how many more changes reach the test, and --all shows them", async () => {
+    const dir = e2eRepo();
+    write(dir, {
+      "e2e/helpers/host.ts": `export async function open(page) {\n  await page.goto("/host.html");\n}\n`,
+      "e2e/fixtures/host.ts": `import "../../src/a.js";\n`,
+    });
+    expect((await why(dir, "e2e/host.test.ts")).output).toBe(
+      [
+        "e2e/host.test.ts",
+        "└─ import  e2e/helpers/host.ts    e2e/host.test.ts:1",
+        "   ● changed",
+        "+ 2 more changes reach this test: e2e/fixtures/host.ts, src/a.js (--all shows each chain)",
+      ].join("\n"),
+    );
+    const all = await why(
+      dir,
+      "e2e/host.test.ts",
+      "--all",
+      "--format",
+      "chain",
+    );
+    expect(all.output).toBe(
+      [
+        "e2e/helpers/host.ts changed",
+        "  imported by  e2e/host.test.ts:1  ← selected",
+        "+ 2 more changes reach this test: e2e/fixtures/host.ts, src/a.js",
+        "",
+        "e2e/fixtures/host.ts changed",
+        "  loaded by page  e2e/fixtures/host.html:2",
+        "  opened by       e2e/helpers/host.ts:2",
+        "  imported by     e2e/host.test.ts:1  ← selected",
+        "",
+        "src/a.js changed",
+        "  imported by     e2e/fixtures/host.ts:1",
+        "  loaded by page  e2e/fixtures/host.html:2",
+        "  opened by       e2e/helpers/host.ts:2",
+        "  imported by     e2e/host.test.ts:1  ← selected",
+      ].join("\n"),
+    );
+  });
+
+  it("prints the chain from the change with --format chain", async () => {
+    const dir = repo();
+    expect((await why(dir, "test/a.test.js", "--format", "chain")).output).toBe(
+      [
+        "src/a.js changed",
+        "  exported as a  src/index.js:1",
+        "  imported by    test/a.test.js:2  ← selected",
+      ].join("\n"),
+    );
+    const given = await why(
+      dir,
+      "test/a.test.js",
+      "src/a.js",
+      "--format",
+      "chain",
+    );
+    expect(given.output.split("\n")[0]).toBe("if src/a.js changes");
+  });
+
+  it("says why, where, and how to fix it with --format chain", async () => {
+    const dir = repo({
+      "src/tool.js": `import { readFileSync } from "node:fs";\n`,
+      "test/v.test.js": "// @depends-on src/tool.js\nexport {};\n",
+    });
+    expect((await why(dir, "test/u.test.js", "--format", "chain")).output).toBe(
+      [
+        "test/u.test.js runs on every change",
+        `  because test/u.test.js:2  unresolved "./gone.js"`,
+        `    fix: ${UNRESOLVED_FIX}`,
+        "  because test/u.test.js:1  reads the disk without @depends-on",
+        `    fix: ${DISK_FIX}`,
+      ].join("\n"),
+    );
+    expect((await why(dir, "test/v.test.js", "--format", "chain")).output).toBe(
+      [
+        "test/v.test.js runs on every change",
+        "  because src/tool.js:1  reads the disk without @depends-on",
+        `    fix: ${DISK_FIX}`,
+        "  reached via src/tool.js",
+        "    depended on by  test/v.test.js:1  ← selected",
+      ].join("\n"),
+    );
+  });
+
+  it("cites each hop's line of source with --format source", async () => {
+    const dir = e2eRepo();
+    expect(
+      (await why(dir, "e2e/host.test.ts", "--format", "source")).output,
+    ).toBe(
+      [
+        "selected: e2e/host.test.ts ← src/a.js (4 hops)",
+        "",
+        " --> e2e/host.test.ts:1  import",
+        `1 | import { open } from "./helpers/host";`,
+        " --> e2e/helpers/host.ts:6  goto",
+        `6 | await page.goto("/host.html");`,
+        " --> e2e/fixtures/host.html:2  html",
+        `2 | <script type="module" src="./host.ts"></script>`,
+        " --> e2e/fixtures/host.ts:3  import",
+        `3 | import "../../src/a.js";`,
+        " ● src/a.js: changed",
+      ].join("\n"),
+    );
+    const unknown = repo();
+    expect(
+      (await why(unknown, "test/u.test.js", "--format", "source")).output,
+    ).toBe(
+      [
+        "selected: test/u.test.js ← every change (its dependencies can't be read)",
+        "",
+        ` ✗ test/u.test.js:2  unresolved "./gone.js"`,
+        `2 | import x from "./gone.js";`,
+        `  = fix: ${UNRESOLVED_FIX}`,
+        " ✗ test/u.test.js:1  reads the disk without @depends-on",
+        `1 | import { readFileSync } from "node:fs";`,
+        `  = fix: ${DISK_FIX}`,
+      ].join("\n"),
+    );
+  });
+
+  it("rejects an unknown format", async () => {
+    const dir = repo();
+    const error = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const { status } = await why(dir, "test/a.test.js", "--format", "dot");
+      expect(status).toBe(2);
+      expect(error.mock.calls).toEqual([
+        ["bivium why: --format takes tree, chain or source"],
+      ]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("lists the reasons for a suite that runs in full", async () => {
     const dir = repo();
     write(dir, { "package.json": "{}" });
-    const { output } = await run([
-      "why",
-      "test/a.test.js",
-      "--base",
-      "HEAD",
-      "--cwd",
-      dir,
-    ]);
+    const { output } = await why(dir, "test/a.test.js");
     expect(output).toBe(
       "The unit suite runs in full:\n  package.json: outside the dependency graph",
     );
@@ -250,19 +400,19 @@ describe("bivium why", () => {
       "test/__snapshots__/x.test.js.snap": "exports[`x`] = 2;",
       "examples/vite/index.html": "<h1>vite 2</h1>",
     });
-    const why = (test: string) =>
+    const whyOf = (test: string) =>
       run(["why", test, "--base", "HEAD", "--cwd", dir]);
-    expect((await why("test/x.test.js")).output).toBe(
+    expect((await whyOf("test/x.test.js")).output).toBe(
       [
         "test/x.test.js",
-        "└─ reads   test/__snapshots__/x.test.js.snap    reads in the config",
+        "└─ reads  test/__snapshots__/x.test.js.snap    reads in the config",
         "   ● changed",
       ].join("\n"),
     );
-    expect((await why("examples/vite/package.json")).output).toBe(
+    expect((await whyOf("examples/vite/package.json")).output).toBe(
       [
         "examples/vite/package.json",
-        "└─ reads   examples/vite/index.html    reads in the config",
+        "└─ reads  examples/vite/index.html    reads in the config",
         "   ● changed",
       ].join("\n"),
     );

@@ -34,6 +34,11 @@ export interface FileDeps {
   unknown: string[];
   // For a barrel whose names bind precisely: name → files it exports.
   barrel?: Map<string, string[]>;
+  // For `why` alone, which names each edge: the `files` only a `goto()`
+  // opens, and the `patterns` an `@depends-on` or the config's `edges`
+  // spells (the rest are `import.meta.glob`s). The walk ignores them.
+  pages?: Set<string>;
+  patternKinds?: Map<RegExp, "depends-on" | "edges">;
 }
 
 export type Graph = Map<string, FileDeps>;
@@ -54,6 +59,17 @@ const leaf = (): FileDeps => ({
 });
 
 const LEADING_DOT_SLASH = /^\.\//;
+
+function addPattern(
+  deps: FileDeps,
+  pattern: RegExp,
+  kind: "glob" | "depends-on" | "edges",
+) {
+  deps.patterns.push(pattern);
+  if (kind === "glob") return;
+  deps.patternKinds ??= new Map();
+  deps.patternKinds.set(pattern, kind);
+}
 
 // The causes a `hermetic` file vouches for: what it reads or imports this way
 // is never a file of the repository.
@@ -228,7 +244,9 @@ export function graphFrom(
         ? found.unknown.filter((cause) => !HERMETIC_CAUSES.has(cause))
         : found.unknown),
     );
-    for (const glob of found.globs) deps.patterns.push(globToRegExp(glob));
+    for (const glob of found.globs) {
+      addPattern(deps, globToRegExp(glob), "glob");
+    }
 
     const suite = found.gotos.length > 0 ? gotoSuite(config, path) : undefined;
     if (suite) {
@@ -239,13 +257,20 @@ export function graphFrom(
         } else if (url !== "about:blank") {
           const page = mapUrl(suite, url.replace(QUERY, ""));
           if (page === undefined) deps.unknown.push(`goto("${url}")`);
-          else if (exists.has(page)) deps.files.add(page);
-          else deps.unknown.push(`missing fixture "${url}"`);
+          else if (exists.has(page)) {
+            if (!deps.files.has(page)) {
+              deps.pages ??= new Set();
+              deps.pages.add(page);
+            }
+            deps.files.add(page);
+          } else deps.unknown.push(`missing fixture "${url}"`);
         }
       }
     }
 
-    for (const glob of found.dependsOn) deps.patterns.push(globToRegExp(glob));
+    for (const glob of found.dependsOn) {
+      addPattern(deps, globToRegExp(glob), "depends-on");
+    }
     for (const glob of found.reads) deps.reads.push(globToRegExp(glob));
     const names = named.get(path);
     if (names) deps.barrel = names;
@@ -274,7 +299,8 @@ export function graphFrom(
   for (const [path, deps] of graph) {
     for (const edge of config.generated) {
       const inputs = edge.targets(path);
-      if (inputs) deps.patterns.push(...inputs);
+      if (!inputs) continue;
+      for (const input of inputs) addPattern(deps, input, "edges");
     }
     for (const read of config.reads) {
       const globs = read.targets(path);
@@ -326,7 +352,7 @@ export function baseBarrelNames(
 
 interface ReverseIndex {
   dependents: Map<string, string[]>;
-  globbers: [string, RegExp[]][];
+  globbers: [string, FileDeps][];
   readers: [string, RegExp[]][];
   unknown: string[];
 }
@@ -347,7 +373,7 @@ function reverseIndex(graph: Graph): ReverseIndex {
       const list = index.dependents.get(file);
       list ? list.push(path) : index.dependents.set(file, [path]);
     }
-    if (deps.patterns.length > 0) index.globbers.push([path, deps.patterns]);
+    if (deps.patterns.length > 0) index.globbers.push([path, deps]);
     if (deps.reads.length > 0) index.readers.push([path, deps.reads]);
     if (deps.unknown.length > 0) index.unknown.push(path);
   }
@@ -359,14 +385,35 @@ export function importersOf(graph: Graph, node: string): readonly string[] {
   return reverseIndex(graph).dependents.get(node) ?? [];
 }
 
-// How the walk reached a node: through an import (any edge to a file:
-// imports, pages a `goto()` opens, barrel names), a glob it depends on
-// (`import.meta.glob`, `@depends-on`, `edges`), a file it reads as text
-// (`@reads`, `reads`), or because its dependencies are unknown, so it
-// depends on any change.
+// How the walk reached a node, by what spells the edge: an import, a page a
+// `goto()` opens, a module an HTML page loads (`script[src]`, `link[href]`,
+// `iframe[src]` or an inline script's import), a barrel name a named import
+// binds (`name`) and the file that exports it (`export`), an
+// `import.meta.glob`, an `@depends-on`, the config's `edges`, a file it
+// reads as text (`@reads` or the config's `reads`), or its unknown
+// dependencies, so it depends on any change. Only `why` reads the kind:
+// every kind is followed the same way.
 export interface Via {
   from: string;
-  kind: "import" | "glob" | "reads" | "unknown";
+  kind:
+    | "import"
+    | "goto"
+    | "html"
+    | "name"
+    | "export"
+    | "glob"
+    | "depends-on"
+    | "edges"
+    | "reads"
+    | "unknown";
+}
+
+// What spells the edge from `dependent` to `node`, one of its `files`.
+function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
+  if (dependent.includes("#")) return "export";
+  if (graph.get(dependent)?.pages?.has(node)) return "goto";
+  if (node.includes("#")) return "name";
+  return dependent.endsWith(".html") ? "html" : "import";
 }
 
 interface Walk {
@@ -419,12 +466,22 @@ export function affectedBy(
   for (let at = 0; at < queue.length; at++) {
     const path = queue[at];
     for (const dependent of dependents.get(path) ?? []) {
-      visit(dependent, { from: path, kind: "import" });
+      visit(
+        dependent,
+        parents && { from: path, kind: fileKind(graph, dependent, path) },
+      );
     }
-    for (const [globber, patterns] of globbers) {
-      if (!affected.has(globber) && patterns.some((re) => re.test(path))) {
-        visit(globber, { from: path, kind: "glob" });
-      }
+    for (const [globber, deps] of globbers) {
+      if (affected.has(globber)) continue;
+      const pattern = deps.patterns.find((re) => re.test(path));
+      if (pattern === undefined) continue;
+      visit(
+        globber,
+        parents && {
+          from: path,
+          kind: deps.patternKinds?.get(pattern) ?? "glob",
+        },
+      );
     }
   }
   return affected;

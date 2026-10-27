@@ -1,5 +1,5 @@
 import { captureGlob, expandGlob, globToRegExp } from "../src/glob.ts";
-import { affectedBy, changedBarrelNames } from "../src/graph.ts";
+import { affectedBy, changedBarrelNames, type Via } from "../src/graph.ts";
 import { sorted } from "../src/sorted.ts";
 import type { Config } from "../src/types.ts";
 import { BARREL, CONFIG, deps, graphOf, REPO } from "./fixture.ts";
@@ -498,6 +498,26 @@ describe("affectedBy", () => {
         "tests/css/unknown.test.ts",
       ),
     ).toBe(false);
+  });
+
+  it("records what spells each edge, and selects the same either way", () => {
+    const seeds = ["css/_button.scss", "src/Accordion/Accordion.svelte"];
+    const parents = new Map<string, Via>();
+    expect(sorted(affectedBy(graph, seeds, { parents }))).toEqual(
+      sorted(affectedBy(graph, seeds)),
+    );
+    const kinds = Object.fromEntries(
+      [...parents].map(([node, { kind, from }]) => [node, `${kind} ${from}`]),
+    );
+    expect(kinds).toMatchObject({
+      "tests/css/button.test.ts": "depends-on css/_button.scss",
+      "css/all.css": "edges css/_button.scss",
+      "e2e/fixtures/mount.ts": "import css/all.css",
+      "src/index.js#Accordion": "export src/Accordion/Accordion.svelte",
+      "e2e/fixtures/AccordionFixture.svelte": "name src/index.js#Accordion",
+      "e2e/fixtures/accordion.html": "html e2e/fixtures/accordion.ts",
+      "e2e/accordion.test.ts": "goto e2e/fixtures/accordion.html",
+    });
   });
 });
 

@@ -2,10 +2,9 @@ import type { Computed } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
 import { affectedBy } from "./graph.ts";
-import { annotationLine, specifierLine } from "./locate.ts";
+import { annotationLine, causesOf, sourceOf, specifierLine } from "./locate.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { causesOf, sourceOf } from "./why.ts";
 
 interface Unknown {
   node: string;
@@ -62,7 +61,8 @@ const TAGS: Record<GlobKind, string> = {
 
 const QUOTED = /"([^"]+)"/;
 
-function fixFor(cause: string) {
+/** How to make one of `check`'s unknown causes known. */
+export function fixFor(cause: string) {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED.exec(cause)?.[1] ?? "";
     if (specifier.startsWith("./%sveltekit.assets%/")) {
@@ -279,10 +279,11 @@ export async function check(
     nodes.map(
       async (node): Promise<Unknown> => ({
         node,
-        causes: (await causesOf(root, computed, node)).map((cause) => ({
-          ...cause,
-          fix: fixFor(cause.cause),
-        })),
+        causes: (await causesOf(root, computed, node)).map(({ cause, at }) =>
+          at === undefined
+            ? { cause, fix: fixFor(cause) }
+            : { cause, at, fix: fixFor(cause) },
+        ),
         tests: sorted(
           [
             ...affectedBy(computed.graph, [node], {
