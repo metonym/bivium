@@ -4,6 +4,7 @@
     "src/{index,cli}.ts",
     "scripts/*.ts",
     "bench/*.bench.ts",
+    "bench/phases.ts",
     "eval/**/*.ts"
   ],
   "project": [
