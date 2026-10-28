@@ -50,7 +50,6 @@ const FLAGS: Record<string, readonly string[]> = {
   why: [...COMMON, "--base", "--json", "--format", "--all"],
   check: [...COMMON, "--base", "--max-unknown", "--json"],
 };
-// Positional arguments each command takes at most.
 const POSITIONAL: Record<string, number> = {
   plan: 1,
   run: 1,

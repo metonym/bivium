@@ -50,7 +50,6 @@ type Explanation =
       kind: "unselected";
       suite: string;
       from?: string;
-      // How many files changed against the base.
       changed: number;
       // For a given file: how many tests of each suite its chains reach,
       // and one of them, from this suite if it can be.
