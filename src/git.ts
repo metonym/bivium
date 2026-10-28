@@ -60,9 +60,11 @@ const INDEX_ENTRY = /^(\S) (\d{6}) ([0-9a-f]+) (\d)\t(.*)$/;
 
 // The files under `roots` and the files changed since the merge base of
 // `base` and HEAD, from concurrent git calls. `--merge-base` diffs the
-// working tree without waiting for the merge base. `blobs` adds a diff of
-// the index, so that a staged change the working tree reverted can't pass
-// a stale OID off as the file's content.
+// working tree without waiting for the merge base. A diff of the index
+// runs too, cached or not: without it a staged change the working tree
+// reverted could pass a stale OID off as the file's content, and a staged
+// new file deleted from disk would look present. `blobs` only adds the
+// OIDs.
 export async function readRevision(
   cwd: string,
   base: string,
@@ -76,7 +78,7 @@ export async function readRevision(
     gitOrThrow(cwd, "ls-files", "-s", "-v", "-o", "--exclude-standard"),
     gitOrThrow(cwd, "merge-base", base, "HEAD").then((out) => out.trim()),
     gitOrThrow(cwd, "diff", ...diffArgs),
-    blobs ? gitOrThrow(cwd, "diff", "--cached", ...diffArgs) : "",
+    gitOrThrow(cwd, "diff", "--cached", ...diffArgs),
   ]);
   const entries = lines(listing);
   const untracked: string[] = [];

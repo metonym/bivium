@@ -217,6 +217,17 @@ describe("computePlan with the cache", () => {
   const edges = (computed: Awaited<ReturnType<typeof plan>>, file: string) =>
     sorted(computed.graph.get(file)?.files ?? []);
 
+  it("leaves out a staged new file deleted from disk, cached or not", async () => {
+    const dir = repo();
+    write(dir, { "test/data.txt": "fixture" });
+    git(dir, "add", "test/data.txt");
+    rmSync(join(dir, "test/data.txt"));
+    const cached = await plan(dir);
+    const uncached = await computePlan(dir, "base", config, { cache: false });
+    expect(cached.graph.has("test/data.txt")).toBe(false);
+    expect(uncached.graph.has("test/data.txt")).toBe(false);
+  });
+
   it("reads every file once, then only what git can't vouch for", async () => {
     const dir = repo();
     expect((await plan(dir)).extracted).toEqual({ cached: 0, read: 5 });
