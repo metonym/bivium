@@ -41,6 +41,11 @@ describe("regex literals and division", () => {
       "division after a property named like a keyword",
       `const n = x.return / 2 / y;\nimport "./real";`,
     ],
+    ["a regex after typeof", `const t = typeof /'/;\nimport "./real";`],
+    [
+      "a regex after a keyword and !",
+      `function f() { return !/'/.test(s); }\nimport "./real";`,
+    ],
   ])("%s", (_name, source) => {
     expect(lexed("a.ts", source).imports.map((ref) => ref.specifier)).toEqual([
       "./real",
@@ -160,6 +165,20 @@ describe("module syntax", () => {
     ]);
   });
 
+  it("reads each keyword, not words of its length and first letter", () => {
+    const source = [
+      `const va = ignore("./no1"), Bus = extend("./no2");`,
+      `gate("./no3"); resolve("./no4"); x.import("./no5"); goto("/no.html");`,
+      `await page.goto("/yes.html");`,
+      `const p = x.require("./p");`,
+      `const data = Bun.file("data.json");`,
+    ].join("\n");
+    const result = lexed("a.ts", source, true);
+    expect(result.imports).toEqual([{ specifier: "./p" }]);
+    expect(result.gotos).toEqual([`"/yes.html"`]);
+    expect(result.unknown).toEqual(["reads the disk without @depends-on"]);
+  });
+
   it("flags a dynamic path built at runtime", () => {
     expect(lexed("a.ts", `await import("./a" + b);`).unknown).toEqual([
       "non-literal dynamic import",
@@ -205,6 +224,14 @@ describe("JSX", () => {
     expect(
       specifiers("a.tsx", `const f = <T,>(x: T) => x;\nimport "./real";`),
     ).toEqual(["./real"]);
+  });
+
+  it("reads an element after a keyword, and a comparison after a value", () => {
+    const source = `function f(a, b) {\n  if (a <b) return "'";\n  return <p>it's {import("./real")}</p>;\n}\nimport "./also";`;
+    expect(lexed("a.jsx", source).imports.map((ref) => ref.specifier)).toEqual([
+      "./real",
+      "./also",
+    ]);
   });
 
   it("doesn't take a shift for an element", () => {
