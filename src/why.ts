@@ -44,13 +44,12 @@ interface Chain {
   unknown: Cause[];
 }
 
-export type Explanation =
+type Explanation =
   | { kind: "full"; suite: string; reasons: string[] }
   | {
       kind: "unselected";
       suite: string;
       from?: string;
-      // How many files changed against the base.
       changed: number;
       // For a given file: how many tests of each suite its chains reach,
       // and one of them, from this suite if it can be.
@@ -387,7 +386,7 @@ export async function explain(
   };
 }
 
-export type Format = "tree" | "chain" | "source";
+type Format = "tree" | "chain" | "source";
 
 const FORMATS: readonly Format[] = ["tree", "chain", "source"];
 

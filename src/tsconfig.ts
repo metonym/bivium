@@ -85,7 +85,7 @@ function extendsPath(file: string, target: string): string | undefined {
   return path.startsWith("../") || path === ".." ? undefined : path;
 }
 
-export interface ReadTsconfigs {
+interface ReadTsconfigs {
   tsconfigs: TsConfigs;
   // Files that don't parse, whose configs then have no `paths`.
   unparsed: { file: string; reason: string }[];

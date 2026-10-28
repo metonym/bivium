@@ -43,7 +43,7 @@ export interface FileDeps {
 
 export type Graph = Map<string, FileDeps>;
 
-export interface BuildOptions {
+interface BuildOptions {
   config: ResolvedConfig;
   // `package.json` files by directory, the root's at `.`.
   packages: Packages;

@@ -212,7 +212,6 @@ interface PackageChange {
   name: string;
   // `bun.lock: svelte 5.1.0 → 5.2.0`.
   detail: string;
-  // The changed file it comes from.
   file: string;
 }
 
@@ -413,7 +412,7 @@ export async function readPackageDiff(
   return diff;
 }
 
-export interface PackageSeeds {
+interface PackageSeeds {
   // `pkg:` node → the change it stands for, for `why`.
   seeds: Map<string, string>;
   // A line per changed package that selects through its importers, or that
