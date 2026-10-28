@@ -212,7 +212,6 @@ interface PackageChange {
   name: string;
   // `bun.lock: svelte 5.1.0 → 5.2.0`.
   detail: string;
-  // The changed file it comes from.
   file: string;
 }
 

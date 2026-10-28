@@ -207,7 +207,6 @@ export function createResolver({
   packages,
   tsconfigs = new Map(),
 }: {
-  // The repo-relative files in the graph.
   files: ReadonlySet<string>;
   config: ResolvedConfig;
   packages: Packages;
@@ -382,7 +381,6 @@ export function createResolver({
     return pkg === undefined ? undefined : { pkg };
   };
 
-  // A specifier that starts with `.`, from a file in `fromDir`.
   const resolveRelative = (fromDir: string, bare: string): Resolution => {
     if (bare.startsWith(SVELTEKIT_ASSETS)) {
       // The default `kit.files.assets`: `static/` in the project.

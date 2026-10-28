@@ -11,7 +11,6 @@ export interface Plan {
   suites: Record<string, Selection>;
   // Why a suite falls back to a full run.
   reasons: string[];
-  // The suites forced to run in full, by a reason.
   full: string[];
   // What a lockfile or `package.json` change seeded or left out, a line per
   // changed package.
@@ -63,7 +62,6 @@ interface Changes {
   // subject to the orphan rule: the packages it changed are how it's wired.
   packageFiles: string[];
   reasons: string[];
-  // Suites that run in full.
   full: Set<string>;
 }
 

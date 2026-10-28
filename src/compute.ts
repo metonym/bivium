@@ -90,7 +90,6 @@ export interface Computed {
   narrowed: Narrowed[];
   packages: Packages;
   tsconfigs: TsConfigs;
-  // `tsconfig.json` files (or files they extend) that don't parse.
   unparsedTsconfigs: { file: string; reason: string }[];
   // What each scanned file declares, globs as written: `check` reports a
   // dead glob by its source text, which the graph's RegExps lose.
@@ -99,7 +98,6 @@ export interface Computed {
   listed: string[];
   // Files the lexer couldn't read, which the regex extractor read instead.
   fallbacks: Map<string, string>;
-  // How the scanned files were read: from the cache, or from disk.
   extracted: { cached: number; read: number };
 }
 
