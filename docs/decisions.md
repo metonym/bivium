@@ -265,7 +265,9 @@ entry's OID is the working-tree content only when the file is in neither
 diff against the merge base: not the working-tree diff (which bivium runs
 anyway for `changed`) and not the index diff (`diff --cached
 --merge-base`, the one extra git call). Without the second, a change staged
-and then reverted on disk would pass the staged blob off as the file. The
+and then reverted on disk would pass the staged blob off as the file. It
+runs without the cache too: there a staged new file deleted from disk
+would otherwise look present. The
 entry must also be stage 0, a regular file (not a symlink or submodule),
 and tagged `H` by `-v` (not skip-worktree or assume-unchanged, whose
 working tree git doesn't track).
@@ -336,8 +338,10 @@ files of the whole repo in one walk; tracked files are filtered to the
 roots in code. Before, `ls-files -co -- <roots>` and `ls-files --others`
 each walked the working tree, and the untracked walk is the slowest git
 call (27–49 ms of a 36–49 ms git stage under load 8). Git is now most of a
-warm plan; `core.untrackedCache` or an fsmonitor would cut it, but those
-are the repository's settings.
+warm plan. `core.untrackedCache` doesn't help: `ls-files` doesn't use it
+(git 2.50, on a carbon clone: 31 ms with it and 31 without, where `git
+status` drops to 24), and with a warm fsmonitor as well it took 39–41 ms
+against 32–35.
 
 ## 25. The resolver looks probe bases up
 
