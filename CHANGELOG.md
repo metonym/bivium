@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.1 — 2026-10-28
+
+**Performance**
+
+- `git merge-base` runs only when something needs the commit:
+  `plan()`, `plan --json`, or a narrower whose files changed. Base
+  versions of changed files are read by the blob ID the diff names.
+  Git's CPU per plan drops 21 to 24% on carbon-components-svelte and
+  sveld.
+- A bare specifier is resolved once per owning `package.json` and
+  nearest `tsconfig.json`, and probing checks only matching extensions:
+  13 to 30% fewer instructions building the graph on real
+  repositories.
+- The lexer's first pass in a fresh process is 23% faster on Bun and
+  32% on Node, with identical extractions.
+
+**Fixes**
+
+- Without the cache, a file staged as new and then deleted from disk
+  no longer counts as present.
+
+**Docs**
+
+- The CI example clones with `filter: blob:none`: on
+  carbon-components-svelte the checkout went from 6.3 s to 3.8 s.
+
 ## 0.2.0 — 2026-10-27
 
 **Breaking changes**
