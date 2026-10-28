@@ -55,7 +55,7 @@ interface Narrowing {
   seeds: readonly string[];
 }
 
-export interface Changes {
+interface Changes {
   // Changed files the graph places: the walk's seeds.
   relevant: string[];
   // Changed lockfiles and `package.json` files whose package diff stands in

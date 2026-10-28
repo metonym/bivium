@@ -450,7 +450,7 @@ const CONFIG_FILES = [
   "bivium.config.json",
 ];
 
-export interface LoadedConfig {
+interface LoadedConfig {
   config: ResolvedConfig;
   // Repo-relative when it's inside the repo, as changed files are.
   file: string;

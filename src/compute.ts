@@ -103,7 +103,7 @@ export interface Computed {
   extracted: { cached: number; read: number };
 }
 
-export interface ComputeOptions {
+interface ComputeOptions {
   // `false` for none, a directory, or (the default) the config's `cache`,
   // else `node_modules/.cache/bivium`.
   cache?: boolean | string;
@@ -383,7 +383,7 @@ export async function computePlan(
   };
 }
 
-export interface Prepared {
+interface Prepared {
   root: string;
   base: string;
   config: ResolvedConfig;
