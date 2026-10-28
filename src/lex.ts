@@ -382,6 +382,23 @@ function isExpressionKeyword(start: number, stop: number) {
   return isKeyword(EXPRESSION_KEYWORDS, start, stop);
 }
 
+// Whether a value ends at the previous token, so `/` divides, `!` is a
+// non-null assertion and `<` compares. The three ask through this one call
+// so that its branches are taken early in a run (see `KEYWORD_SHAPE`).
+function valueEnded(
+  last: number,
+  wordStart: number,
+  wordEnd: number,
+  wordIsProperty: boolean,
+) {
+  return (
+    last === T_OPERAND ||
+    last === T_CLOSE_PAREN ||
+    (last === T_IDENT &&
+      (wordIsProperty || !isExpressionKeyword(wordStart, wordEnd)))
+  );
+}
+
 function isParenKeyword(start: number, stop: number) {
   return isKeyword(PAREN_KEYWORDS, start, stop);
 }
@@ -392,6 +409,40 @@ function isBlockKeyword(start: number, stop: number) {
 
 function isWordAt(start: number, stop: number, word: string) {
   return stop - start === word.length && src.startsWith(word, start);
+}
+
+// Words with a handler keyword's length and first letter: `vi`, `Bun`,
+// `goto`, `import`, `export`, `require`. They all reach the handlers
+// through one call. The JIT compiles the main loop early in a run, and a
+// branch it hasn't seen taken by then drops the loop back to a slower tier
+// when it is, until it recompiles; rare keywords each had their own.
+const KEYWORD_SHAPE = new Uint8Array(8 << 7);
+for (const word of ["vi", "Bun", "goto", "import", "export", "require"]) {
+  KEYWORD_SHAPE[(word.length << 7) | word.charCodeAt(0)] = 1;
+}
+
+// The word `src[i, j)`, starting with `c`, may be a handler's keyword.
+function keyword(c: number, i: number, j: number, property: boolean) {
+  switch (j - i) {
+    case 2:
+      if (src.charCodeAt(i + 1) === 105) vi(j);
+      break;
+    case 3:
+      if (src.startsWith("Bun", i)) bun(j);
+      break;
+    case 4:
+      if (property && src.startsWith("goto", i)) goto(j);
+      break;
+    case 6:
+      if (!property) {
+        if (c === 105 && src.startsWith("import", i)) importAt(j);
+        else if (c === 101 && src.startsWith("export", i)) exportAt(j);
+      }
+      break;
+    case 7:
+      if (src.startsWith("require", i)) requireAt(j, property);
+      break;
+  }
 }
 
 // The main loop. Lexes code from `start` to `end`; with `brace`, stops after the
@@ -417,27 +468,8 @@ function code(start: number, brace: boolean): number {
         j++;
       }
       const property = last === T_DOT;
-      switch (j - i) {
-        case 2:
-          if (c === 118 && src.charCodeAt(i + 1) === 105) vi(j);
-          break;
-        case 3:
-          if (c === 66 && src.startsWith("Bun", i)) bun(j);
-          break;
-        case 4:
-          if (c === 103 && property && src.startsWith("goto", i)) goto(j);
-          break;
-        case 6:
-          if (!property) {
-            if (c === 105 && src.startsWith("import", i)) importAt(j);
-            else if (c === 101 && src.startsWith("export", i)) exportAt(j);
-          }
-          break;
-        case 7:
-          if (c === 114 && src.startsWith("require", i)) {
-            requireAt(j, property);
-          }
-          break;
+      if (c < 128 && j - i < 8 && KEYWORD_SHAPE[((j - i) << 7) | c] !== 0) {
+        keyword(c, i, j, property);
       }
       last = T_IDENT;
       wordStart = i;
@@ -466,12 +498,7 @@ function code(start: number, brace: boolean): number {
           if (e === -1 || e + 2 > end) fail("unterminated comment", i);
           comment(i, e + 2, true);
           i = e + 2;
-        } else if (
-          last === T_OPERAND ||
-          last === T_CLOSE_PAREN ||
-          (last === T_IDENT &&
-            (wordIsProperty || !isExpressionKeyword(wordStart, wordEnd)))
-        ) {
+        } else if (valueEnded(last, wordStart, wordEnd, wordIsProperty)) {
           i++;
           last = T_PUNCT;
         } else {
@@ -607,10 +634,7 @@ function code(start: number, brace: boolean): number {
       case 33:
         // A TypeScript non-null assertion ends a value: `a! / b`.
         last =
-          (last === T_OPERAND ||
-            (last === T_IDENT &&
-              (wordIsProperty || !isExpressionKeyword(wordStart, wordEnd))) ||
-            last === T_CLOSE_PAREN) &&
+          valueEnded(last, wordStart, wordEnd, wordIsProperty) &&
           src.charCodeAt(i + 1) !== 61
             ? T_OPERAND
             : T_PUNCT;
@@ -622,13 +646,9 @@ function code(start: number, brace: boolean): number {
           last = T_PUNCT;
           i += 2;
         } else if (
+          // Asked before the dialect, so TypeScript files take this branch.
+          !valueEnded(last, wordStart, wordEnd, wordIsProperty) &&
           dialect.jsx &&
-          !(
-            last === T_OPERAND ||
-            last === T_CLOSE_PAREN ||
-            (last === T_IDENT &&
-              (wordIsProperty || !isExpressionKeyword(wordStart, wordEnd)))
-          ) &&
           isJsxStart(i)
         ) {
           i = jsxElement(i);
