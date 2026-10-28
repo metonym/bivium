@@ -7,7 +7,7 @@
     "defaultBranch": "master"
   },
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/.context"]
+    "includes": ["**", "!!**/dist", "!!**/.context", "!!**/.ostia"]
   },
   "formatter": {
     "indentStyle": "space"
