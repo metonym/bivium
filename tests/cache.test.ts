@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import { dirname, join } from "node:path";
 import { cacheDir, ExtractionCache, SCANNER_VERSION } from "../src/cache.ts";
 import { computePlan } from "../src/compute.ts";
 import { resolveConfig } from "../src/config.ts";
+import { readRevision } from "../src/git.ts";
 import { extract } from "../src/scan.ts";
 import { sorted } from "../src/sorted.ts";
 
@@ -306,5 +308,104 @@ describe("computePlan with the cache", () => {
     const computed = await plan(dir, "HEAD");
     expect(computed.graph.has("test/data.txt")).toBe(false);
     expect(computed.graph.has("test/helper.js")).toBe(false);
+  });
+});
+
+describe("readRevision", () => {
+  const ORIGINAL = "export const x = 0;";
+  const EDIT = "export const x = 1;";
+  const names = ["a", "b", "c", "d", "e", "f", "s", "u", "w"];
+
+  /**
+   * A merge base with `src/<name>.js` for each name, a base branch that
+   * moved on from it, and a branch with one of each kind of change.
+   */
+  function repo() {
+    const dir = temp("bivium-git-");
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "t@example.com");
+    git(dir, "config", "user.name", "t");
+    write(
+      dir,
+      Object.fromEntries(names.map((name) => [`src/${name}.js`, ORIGINAL])),
+    );
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "fork");
+    const fork = git(dir, "rev-parse", "HEAD");
+    git(dir, "checkout", "-q", "-b", "base");
+    write(dir, { "src/c.js": EDIT, "src/g.js": EDIT });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base moves on");
+    git(dir, "checkout", "-q", "main");
+    // Committed: an edit, a deletion and a new file.
+    write(dir, { "src/a.js": EDIT, "src/n.js": EDIT });
+    rmSync(join(dir, "src/e.js"));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "edits");
+    // Staged, then reverted in the working tree.
+    write(dir, { "src/b.js": EDIT });
+    git(dir, "add", "src/b.js");
+    write(dir, { "src/b.js": ORIGINAL });
+    // Staged and kept; edited and not staged; untracked.
+    write(dir, { "src/s.js": EDIT, "src/f.js": EDIT, "src/h.js": EDIT });
+    git(dir, "add", "src/s.js");
+    // Staged as new, then deleted from the working tree.
+    write(dir, { "src/x.js": EDIT });
+    git(dir, "add", "src/x.js");
+    rmSync(join(dir, "src/x.js"));
+    // Rewritten with the same content: only its stat changed.
+    write(dir, { "src/d.js": ORIGINAL });
+    utimesSync(join(dir, "src/d.js"), new Date(), new Date(Date.now() + 5e3));
+    // Flags under which git doesn't check the working tree.
+    git(dir, "update-index", "--assume-unchanged", "src/u.js");
+    git(dir, "update-index", "--skip-worktree", "src/w.js");
+    return { dir, fork };
+  }
+
+  it("vouches only for files unchanged in the index and the working tree", async () => {
+    const { dir, fork } = repo();
+    const revision = await readRevision(dir, "base", ["src"], { blobs: true });
+    expect(sorted(revision.changed)).toEqual([
+      "src/a.js",
+      "src/e.js",
+      "src/f.js",
+      "src/h.js",
+      "src/n.js",
+      "src/s.js",
+    ]);
+    expect(revision.files).toEqual(
+      sorted(
+        [...names.filter((name) => name !== "e"), "h", "n", "x"].map(
+          (name) => `src/${name}.js`,
+        ),
+      ),
+    );
+    const vouched = ["src/c.js", "src/d.js"];
+    expect(sorted(revision.blobs.keys())).toEqual(vouched);
+    for (const file of vouched) {
+      expect(revision.blobs.get(file)).toBe(git(dir, "rev-parse", `:${file}`));
+    }
+    expect(sorted(revision.present)).toEqual(vouched);
+    expect(await revision.mergeBase()).toBe(fork);
+
+    // Without OIDs the same files are vouched for: the index diff runs
+    // either way, so a reverted staged change is read, not trusted.
+    const plain = await readRevision(dir, "base", ["src"]);
+    expect(plain.changed).toEqual(revision.changed);
+    expect(plain.blobs.size).toBe(0);
+    expect(sorted(plain.present)).toEqual(vouched);
+  });
+
+  it("reads each file as the merge base had it", async () => {
+    const { dir } = repo();
+    const revision = await readRevision(dir, "base", ["src"], { blobs: true });
+    const read = (some: string[]) =>
+      Promise.all(some.map((name) => revision.readBase(`src/${name}.js`)));
+    // Changed files by their blob; the rest, and paths that never existed,
+    // at the merge base, not at the base branch's tip.
+    const kept = ["a", "b", "c", "d", "e", "f", "s"];
+    expect(await read(kept)).toEqual(kept.map(() => ORIGINAL));
+    const absent = ["g", "h", "n", "x", "nowhere"];
+    expect(await read(absent)).toEqual(absent.map(() => undefined));
   });
 });
