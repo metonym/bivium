@@ -44,7 +44,7 @@ interface Chain {
   unknown: Cause[];
 }
 
-export type Explanation =
+type Explanation =
   | { kind: "full"; suite: string; reasons: string[] }
   | {
       kind: "unselected";
@@ -387,7 +387,7 @@ export async function explain(
   };
 }
 
-export type Format = "tree" | "chain" | "source";
+type Format = "tree" | "chain" | "source";
 
 const FORMATS: readonly Format[] = ["tree", "chain", "source"];
 

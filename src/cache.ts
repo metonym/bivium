@@ -50,7 +50,7 @@ function isHeader(value: unknown): value is Header {
 // `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback, barrel]`.
 type Row = unknown[];
 
-export type CacheOption = boolean | string | undefined;
+type CacheOption = boolean | string | undefined;
 
 // Where the cache lives: `cache` when it's a path (relative to `root`),
 // else `node_modules/.cache/bivium`, else `.bivium/cache`. `false`: nowhere.

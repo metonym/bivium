@@ -413,7 +413,7 @@ export async function readPackageDiff(
   return diff;
 }
 
-export interface PackageSeeds {
+interface PackageSeeds {
   // `pkg:` node → the change it stands for, for `why`.
   seeds: Map<string, string>;
   // A line per changed package that selects through its importers, or that
