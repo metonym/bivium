@@ -116,6 +116,29 @@ describe("bivium plan", () => {
     });
   });
 
+  it("plans from the merge base of a base that isn't an ancestor", async () => {
+    const dir = repo();
+    const fork = git(dir, "rev-parse", "HEAD");
+    // The base branch moves on: its barrel already has the edit made below,
+    // and it changes a file this branch never touches.
+    const moved = `export { a } from "./a.js";\nexport { b as b } from "./a.js";`;
+    git(dir, "checkout", "-q", "base");
+    write(dir, { "src/index.js": moved, "src/b.js": "export const b = 9;" });
+    git(dir, "commit", "-q", "-am", "base moves on");
+    git(dir, "checkout", "-q", "main");
+    write(dir, { "src/index.js": moved });
+    git(dir, "commit", "-q", "-am", "move b");
+    const expected = {
+      base: "base",
+      mergeBase: fork,
+      changed: ["src/index.js"],
+      // Against the base branch's tip no name moved.
+      suites: { unit: { mode: "some", files: ["test/b.test.js"] } },
+    };
+    expect(await planJson(dir)).toMatchObject(expected);
+    expect(await plan({ cwd: dir, base: "base" })).toMatchObject(expected);
+  });
+
   it("resolves through tsconfig paths, skipping an extends git doesn't list", async () => {
     const dir = repo();
     write(dir, {

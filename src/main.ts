@@ -205,6 +205,7 @@ async function runCommand(
     ...(flags.has("--no-cache") && { cache: false }),
     // Running one suite needs no narrower that narrows only others.
     ...(command === "run" && { suites: [suite.name] }),
+    mergeBase: command === "plan" && flags.has("--json"),
   });
 
   if (command === "plan") {
@@ -218,7 +219,7 @@ async function runCommand(
         JSON.stringify(
           {
             base,
-            mergeBase: computed.mergeBase,
+            mergeBase: await computed.mergeBase(),
             changed: computed.changed,
             suites,
             reasons,

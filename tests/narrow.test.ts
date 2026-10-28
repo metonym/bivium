@@ -122,6 +122,24 @@ describe("narrowers", () => {
     ]);
   });
 
+  it("see the merge base's commit when the caller didn't ask for it", async () => {
+    const dir = repo();
+    const head = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: dir,
+      encoding: "utf-8",
+    }).stdout.trim();
+    const seen: unknown[] = [];
+    const config = resolveConfig(
+      configWith(async ({ base }) => {
+        seen.push(base.commit, await base.read("styles/a.css"));
+        return { seeds: [] };
+      }),
+    );
+    const computed = await computePlan(dir, "HEAD", config, { cache: false });
+    expect(seen).toEqual([head, ".a { color: red }"]);
+    expect(await computed.mergeBase()).toBe(head);
+  });
+
   it("keep the tests their seeds reach through the opaque nodes", async () => {
     const result = await plan({
       cwd: repo(),

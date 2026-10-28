@@ -51,7 +51,7 @@ bun src/cli.ts plan   # the CLI from source
 | `tests/plan.test.ts` | Selection on a carbon-like fixture (`tests/fixture.ts`): the orphan rule, wiring, pages, ignore, narrowed seeds |
 | `tests/narrow.test.ts` | The narrower API through `plan()`, with a fake narrower in a git repository |
 | `tests/css-narrower.test.ts` | Carbon's CSS narrower (`eval/carbon/css-narrower.ts`) with fake tools |
-| `tests/cache.test.ts` | The cache's format, bounds and corruption handling, which files git vouches for, and the scanner fingerprint |
+| `tests/cache.test.ts` | The cache's format, bounds and corruption handling, which files git vouches for, what `readRevision` reads at the merge base, and the scanner fingerprint |
 | `tests/config.test.ts` | Loading, checking and resolving configs |
 | `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, unreadable lockfiles, `package-lock.json` |
 | `tests/main.test.ts` | `plan` and `run`, their outputs and options, and `plan()` from code |

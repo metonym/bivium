@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { readSources } from "../../src/compute.ts";
-import { readRevision, showAt } from "../../src/git.ts";
+import { readRevision } from "../../src/git.ts";
 import type { Selection } from "../../src/types.ts";
 import { exported, importModule, isRecord, isStrings } from "../untyped.ts";
 
@@ -103,7 +103,7 @@ export async function oracle(
   const planTests = exported(module, "planTests");
   return async (root, base) => {
     const revision = await readRevision(root, base, roots);
-    const baseBarrel = showAt(root, revision.mergeBase, barrelPath);
+    const baseBarrel = revision.readBase(barrelPath);
     const sources = await readSources(root, revision.files);
     const exists = new Set(sources.keys());
     const packages = installedPackages(root);

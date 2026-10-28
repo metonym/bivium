@@ -7,7 +7,7 @@ import {
   type ResolvedConfig,
   resolveConfig,
 } from "./config.ts";
-import { defaultBase, type Revision, readRevision, showAt } from "./git.ts";
+import { defaultBase, type Revision, readRevision } from "./git.ts";
 import {
   affectedBy,
   baseBarrelNames,
@@ -85,7 +85,7 @@ export interface Computed {
   plan: Plan;
   graph: Graph;
   changed: string[];
-  mergeBase: string;
+  mergeBase: () => Promise<string>;
   barrelNames: string[];
   narrowed: Narrowed[];
   packages: Packages;
@@ -110,6 +110,9 @@ export interface ComputeOptions {
   // The suites the caller will use. A narrower for none of them doesn't
   // run, and its suites keep the coarse selection.
   suites?: readonly string[];
+  // The caller will ask for the merge base: find it alongside git's other
+  // calls rather than on first use.
+  mergeBase?: boolean;
 }
 
 // Whether the working tree has `path` as a file (or a link to one).
@@ -231,8 +234,8 @@ async function runNarrowers(
   if (wanted.length === 0) return [];
   const view = graphView(graph, config);
   const base = {
-    commit: revision.mergeBase,
-    read: (path: string) => showAt(root, revision.mergeBase, path),
+    commit: await revision.mergeBase(),
+    read: revision.readBase,
   };
   const head = {
     commit: undefined,
@@ -261,14 +264,30 @@ export async function computePlan(
   root: string,
   base: string,
   config: ResolvedConfig,
-  { cache: cacheOption = config.cache, suites }: ComputeOptions = {},
+  {
+    cache: cacheOption = config.cache,
+    suites,
+    mergeBase = false,
+  }: ComputeOptions = {},
 ): Promise<Computed> {
   const dir = cacheDir(root, cacheOption);
   const [revision, rootJson, cache] = await Promise.all([
-    readRevision(root, base, config.roots, { blobs: dir !== undefined }),
+    readRevision(root, base, config.roots, {
+      blobs: dir !== undefined,
+      mergeBase,
+    }),
     readFile(join(root, "package.json"), "utf-8").catch(() => undefined),
     ExtractionCache.open(dir),
   ]);
+  // A narrower that may run needs the merge base once the graph is built,
+  // which would hold back the call's callback: ask for it now.
+  if (
+    revision.changed.some((file) =>
+      config.narrowers.some((narrower) => narrower.match(file)),
+    )
+  ) {
+    revision.mergeBase();
+  }
   // A file an `extends` names is read only if git lists it, so that a
   // change to it is a change (an ignored `.svelte-kit/tsconfig.json` isn't).
   let listed: Set<string> | undefined;
@@ -292,7 +311,7 @@ export async function computePlan(
       readPackageDiff(
         revision.changed,
         revision.listed,
-        (path) => showAt(root, revision.mergeBase, path),
+        revision.readBase,
         (path) => readIfFile(join(root, path)),
       ),
     ]);
@@ -301,7 +320,7 @@ export async function computePlan(
   const basePending = new Map(
     revision.changed
       .filter((file) => config.isBarrel(file) && extractions.get(file)?.barrel)
-      .map((file) => [file, showAt(root, revision.mergeBase, file)] as const),
+      .map((file) => [file, revision.readBase(file)] as const),
   );
   const packages = collectPackages(rootJson, manifests);
   const graph = graphFrom(files, extractions, {
@@ -416,13 +435,14 @@ export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   const { root, base, config } = await prepare(options);
   const computed = await computePlan(root, base, config, {
     ...(options.cache !== undefined && { cache: options.cache }),
+    mergeBase: true,
   });
   return {
     suites: computed.plan.suites,
     reasons: computed.plan.reasons,
     packages: computed.plan.packages,
     base,
-    mergeBase: computed.mergeBase,
+    mergeBase: await computed.mergeBase(),
     changed: computed.changed,
     narrowed: computed.narrowed.map(({ narrower, result }) => ({
       name: narrower.name,

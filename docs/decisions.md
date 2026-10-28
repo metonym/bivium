@@ -796,3 +796,36 @@ under a tenth of a second. A test that depends on every change skips
 it: every change reaches it. A given file that doesn't reach the test
 reports how many tests its chains do reach, leaving out the ones that
 run on every change, which any file would select.
+
+## 44. The merge base is found when something asks for it
+
+`diff --merge-base` finds the merge base itself, so the `git merge-base`
+process only serves what needs the commit: `plan()` and `plan --json`
+report it, and a narrower gets it as `base.commit`. `readRevision` now runs
+it on first use, up front for those two callers, and as soon as a changed
+file matches a narrower, so the narrower doesn't wait for it after the
+graph. A `bivium run`, a text `plan` or `--github` skips it.
+
+A changed barrel's or lockfile's base version doesn't need it either: the
+working-tree diff runs with `--raw --no-abbrev`, which names each changed
+file's blob at the merge base (all zeros for a file added since), and
+`git show <blob>` reads it. A path the diff doesn't name (or names as
+conflicted, or as a submodule) is read as `<merge base>:<path>`. Reading
+by blob first made the barrel case no slower: with the merge base found
+first and then the file, the bench's barrel plan was 28% slower.
+
+Measured with `ostia ab` (load 7), `readRevision` retires 14–16% fewer
+instructions and takes 7% less time. On carbon and sveld (load 7, 7 × 20
+calls) a call spends 21% and 24% less CPU, git's processes included (126
+ms against 160, 93 against 121), and takes 49 ms against 52 and 39
+against 42; `bench/phases.ts`'s git phase moved within its noise.
+
+Measured and dropped: the index diff (decision 20) could go too. An
+entry unchanged since the merge base on disk (not in the working-tree
+diff) and the same on disk as in the index (not in `ls-files -m`) is
+unchanged in the index, so `-m` on the listing gives the same vouched-for
+set with two git processes instead of three. It cut a carbon call's CPU
+by 16% and sveld's by 27%, but `-m` checks each entry serially in the
+process that already walks for untracked files, the longest call: on
+carbon `readRevision` took 51 ms against 47. Parsing the listing without
+a regex saved under a millisecond of its 2–3.
