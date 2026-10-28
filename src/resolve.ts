@@ -63,6 +63,22 @@ type Resolution = { files: string[] } | { pkg: string } | undefined;
 
 export type Resolver = (from: string, specifier: string) => Resolution;
 
+interface Scope {
+  owning: [string, PackageJson] | undefined;
+  ts: TsPaths | undefined;
+  // The package names `owning` can import.
+  declared: Set<string>;
+  // Bare specifier → its resolution, for every file in the scope.
+  resolved: Map<string, Resolution>;
+}
+
+interface Directory {
+  dir: string;
+  // Relative specifier → its resolution, for every file in `dir`.
+  relative: Map<string, Resolution>;
+  scope: Scope;
+}
+
 const BUILTINS = new Set(builtinModules);
 const RUNTIME_BUILTIN = /^(?:node:|bun(?:$|:))/;
 const JS_EXTENSION = /\.([cm]?)js(x?)$/;
@@ -71,6 +87,7 @@ const INVALID_IMPORT_TARGET = /^[./#]/;
 // SvelteKit replaces it in `app.html` with the assets directory; the scanner
 // reads `href="%sveltekit.assets%/x"` as a relative reference.
 const SVELTEKIT_ASSETS = "./%sveltekit.assets%/";
+const INDEX = "/index";
 const SVELTE_CONFIGS = ["js", "mjs", "cjs", "ts", "mts"].map(
   (ext) => `svelte.config.${ext}`,
 );
@@ -201,17 +218,44 @@ export function createResolver({
   const { extensions } = config;
   const exists = (path: string) => files.has(path);
   // `base` → the files `base + extension`, in extension order: a probe
-  // looks its bases up instead of building every candidate name.
+  // looks its bases up instead of building every candidate name. A file
+  // can only end with the extensions whose last `.` segment is as long as
+  // its own.
   const suffixed = new Map<string, [number, string][]>();
-  for (const file of files) {
-    for (let i = 0; i < extensions.length; i++) {
-      const ext = extensions[i];
-      if (!file.endsWith(ext)) continue;
-      const base = file.slice(0, file.length - ext.length);
-      const list = suffixed.get(base);
-      if (list) list.push([i, file]);
-      else suffixed.set(base, [[i, file]]);
+  // A directory → its `index` files, so a probe needn't build `base/index`.
+  const indexes = new Map<string, [number, string][]>();
+  const byTail: number[][] = [];
+  const undotted: number[] = [];
+  for (let i = 0; i < extensions.length; i++) {
+    const ext = extensions[i];
+    const dot = ext.lastIndexOf(".");
+    if (dot === -1) undotted.push(i);
+    else {
+      const list = byTail[ext.length - dot];
+      if (list) list.push(i);
+      else byTail[ext.length - dot] = [i];
     }
+  }
+  const addSuffixed = (i: number, file: string) => {
+    const ext = extensions[i];
+    if (!file.endsWith(ext)) return;
+    const base = file.slice(0, file.length - ext.length);
+    const list = suffixed.get(base);
+    if (list) list.push([i, file]);
+    else {
+      const created: [number, string][] = [[i, file]];
+      suffixed.set(base, created);
+      if (base.endsWith(INDEX)) {
+        indexes.set(base.slice(0, -INDEX.length), created);
+      }
+    }
+  };
+  for (const file of files) {
+    const dot = file.lastIndexOf(".");
+    if (dot !== -1) {
+      for (const i of byTail[file.length - dot] ?? []) addSuffixed(i, file);
+    }
+    for (const i of undotted) addSuffixed(i, file);
   }
   for (const list of suffixed.values()) {
     if (list.length > 1) list.sort(([a], [b]) => a - b);
@@ -221,21 +265,15 @@ export function createResolver({
   for (const [dir, json] of deepestFirst) {
     if (json.name && !local.has(json.name)) local.set(json.name, dir);
   }
-  // Names each package can import: its own dependencies and its ancestors'.
-  const declared = new Map<string, Set<string>>();
-  const declaredFor = (from: string) => {
-    const dir = owner(packages, from)?.[0] ?? ".";
-    let names = declared.get(dir);
-    if (!names) {
-      names = new Set();
-      for (const [pkgDir, json] of deepestFirst) {
-        if (pkgDir !== "." && dir !== pkgDir && !dir.startsWith(`${pkgDir}/`))
-          continue;
-        for (const field of DEP_FIELDS) {
-          for (const name of Object.keys(json[field] ?? {})) names.add(name);
-        }
+  // Names a package can import: its own dependencies and its ancestors'.
+  const declaredIn = (dir: string): Set<string> => {
+    const names = new Set<string>();
+    for (const [pkgDir, json] of deepestFirst) {
+      if (pkgDir !== "." && dir !== pkgDir && !dir.startsWith(`${pkgDir}/`))
+        continue;
+      for (const field of DEP_FIELDS) {
+        for (const name of Object.keys(json[field] ?? {})) names.add(name);
       }
-      declared.set(dir, names);
     }
     return names;
   };
@@ -252,18 +290,34 @@ export function createResolver({
       const ts = `${base.slice(0, js.index)}.${js[1]}ts${js[2]}`;
       if (exists(ts)) found.push(ts);
     }
-    for (const [, file] of suffixed.get(`${base}/index`) ?? []) {
-      found.push(file);
-    }
+    for (const [, file] of indexes.get(base) ?? []) found.push(file);
     return found;
   };
 
-  // The nearest `tsconfig.json` above a file.
+  // A file's scope: the package that owns it and the nearest
+  // `tsconfig.json`, all a bare specifier's resolution reads of where it is.
+  // Every directory under the same two shares one, with its resolutions.
   const tsDeepestFirst = [...tsconfigs].sort(([a], [b]) => b.length - a.length);
-  const tsconfigFor = (from: string): TsPaths | undefined =>
-    tsDeepestFirst.find(
-      ([dir]) => dir === "." || from.startsWith(`${dir}/`),
-    )?.[1];
+  const scopes = new Map<string, Scope>();
+  const scopeOf = (from: string): Scope => {
+    const contains = ([dir]: [string, unknown]) =>
+      dir === "." || from.startsWith(`${dir}/`);
+    const pkg = deepestFirst.findIndex(contains);
+    const ts = tsDeepestFirst.findIndex(contains);
+    const key = `${pkg} ${ts}`;
+    let scope = scopes.get(key);
+    if (!scope) {
+      const owning = pkg === -1 ? undefined : deepestFirst[pkg];
+      scope = {
+        owning,
+        ts: ts === -1 ? undefined : tsDeepestFirst[ts][1],
+        declared: declaredIn(owning?.[0] ?? "."),
+        resolved: new Map(),
+      };
+      scopes.set(key, scope);
+    }
+    return scope;
+  };
 
   // A SvelteKit project's directory: the nearest one above `dir` with a
   // `svelte.config.*` or a `package.json`.
@@ -295,12 +349,8 @@ export function createResolver({
   // target, like `exports`. A `./` target is an exact path in the package; a
   // package target resolves as a bare specifier would, and one that can't
   // makes the whole specifier unknown.
-  const resolveImport = (
-    from: string,
-    fromDir: string,
-    bare: string,
-  ): Resolution => {
-    const owning = owner(packages, from);
+  const resolveImport = (scope: Scope, bare: string): Resolution => {
+    const { owning } = scope;
     const imports = owning?.[1].imports;
     const list = owning && imports && mapTargets(imports, bare);
     if (!list) return;
@@ -316,7 +366,9 @@ export function createResolver({
       }
       // Node rejects any other relative, absolute or `#` target.
       if (INVALID_IMPORT_TARGET.test(target)) continue;
-      const resolved = resolve(from, fromDir, target);
+      const specifier = target.replace(QUERY, "");
+      const resolved =
+        specifier === "" ? undefined : resolveBare(scope, specifier);
       if (resolved === undefined) return;
       if ("pkg" in resolved) pkg ??= resolved.pkg;
       else {
@@ -330,38 +382,33 @@ export function createResolver({
     return pkg === undefined ? undefined : { pkg };
   };
 
-  const resolve = (
-    from: string,
-    fromDir: string,
-    specifier: string,
-  ): Resolution => {
-    // A subpath import's leading `#` isn't a hash.
-    const hash = specifier.startsWith("#") ? "#" : "";
-    const bare = hash + specifier.slice(hash.length).replace(QUERY, "");
-    if (bare === "" || bare === "#") return;
+  // A specifier that starts with `.`, from a file in `fromDir`.
+  const resolveRelative = (fromDir: string, bare: string): Resolution => {
     if (bare.startsWith(SVELTEKIT_ASSETS)) {
       // The default `kit.files.assets`: `static/` in the project.
       const rest = bare.slice(SVELTEKIT_ASSETS.length);
       const found = probe(posix.join(svelteKitRoot(fromDir), "static", rest));
       return found.length > 0 ? { files: found } : undefined;
     }
-    if (bare.startsWith(".")) {
-      const found = probe(posix.join(fromDir, bare));
-      return found.length > 0 ? { files: found } : undefined;
-    }
+    const found = probe(posix.join(fromDir, bare));
+    return found.length > 0 ? { files: found } : undefined;
+  };
+
+  // Any other specifier, the same from every file in `scope`.
+  const resolveBare = (scope: Scope, bare: string): Resolution => {
     for (const [key, target] of config.alias) {
       if (bare !== key && !bare.startsWith(`${key}/`)) continue;
       const found = probe(aliased(target, bare.slice(key.length + 1)));
       if (found.length > 0) return { files: found };
     }
-    const ts = tsconfigFor(from);
+    const { ts } = scope;
     const mapped = ts && mapTargets(ts.paths, bare);
     if (mapped) {
       // Every target that exists, where TypeScript takes the first.
       const found = [...new Set(mapped.flatMap(probe))];
       if (found.length > 0) return { files: found };
     }
-    if (bare.startsWith("#")) return resolveImport(from, fromDir, bare);
+    if (bare.startsWith("#")) return resolveImport(scope, bare);
     const name = packageName(bare);
     const dir = local.get(name);
     if (dir !== undefined) {
@@ -375,28 +422,46 @@ export function createResolver({
     }
     const node = builtin(bare);
     if (node) return { pkg: node };
-    if (declaredFor(from).has(name) || config.external.has(name)) {
+    if (scope.declared.has(name) || config.external.has(name)) {
       return { pkg: name };
     }
     return;
   };
 
-  // A specifier resolves the same from every file in a directory, and a
-  // file's imports resolve one after another.
-  const cache = new Map<string, Map<string, Resolution>>();
-  let lastFrom: string | undefined;
-  let lastDir = "";
-  let inDir = new Map<string, Resolution>();
-  return (from, specifier) => {
-    if (from !== lastFrom) {
-      lastFrom = from;
-      lastDir = posix.dirname(from);
-      inDir = cache.get(lastDir) ?? new Map();
-      cache.set(lastDir, inDir);
+  // A relative specifier resolves the same from every file in a directory,
+  // any other the same from every file in a scope, and a file's imports
+  // resolve one after another.
+  const dirs = new Map<string, Directory>();
+  const directoryOf = (from: string): Directory => {
+    const dir = posix.dirname(from);
+    let found = dirs.get(dir);
+    if (!found) {
+      found = { dir, relative: new Map(), scope: scopeOf(from) };
+      dirs.set(dir, found);
     }
-    if (inDir.has(specifier)) return inDir.get(specifier);
-    const resolved = resolve(from, lastDir, specifier);
-    inDir.set(specifier, resolved);
+    return found;
+  };
+  let lastFrom: string | undefined;
+  let last: Directory | undefined;
+  return (from, specifier) => {
+    if (from !== lastFrom || !last) {
+      lastFrom = from;
+      last = directoryOf(from);
+    }
+    const { dir, relative, scope } = last;
+    // A subpath import's leading `#` isn't a hash.
+    const hash = specifier.startsWith("#") ? "#" : "";
+    const isRelative = specifier.startsWith(".");
+    const memo = isRelative ? relative : scope.resolved;
+    if (memo.has(specifier)) return memo.get(specifier);
+    const bare = hash + specifier.slice(hash.length).replace(QUERY, "");
+    let resolved: Resolution;
+    if (bare !== "" && bare !== "#") {
+      resolved = isRelative
+        ? resolveRelative(dir, bare)
+        : resolveBare(scope, bare);
+    }
+    memo.set(specifier, resolved);
     return resolved;
   };
 }
