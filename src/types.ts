@@ -33,7 +33,7 @@ export interface SuiteConfig {
 export interface Config<Suite extends string = string> {
   suites: Readonly<Record<Suite, SuiteConfig>>;
   /** Plugins that narrow what a change to some files selects. */
-  narrowers?: readonly Narrower<NoInfer<Suite>>[];
+  narrowers?: readonly Narrower<NoInfer<Suite>, unknown>[];
   /** Paths (directories or files) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository. */
   roots?: Globs;
   /** Files no test can observe. A file some test reaches still counts. */
@@ -151,8 +151,11 @@ export interface GraphView<Suite extends string = string> {
   tests(suite: Suite): readonly string[];
 }
 
-/** What a narrower is given. */
-export interface NarrowContext<Suite extends string = string> {
+/**
+ * What a narrower's `prepare` is given: the matched changes and both trees,
+ * known before the graph is.
+ */
+export interface PrepareContext {
   /** The repository's root directory. */
   root: string;
   /** The merge base, which the working tree is compared with. */
@@ -161,7 +164,16 @@ export interface NarrowContext<Suite extends string = string> {
   head: Tree;
   /** The changed files the narrower matches. */
   changed: readonly string[];
+}
+
+/** What a narrower's `narrow` is given. */
+export interface NarrowContext<
+  Suite extends string = string,
+  Prepared = undefined,
+> extends PrepareContext {
   graph: GraphView<Suite>;
+  /** What `prepare` returned, or `undefined` for a narrower without one. */
+  prepared: Prepared;
 }
 
 /**
@@ -182,8 +194,21 @@ export type NarrowResult =
  * those. A narrower can only narrow: its selection is cut to what the
  * coarse walk selects. One that can't decide returns `{ all: reason }`, and
  * one that throws counts as that.
+ *
+ * `Prepared` is what `prepare` returns, and types `narrow`'s `prepared`:
+ * `const css: Narrower<"e2e", Compiled> = { …, prepare, narrow }`, which
+ * then needs a `prepare`. Without it, `prepared` is `undefined`.
  */
-export interface Narrower<Suite extends string = string> {
+export type Narrower<
+  Suite extends string = string,
+  Prepared = undefined,
+> = NarrowerFields<Suite, Prepared> &
+  // `prepare` is required once something needs what it returns.
+  (undefined extends Prepared
+    ? unknown
+    : Required<Pick<NarrowerFields<Suite, Prepared>, "prepare">>);
+
+interface NarrowerFields<Suite extends string, Prepared> {
   /** Names it in reasons: `css/: …`. */
   name: string;
   /** The changed files it narrows. */
@@ -192,5 +217,16 @@ export interface Narrower<Suite extends string = string> {
   opaque: Globs;
   /** The suites it narrows. Default: every suite. */
   suites?: readonly Suite[];
-  narrow(context: NarrowContext<Suite>): NarrowResult | Promise<NarrowResult>;
+  /**
+   * Starts the work that doesn't need the graph, such as compiling both
+   * trees' stylesheets, as soon as git has listed the changes, so it
+   * overlaps with reading and resolving the repository. It runs only when
+   * `narrow` will, with the same `changed`, and `narrow` gets what it
+   * returns as `prepared`. One that throws runs the narrower's suites in
+   * full, and `narrow` isn't called.
+   */
+  prepare?(context: PrepareContext): Prepared | Promise<Prepared>;
+  narrow(
+    context: NarrowContext<Suite, Prepared>,
+  ): NarrowResult | Promise<NarrowResult>;
 }

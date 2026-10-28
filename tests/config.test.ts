@@ -61,6 +61,36 @@ describe("checkConfig", () => {
       { suites: SUITES, deadGlobs: [{ file: "a.ts", glob: "b/**" }] },
       "deadGlobs[0] needs a file, glob and reason",
     ],
+    [
+      {
+        suites: SUITES,
+        narrowers: [
+          {
+            name: "n",
+            match: "a/**",
+            opaque: "b",
+            narrow: () => ({}),
+            prepare: 1,
+          },
+        ],
+      },
+      "narrowers[0].prepare must be a function",
+    ],
+    [
+      {
+        suites: SUITES,
+        narrowers: [
+          {
+            name: "n",
+            match: "a/**",
+            opaque: "b",
+            narrow: () => ({}),
+            prepared: () => ({}),
+          },
+        ],
+      },
+      "unknown key narrowers[0].prepared",
+    ],
     [[], "not an object"],
   ])("rejects %j", (config, message) => {
     expect(() => checkConfig(config)).toThrow(message);

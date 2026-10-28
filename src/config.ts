@@ -15,6 +15,7 @@ import type {
   NarrowContext,
   Narrower,
   NarrowResult,
+  PrepareContext,
   SuiteConfig,
 } from "./types.ts";
 
@@ -47,7 +48,8 @@ export interface ResolvedNarrower {
   match: Matcher;
   opaque: Matcher;
   suites: string[];
-  narrow: (context: NarrowContext) => Promise<NarrowResult>;
+  prepare?: (context: PrepareContext) => Promise<unknown>;
+  narrow: (context: NarrowContext<string, unknown>) => Promise<NarrowResult>;
 }
 
 type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
@@ -171,6 +173,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
         match: matcher(narrower.match),
         opaque: matcher(narrower.opaque),
         suites: [...(narrower.suites ?? names)],
+        ...(narrower.prepare && {
+          prepare: async (context: PrepareContext) =>
+            narrower.prepare?.(context),
+        }),
         narrow: async (context) => checkResult(await narrower.narrow(context)),
       };
     },
@@ -257,7 +263,14 @@ const SUITE_KEYS = new Set([
   "nonInputs",
   "output",
 ]);
-const NARROWER_KEYS = new Set(["name", "match", "opaque", "suites", "narrow"]);
+const NARROWER_KEYS = new Set([
+  "name",
+  "match",
+  "opaque",
+  "suites",
+  "prepare",
+  "narrow",
+]);
 const DEAD_GLOB_KEYS = new Set(["file", "glob", "reason"]);
 const CONFIG_KEYS = new Set([
   "suites",
@@ -331,7 +344,7 @@ function checkResult(value: unknown): NarrowResult {
   throw new Error("returned neither { seeds: string[] } nor { all: string }");
 }
 
-function checkNarrower(value: unknown, at: string): Narrower {
+function checkNarrower(value: unknown, at: string): Narrower<string, unknown> {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);
   }
@@ -340,18 +353,25 @@ function checkNarrower(value: unknown, at: string): Narrower {
   const match = field(value, "match", isGlobs, `${at}.`, "globs");
   const opaque = field(value, "opaque", isGlobs, `${at}.`, "globs");
   const suites = field(value, "suites", isStrings, `${at}.`, "suite names");
-  const { narrow } = value;
+  const { prepare, narrow } = value;
   if (name === undefined || match === undefined || opaque === undefined) {
     throw new Error(`bivium config: ${at} needs a name, match and opaque`);
   }
   if (typeof narrow !== "function") {
     throw new Error(`bivium config: ${at}.narrow must be a function`);
   }
+  if (prepare !== undefined && typeof prepare !== "function") {
+    throw new Error(`bivium config: ${at}.prepare must be a function`);
+  }
   return {
     name,
     match,
     opaque,
     suites,
+    ...(prepare && {
+      prepare: async (context: PrepareContext): Promise<unknown> =>
+        Reflect.apply(prepare, value, [context]),
+    }),
     narrow: async (context) => {
       const result: unknown = await Reflect.apply(narrow, value, [context]);
       return checkResult(result);

@@ -252,6 +252,24 @@ narrowers: [
 
 The matched files still seed the walk, but it stops at the `opaque` nodes, and the seeds stand in for them. A narrower can only narrow: its suites' selection is cut to what the walk without it selects. One that returns `{ all: reason }`, throws, or returns anything else runs its suites in full with the reason. `narrow()` gets the repository `root`, the merge base and the working tree as `base` and `head` (each with `commit` and `read(path)`), the matched `changed` files, and a read-only `graph` (`nodes()`, `importers(node)`, `dependents(nodes)`, `tests(suite)`). [`eval/carbon/css-narrower.ts`](eval/carbon/css-narrower.ts) is carbon-components-svelte's, over crassus.
 
+Work that doesn't need the graph, such as compiling both trees, can start in `prepare()`, which gets the same context without `graph` as soon as git has listed the changes, and runs while bivium reads and resolves the repository. `narrow()` gets what it returned as `prepared`:
+
+```ts
+const css: Narrower<"e2e", [Sheets, Sheets]> = {
+  name: "css",
+  match: "styles/**",
+  opaque: "dist/*.css",
+  suites: ["e2e"],
+  prepare: ({ base, head }) => Promise.all([compile(base.commit), compile(head.commit)]),
+  narrow({ prepared: [before, after], graph }) {
+    const rules = diffRules(before, after);
+    // …
+  },
+};
+```
+
+`prepare()` runs only when `narrow()` will (a matched change, for a suite being planned), with the same `changed`: it starts from git's listing, and in the rare case the graph places a matched file differently (an ignored file the working tree deleted, a `package.json` the lockfile diff accounts for), it runs again with the graph's files, or its result is dropped. Only work outside bivium's thread, such as a compiler's child process or file reads, actually overlaps. One that throws runs the suites in full (`css: failed to prepare: …`) and `narrow()` isn't called; bivium can't check what it returns, so `narrow()` is the one to return `{ all }` when it can't use it. The second type argument types `prepared` and makes `prepare` required; without one, `prepared` is `undefined`.
+
 ## From code
 
 ```ts

@@ -39,6 +39,7 @@ async function narrow(loaded: CssTools | Error) {
     head,
     changed: ["css/_button.scss"],
     graph: view,
+    prepared: undefined,
   });
 }
 

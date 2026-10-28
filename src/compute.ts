@@ -5,6 +5,7 @@ import {
   checkConfig,
   loadConfig,
   type ResolvedConfig,
+  type ResolvedNarrower,
   resolveConfig,
 } from "./config.ts";
 import { defaultBase, type Revision, readRevision, showAt } from "./git.ts";
@@ -21,7 +22,14 @@ import { classify, type Narrowed, type Plan, planTests } from "./plan.ts";
 import { type PackageJson, type Packages, toPackageJson } from "./resolve.ts";
 import { type Extraction, extract, formatOf, SCANNED } from "./scan.ts";
 import { readTsconfigs, type TsConfigs } from "./tsconfig.ts";
-import type { Config, GraphView, PlanOptions, PlanResult } from "./types.ts";
+import type {
+  Config,
+  GraphView,
+  PlanOptions,
+  PlanResult,
+  PrepareContext,
+  Tree,
+} from "./types.ts";
 
 function hasCode(error: unknown, codes: readonly string[]): boolean {
   return (
@@ -213,41 +221,121 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// A narrower's `prepare`, run to completion: it never rejects, so one
+// left behind when a later step throws can't become an unhandled rejection.
+type Settled = { value: unknown } | { error: unknown };
+
+interface Preparing {
+  changed: string[];
+  settled: Promise<Settled>;
+}
+
+interface Trees {
+  base: Tree;
+  head: Tree;
+}
+
+function treesOf(root: string, revision: Revision): Trees {
+  return {
+    base: {
+      commit: revision.mergeBase,
+      read: (path) => showAt(root, revision.mergeBase, path),
+    },
+    head: {
+      commit: undefined,
+      read: (path) => readIfFile(join(root, path)),
+    },
+  };
+}
+
+function wants(
+  narrower: ResolvedNarrower,
+  relevant: string[],
+  suites: readonly string[] | undefined,
+): boolean {
+  return (
+    relevant.some(narrower.match) &&
+    (suites === undefined ||
+      narrower.suites.some((name) => suites.includes(name)))
+  );
+}
+
+function startPrepare(
+  narrower: ResolvedNarrower,
+  context: PrepareContext,
+): Promise<Settled> {
+  if (!narrower.prepare) return Promise.resolve({ value: undefined });
+  return narrower.prepare(context).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+}
+
+// Starts each `prepare` as soon as git has listed the changes, while the
+// graph is built. Which changes a narrower gets depends on the graph
+// (`classify`), so this classifies against the files git lists, which the
+// graph has unless the working tree deleted them; `runNarrowers` reruns a
+// `prepare` whose files turn out different, and drops one whose narrower
+// doesn't run.
+function startPrepares(
+  root: string,
+  revision: Revision,
+  trees: Trees,
+  config: ResolvedConfig,
+  suites: readonly string[] | undefined,
+): Map<ResolvedNarrower, Preparing> {
+  const started = new Map<ResolvedNarrower, Preparing>();
+  const preparing = config.narrowers.filter((narrower) => narrower.prepare);
+  if (preparing.length === 0) return started;
+  const listed = new Set(revision.files);
+  const { relevant } = classify(listed, revision.changed, config);
+  for (const narrower of preparing) {
+    if (!wants(narrower, relevant, suites)) continue;
+    const changed = relevant.filter(narrower.match);
+    const settled = startPrepare(narrower, { root, ...trees, changed });
+    started.set(narrower, { changed, settled });
+  }
+  return started;
+}
+
+function sameFiles(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((file, i) => file === b[i]);
+}
+
 async function runNarrowers(
   root: string,
   revision: Revision,
+  trees: Trees,
+  started: Map<ResolvedNarrower, Preparing>,
   graph: Graph,
   config: ResolvedConfig,
   suites: readonly string[] | undefined,
   packages: PackageDiff | undefined,
 ): Promise<Narrowed[]> {
   const { relevant } = classify(graph, revision.changed, config, packages);
-  const wanted = config.narrowers.filter(
-    (narrower) =>
-      relevant.some(narrower.match) &&
-      (suites === undefined ||
-        narrower.suites.some((name) => suites.includes(name))),
+  const wanted = config.narrowers.filter((narrower) =>
+    wants(narrower, relevant, suites),
   );
   if (wanted.length === 0) return [];
   const view = graphView(graph, config);
-  const base = {
-    commit: revision.mergeBase,
-    read: (path: string) => showAt(root, revision.mergeBase, path),
-  };
-  const head = {
-    commit: undefined,
-    read: (path: string) => readIfFile(join(root, path)),
-  };
   return Promise.all(
     wanted.map(async (narrower): Promise<Narrowed> => {
       const changed = relevant.filter(narrower.match);
+      const early = started.get(narrower);
+      const settled = await (early && sameFiles(early.changed, changed)
+        ? early.settled
+        : startPrepare(narrower, { root, ...trees, changed }));
+      if ("error" in settled) {
+        const reason = `failed to prepare: ${messageOf(settled.error)}`;
+        return { narrower, result: { all: reason } };
+      }
       try {
         const result = await narrower.narrow({
           root,
-          base,
-          head,
+          ...trees,
           changed,
           graph: view,
+          prepared: settled.value,
         });
         return { narrower, result };
       } catch (error) {
@@ -269,6 +357,8 @@ export async function computePlan(
     readFile(join(root, "package.json"), "utf-8").catch(() => undefined),
     ExtractionCache.open(dir),
   ]);
+  const trees = treesOf(root, revision);
+  const started = startPrepares(root, revision, trees, config, suites);
   // A file an `extends` names is read only if git lists it, so that a
   // change to it is a change (an ignored `.svelte-kit/tsconfig.json` isn't).
   let listed: Set<string> | undefined;
@@ -332,6 +422,8 @@ export async function computePlan(
   const narrowed = await runNarrowers(
     root,
     revision,
+    trees,
+    started,
     graph,
     config,
     suites,

@@ -68,7 +68,8 @@ export interface Changes {
 }
 
 export function classify(
-  graph: Graph,
+  // The graph, or before it's built, the files git lists.
+  graph: Pick<ReadonlySet<string>, "has">,
   changed: string[],
   config: ResolvedConfig,
   packages?: PackageDiff,

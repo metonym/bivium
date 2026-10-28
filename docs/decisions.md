@@ -796,3 +796,65 @@ under a tenth of a second. A test that depends on every change skips
 it: every change reaches it. A given file that doesn't reach the test
 reports how many tests its chains do reach, leaving out the ones that
 run on every change, which any file would select.
+
+## 44. A narrower can prepare before the graph is built
+
+Carbon's CSS narrower compiles both trees' stylesheets before it touches
+the graph, and that compile is most of a `css/` plan (about 250 ms warm,
+up to 13 s cold, against bivium's 70). `narrow()` gets the graph, so it
+ran after git, extraction, resolution and the barrel diff, and the
+compile waited for all of them. An optional `prepare(context)` now gets
+`root`, `base`, `head` and the matched `changed` files right after git,
+runs while bivium extracts and resolves, and `narrow()` gets what it
+returned as `prepared`:
+
+```ts
+const css: Narrower<"e2e", Compiled> = {
+  name, match, opaque,
+  prepare: ({ base, head }) => compileBoth(base.commit, head.commit),
+  narrow: ({ prepared, graph }) => diff(prepared, graph),
+};
+```
+
+- `Narrower<Suite, Prepared = undefined>` types `prepared`; a `Prepared`
+  that excludes `undefined` makes `prepare` required, so a narrower can't
+  read a result nobody produces. `Config.narrowers` holds
+  `Narrower<Suite, unknown>`, so a narrower declared inline sees
+  `prepared` as `unknown`: give it a type to read it.
+- It runs only when `narrow()` would: a matched change, for a suite
+  being planned (decision 30's `run --suite`). Which changes match
+  depends on the graph (`classify`), which isn't built yet, so it starts
+  from git's listing, which the graph has except for files the working
+  tree deleted. When the graph's matched files differ (an ignored file
+  the working tree deleted, a `package.json` the lockfile diff accounts
+  for), `prepare` runs again with the graph's files, or its result is
+  dropped when `narrow()` doesn't run. Either way `narrow()` gets a
+  result computed from its own `changed`.
+- Fails closed as `narrow()` does. A `prepare` that throws or rejects
+  runs its suites in full (`css: failed to prepare: …`), and `narrow()`
+  isn't called. What it returns can't be checked, so a `narrow()` that
+  can't use it returns `{ all }` or throws, which is the existing rule.
+- Each `prepare` is wrapped so it never rejects: a later step that
+  throws (a broken graph) leaves it running but can't turn its failure
+  into an unhandled rejection. Nothing cancels it; a plan that fails
+  waits for it before the process exits.
+- `checkConfig` accepts `prepare` (a function) and still rejects unknown
+  keys.
+
+What it can save is bounded by the work after git: only extraction and
+resolution overlap, and only work that leaves bivium's thread (a child
+process, file reads) actually runs alongside them. In the bench fixture,
+with 30 ms of sleeping work, a warm plan took 61.3 ms with it in
+`prepare` against 65.8 ms in `narrow` (71.6 against 85.4 under a load of
+33); `tests/narrow.test.ts` checks the overlap directly, with a 300 ms
+graph build and a 300 ms `prepare` finishing together. On carbon, with
+the compile moved into `prepare` in a scratch copy of its narrower, the
+compile finished 30 to 60 ms earlier, as expected, but the plan as a
+whole didn't get faster: warm, 736 ms median against 679 (25 runs, load
+about 12), the selector diff after it running slower; cold, 15.8 s
+against 15.1 (5 runs, a spread of seconds). Carbon's warm compile is
+mostly in-process work (loading the crassus config and sass-embedded,
+reading the cache), which competes with resolution for the same thread,
+and its cold compile dwarfs the 30 to 70 ms bivium could hide. So carbon
+keeps compiling in `narrow()` for now; the hook is for narrowers whose
+graph-free work is a subprocess or I/O of about bivium's own length.

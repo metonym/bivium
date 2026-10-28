@@ -134,6 +134,57 @@ group(
   },
 );
 
+// A narrower with 30 ms of work that doesn't need the graph (carbon's
+// compiles both trees' CSS), done in `prepare`, which overlaps with
+// extraction and resolution, or in `narrow`, which waits for them.
+const WORK = 30;
+const sleep = () => new Promise((resolve) => setTimeout(resolve, WORK));
+const narrowing = (where: "prepare" | "narrow") =>
+  resolveConfig({
+    ...config,
+    narrowers: [
+      {
+        name: where,
+        match: "src/components/**",
+        opaque: "dist/*.css",
+        suites: ["e2e"],
+        ...(where === "prepare" && { prepare: sleep }),
+        async narrow({ changed }) {
+          if (where === "narrow") await sleep();
+          return { seeds: changed };
+        },
+      },
+    ],
+  });
+const inPrepare = narrowing("prepare");
+const inNarrow = narrowing("narrow");
+let narrowDir = "";
+const narrowCache = () => join(narrowDir, "node_modules/.cache/bivium");
+group(
+  `narrower, ${WORK} ms of work`,
+  () => {
+    task("warm, in narrow, after the graph", () =>
+      computePlan(narrowDir, "HEAD", inNarrow, { cache: narrowCache() }),
+    );
+    task("warm, in prepare, alongside it", () =>
+      computePlan(narrowDir, "HEAD", inPrepare, { cache: narrowCache() }),
+    );
+    task("cold, in narrow", () =>
+      computePlan(narrowDir, "HEAD", inNarrow, { cache: false }),
+    );
+    task("cold, in prepare", () =>
+      computePlan(narrowDir, "HEAD", inPrepare, { cache: false }),
+    );
+  },
+  {
+    before: async () => {
+      narrowDir = checkout(files);
+      await computePlan(narrowDir, "HEAD", resolved, { cache: narrowCache() });
+    },
+    after: () => rmSync(narrowDir, { recursive: true, force: true }),
+  },
+);
+
 // A dependency bump in an 800-package lockfile: parse both sides, diff,
 // and walk the dependency tree back to the packages that declare them.
 const lockBase = lockfile();

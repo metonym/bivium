@@ -9,6 +9,7 @@ export type {
   NarrowResult,
   PlanOptions,
   PlanResult,
+  PrepareContext,
   Selection,
   SuiteConfig,
   Tree,
