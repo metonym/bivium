@@ -403,3 +403,91 @@ describe("tsconfig paths", () => {
     expect(result.tsconfigs.get(".")).toEqual({ paths: {} });
   });
 });
+
+describe("resolutions shared across files", () => {
+  // Nested package and tsconfig boundaries, a sibling whose name starts
+  // with a package's, and files directly in a package's directory.
+  const files = [
+    "src/a.ts",
+    "src/lib/a.ts",
+    "app/a.ts",
+    "app/src/a.ts",
+    "app/src/lib/Button.svelte",
+    "app-other/a.ts",
+    "kit/src/lib/Button.svelte",
+    "kit/static/logo.svg",
+    "kit/svelte.config.js",
+    "types/a.ts",
+  ];
+  const packages: Record<string, PackageJson> = {
+    ".": { dependencies: { svelte: "5" }, imports: { "#a": "./src/a.ts" } },
+    app: {
+      name: "app",
+      dependencies: { react: "19" },
+      imports: { "#a": "./a.ts", "#lib/*": "./src/lib/*" },
+    },
+    kit: { imports: { "#lib/*": "./src/lib/*", "#dep": "react" } },
+  };
+  const tsconfigs: TsConfigs = new Map([
+    [".", { paths: { "@/*": ["src/*"] } }],
+    ["app/src", { paths: { "@/*": ["app/src/*"] }, baseUrl: "types" }],
+  ]);
+  const froms = [
+    "x.ts",
+    "src/x.ts",
+    "src/y.ts",
+    "src/lib/x.ts",
+    "app/x.ts",
+    "app/src/x.ts",
+    "app/src/lib/x.ts",
+    "app-other/x.ts",
+    "kit/x.ts",
+    "kit/src/routes/x.svelte",
+  ];
+  const specifiers = [
+    "./a",
+    "../a",
+    "../../a",
+    "./%sveltekit.assets%/logo.svg",
+    "#a",
+    "#lib/Button.svelte",
+    "#dep",
+    "@/a",
+    "@/lib/Button.svelte",
+    "a",
+    "svelte",
+    "react",
+    "app",
+    "node:fs",
+  ];
+  const options = { packages, tsconfigs };
+
+  it("resolves each import as a resolver of its own would, in any order", () => {
+    const calls = froms.flatMap((from) =>
+      specifiers.map((specifier): [string, string] => [from, specifier]),
+    );
+    for (const order of [calls, [...calls].reverse()]) {
+      const shared = resolver(files, options);
+      for (const [from, specifier] of order) {
+        expect([from, specifier, shared(from, specifier)]).toEqual([
+          from,
+          specifier,
+          resolver(files, options)(from, specifier),
+        ]);
+      }
+    }
+  });
+
+  it("doesn't share across a package or tsconfig.json boundary", () => {
+    const resolve = resolver(files, options);
+    expect(resolve("src/x.ts", "#a")).toEqual({ files: ["src/a.ts"] });
+    expect(resolve("app/x.ts", "#a")).toEqual({ files: ["app/a.ts"] });
+    expect(resolve("app-other/x.ts", "#a")).toEqual({ files: ["src/a.ts"] });
+    expect(resolve("app/x.ts", "react")).toEqual({ pkg: "react" });
+    expect(resolve("kit/x.ts", "react")).toBeUndefined();
+    expect(resolve("app/x.ts", "@/a")).toEqual({ files: ["src/a.ts"] });
+    expect(resolve("app/src/x.ts", "@/a")).toEqual({ files: ["app/src/a.ts"] });
+    expect(resolve("app/src/lib/x.ts", "a")).toEqual({ files: ["types/a.ts"] });
+    expect(resolve("app/x.ts", "a")).toBeUndefined();
+  });
+});
