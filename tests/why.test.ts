@@ -419,11 +419,20 @@ describe("bivium why", () => {
       const { status } = await why(dir, "test/a.test.js", "--format", "dot");
       expect(status).toBe(2);
       expect(error.mock.calls).toEqual([
-        ["bivium why: --format takes tree, chain or source"],
+        ["bivium why: --format takes tree, chain, source or json"],
       ]);
     } finally {
       error.mockRestore();
     }
+  });
+
+  it("prints JSON for --format json, as for --json", async () => {
+    const dir = repo();
+    const json = await why(dir, "test/a.test.js", "--format", "json");
+    expect(json.output).toBe(
+      (await why(dir, "test/a.test.js", "--json")).output,
+    );
+    expect(JSON.parse(json.output)).toMatchObject({ kind: "chain" });
   });
 
   it("lists the reasons for a suite that runs in full", async () => {
@@ -495,6 +504,11 @@ describe("bivium check", () => {
     expect(status).toBe(1);
     expect(output).toBe(
       [
+        "Summary:",
+        "  1 node with unknown dependencies reaches 1 test, which runs on any change:",
+        "    1 reads the disk without @depends-on",
+        "    1 unresolved relative import",
+        "",
         "test/u.test.js",
         `  ✗ unresolved "./gone.js"    test/u.test.js:2`,
         "    fix: no file at that path: fix the import, or add an `edges` entry if a build generates it",
@@ -549,6 +563,42 @@ describe("bivium check", () => {
       unlistedUnknowns: ["test/v.test.js"],
       staleKnownUnknowns: [{ file: "src/a.js", reason: "was unknown once" }],
     });
+  });
+
+  it("names the file an unresolved specifier misses, and counts fallbacks by reason", async () => {
+    const dir = repo({
+      ".gitignore": "gen/\n",
+      "gen/api.js": "export {};",
+      "other/o.js": "export {};",
+      "src/legacy.mjs": "export {};",
+      "src/List.tsx": "export const l = <List<string> a={1} b=1 />;",
+      "test/h.test.js": [
+        `import "../gen/api.js";`,
+        `import "../other/o.js";`,
+        `import "../src/legacy.js";`,
+        `import "../src/List.tsx";`,
+      ].join("\n"),
+    });
+    const report: Report = JSON.parse(
+      (await run(["check", "--json", "--cwd", dir])).output,
+    );
+    const fixes = report.unknown
+      .find(({ node }) => node === "test/h.test.js")
+      ?.causes.map(({ cause, fix }) => `${cause}: ${fix}`);
+    expect(fixes).toEqual([
+      `unresolved "../gen/api.js": gen/api.js exists, but git doesn't list it (ignored?): if a build writes it, name it in \`edges\` with its inputs`,
+      `unresolved "../other/o.js": other/o.js exists, but outside \`roots\`: add it to \`roots\``,
+      `unresolved "../src/legacy.js": src/legacy.mjs exists: import it by that name, or add its extension to \`extensions\``,
+    ]);
+    const { output } = await run(["check", "--cwd", dir]);
+    expect(output.split("\n").slice(0, 6)).toEqual([
+      "Summary:",
+      "  2 nodes with unknown dependencies reach 2 tests, which run on any change:",
+      "    2 unresolved relative import",
+      "    1 reads the disk without @depends-on",
+      "  1 file read by the regex extractor: 1 bad JSX attribute",
+      "",
+    ]);
   });
 
   it("lists unknown nodes no test reaches apart, and doesn't count them", async () => {
@@ -693,6 +743,9 @@ describe("bivium check: dead globs", () => {
       "      fix: point it at files the selector reads, or allowlist it in `deadGlobs` with a reason";
     expect(output).toBe(
       [
+        "Summary:",
+        "  2 dead globs",
+        "",
         "Dead globs: a change to what they match, or to some of it, selects nothing:",
         "  test/a.test.js",
         "    ✗ reads docs/*.md: matches only ignored files (4: docs/a.md, docs/b.md, docs/c.md, …)    test/a.test.js:1",

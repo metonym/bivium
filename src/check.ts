@@ -1,11 +1,19 @@
+import { existsSync } from "node:fs";
+import { join, posix } from "node:path";
 import type { Computed } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
 import { affectedBy } from "./graph.ts";
-import { annotationLine, causesOf, sourceOf, specifierLine } from "./locate.ts";
+import {
+  annotationLine,
+  causesOf,
+  fileOf,
+  sourceOf,
+  specifierLine,
+} from "./locate.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { RELATIVE } from "./syntax.ts";
+import { QUERY, RELATIVE } from "./syntax.ts";
 
 interface Unknown {
   node: string;
@@ -104,6 +112,76 @@ export function fixFor(cause: string) {
     return "map the URL to a file with the suite's `urls`";
   }
   return "see the cause";
+}
+
+// The name a path's file has before its first dot: `u.d.ts` and `u.js`
+// are both `u`.
+function stemOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  const dot = path.indexOf(".", slash + 2);
+  return dot === -1 ? path : path.slice(0, dot);
+}
+
+// A hint for an unresolved specifier that names the file that's there: a
+// sibling with another extension, a file outside the roots, or one git
+// doesn't list. For relative specifiers and aliases, which map to a path.
+function nearMisses(
+  root: string,
+  config: ResolvedConfig,
+  { graph, listed }: Computed,
+) {
+  let stems: Map<string, string[]> | undefined;
+  const listedSet = new Set(listed);
+  const siblings = (path: string) => {
+    if (!stems) {
+      stems = new Map();
+      for (const file of listed) {
+        const stem = stemOf(file);
+        const list = stems.get(stem);
+        list ? list.push(file) : stems.set(stem, [file]);
+      }
+    }
+    return stems.get(stemOf(path)) ?? [];
+  };
+  const candidates = (base: string) => [
+    base,
+    ...config.extensions.map((ext) => base + ext),
+    ...config.extensions.map((ext) => `${base}/index${ext}`),
+  ];
+  return (node: string, cause: string): string | undefined => {
+    if (!cause.startsWith("unresolved ")) return undefined;
+    const specifier = (QUOTED.exec(cause)?.[1] ?? "").replace(QUERY, "");
+    let base: string | undefined;
+    if (RELATIVE.test(specifier)) {
+      base = posix.join(posix.dirname(fileOf(node)), specifier);
+    } else {
+      for (const [key, target] of config.alias) {
+        if (specifier !== key && !specifier.startsWith(`${key}/`)) continue;
+        const rest = specifier.slice(key.length + 1);
+        base = posix.normalize(
+          target === "." ? rest || "." : `${target}/${rest}`,
+        );
+        break;
+      }
+    }
+    if (base === undefined || base.startsWith("../")) return undefined;
+    const tried = candidates(base);
+    const outside = tried.find(
+      (path) => listedSet.has(path) && !graph.has(path),
+    );
+    if (outside !== undefined) {
+      return `${outside} exists, but outside \`roots\`: add it to \`roots\``;
+    }
+    const unlisted = tried.find((path) => existsSync(join(root, path)));
+    if (unlisted !== undefined && !listedSet.has(unlisted)) {
+      return `${unlisted} exists, but git doesn't list it (ignored?): if a build writes it, name it in \`edges\` with its inputs`;
+    }
+    const sibling = siblings(base).find((file) => graph.has(file));
+    if (sibling !== undefined) {
+      return `${sibling} exists: import it by that name, or add its extension to \`extensions\``;
+    }
+    return undefined;
+  };
 }
 
 function declaredGlobs(node: string, extraction: Extraction): Declared[] {
@@ -315,15 +393,15 @@ export async function check(
     }
     return sorted(found);
   };
+  const nearMiss = nearMisses(root, config, computed);
   const unknown = await Promise.all(
     nodes.map(
       async (node): Promise<Unknown> => ({
         node,
-        causes: (await causesOf(root, computed, node)).map(({ cause, at }) =>
-          at === undefined
-            ? { cause, fix: fixFor(cause) }
-            : { cause, at, fix: fixFor(cause) },
-        ),
+        causes: (await causesOf(root, computed, node)).map(({ cause, at }) => {
+          const fix = nearMiss(node, cause) ?? fixFor(cause);
+          return at === undefined ? { cause, fix } : { cause, at, fix };
+        }),
         tests: testsOf(node),
       }),
     ),
@@ -407,8 +485,101 @@ function pushUnknown(lines: string[], { node, causes, tests, known }: Unknown) {
   }
 }
 
-export function formatReport(report: Report, max: number | undefined): string {
+// What a cause is, without what it names: the line `check` counts it on.
+function categoryOf(cause: string): string {
+  if (cause.startsWith("unresolved ")) {
+    const specifier = QUOTED.exec(cause)?.[1] ?? "";
+    if (RELATIVE.test(specifier)) return "unresolved relative import";
+    if (specifier.startsWith("#")) return "unresolved # import";
+    return "unresolved bare import (a package, alias or path)";
+  }
+  if (cause.startsWith("non-literal goto(")) return "non-literal goto()";
+  if (cause.startsWith("goto(")) return "goto() URL no `urls` pattern maps";
+  if (cause.startsWith("missing fixture ")) return "goto() of a missing page";
+  return cause;
+}
+
+const POSITION = /(?: in <>)? at \d+.*$/;
+const BLANK_LINES = /\n{3,}/g;
+
+function counted(counts: Map<string, number>): string[] {
+  return [...counts]
+    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+    .map(([what, count]) => `${count} ${what}`);
+}
+
+// Counts by cause first, so a long report is actionable from its head.
+function summaryLines(report: Report): string[] {
+  const widen = widening(report);
   const lines: string[] = [];
+  if (widen.length > 0) {
+    const tests = new Set(widen.flatMap((node) => node.tests));
+    lines.push(
+      `${plural(widen.length, "node")} with unknown dependencies ${widen.length === 1 ? "reaches" : "reach"} ${plural(tests.size, "test")}, which ${tests.size === 1 ? "runs" : "run"} on any change:`,
+    );
+    const causes = new Map<string, number>();
+    for (const node of widen) {
+      for (const category of new Set(
+        node.causes.map(({ cause }) => categoryOf(cause)),
+      )) {
+        causes.set(category, (causes.get(category) ?? 0) + 1);
+      }
+    }
+    lines.push(...counted(causes).map((line) => `  ${line}`));
+  }
+  const idle = report.unknown.length - widen.length;
+  if (idle > 0) {
+    lines.push(
+      `${plural(idle, "more node")} with unknown dependencies no test reaches`,
+    );
+  }
+  if (report.fallbacks.length > 0) {
+    const reasons = new Map<string, number>();
+    for (const { reason } of report.fallbacks) {
+      const what = reason.replace(POSITION, "");
+      reasons.set(what, (reasons.get(what) ?? 0) + 1);
+    }
+    lines.push(
+      `${plural(report.fallbacks.length, "file")} read by the regex extractor: ${counted(reasons).join(", ")}`,
+    );
+  }
+  const problems = [
+    [
+      report.unparsedTsconfigs.length,
+      "tsconfig file that doesn't parse",
+      "tsconfig files that don't parse",
+    ],
+    [report.deadGlobs.length, "dead glob", "dead globs"],
+    [
+      report.staleDeadGlobs.length,
+      "stale `deadGlobs` entry",
+      "stale `deadGlobs` entries",
+    ],
+    [
+      report.unlistedUnknowns.length,
+      "unknown not in `knownUnknowns`",
+      "unknowns not in `knownUnknowns`",
+    ],
+    [
+      report.staleKnownUnknowns.length,
+      "stale `knownUnknowns` entry",
+      "stale `knownUnknowns` entries",
+    ],
+  ] as const;
+  for (const [count, one, many] of problems) {
+    if (count > 0) lines.push(`${count} ${count === 1 ? one : many}`);
+  }
+  return lines.length === 0
+    ? []
+    : ["Summary:", ...lines.map((line) => `  ${line}`), ""];
+}
+
+function plural(count: number, one: string): string {
+  return `${count} ${count === 1 ? one : `${one}s`}`;
+}
+
+export function formatReport(report: Report, max: number | undefined): string {
+  const lines: string[] = summaryLines(report);
   const widen = widening(report);
   for (const unknown of widen) pushUnknown(lines, unknown);
   const idle = report.unknown.filter((node) => node.tests.length === 0);
@@ -497,5 +668,6 @@ export function formatReport(report: Report, max: number | undefined): string {
       `${stale} stale \`deadGlobs\` ${stale === 1 ? "entry" : "entries"}.`,
     );
   }
-  return lines.join("\n").trimStart();
+  // Sections each open with a blank line, and the summary ends with one.
+  return lines.join("\n").replace(BLANK_LINES, "\n\n").trimStart();
 }

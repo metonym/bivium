@@ -6,12 +6,15 @@ import {
 } from "./config.ts";
 import { affectedBy, type Graph } from "./graph.ts";
 import { type PackageDiff, packageSeeds } from "./lockfile.ts";
-import type { NarrowResult, Selection } from "./types.ts";
+import type { FullRunCause, NarrowResult, Selection } from "./types.ts";
 
 export interface Plan {
   suites: Record<string, Selection>;
-  // Why a suite falls back to a full run.
+  // Why a suite falls back to a full run, as sentences and as data.
   reasons: string[];
+  causes: FullRunCause[];
+  // Each suite's test count.
+  totals: Record<string, number>;
   full: string[];
   // What a lockfile or `package.json` change seeded or left out, a line per
   // changed package.
@@ -73,8 +76,34 @@ interface Changes {
   // for them. Each seeds the walk, for the files that read it, but isn't
   // subject to the orphan rule: the packages it changed are how it's wired.
   packageFiles: string[];
+  runs: FullRuns;
+}
+
+// Why suites run in full, and which.
+interface FullRuns {
   reasons: string[];
+  causes: FullRunCause[];
   full: Set<string>;
+  // Every suite, unless `suites` names some.
+  add(cause: Omit<FullRunCause, "suites"> & { suites?: string[] }): void;
+}
+
+function fullRuns(config: ResolvedConfig): FullRuns {
+  const reasons: string[] = [];
+  const causes: FullRunCause[] = [];
+  const full = new Set<string>();
+  const all = config.suites.map((suite) => suite.name);
+  return {
+    reasons,
+    causes,
+    full,
+    add(cause) {
+      const suites = cause.suites ?? all;
+      causes.push({ ...cause, suites });
+      reasons.push(cause.message);
+      for (const name of suites) full.add(name);
+    },
+  };
 }
 
 export function classify(
@@ -83,11 +112,7 @@ export function classify(
   config: ResolvedConfig,
   packages?: PackageDiff,
 ): Changes {
-  const reasons: string[] = [];
-  const full = new Set<string>();
-  const runAll = () => {
-    for (const suite of config.suites) full.add(suite.name);
-  };
+  const runs = fullRuns(config);
   const relevant: string[] = [];
   const quiet: string[] = [];
   const packageFiles: string[] = [];
@@ -100,13 +125,20 @@ export function classify(
     const wired = config.suites.filter((suite) => suite.isWiring(file));
     const diffed = packages?.files.has(file) ?? false;
     if (config.isSelf(file)) {
-      reasons.push(`${file}: test selector changed`);
-      runAll();
+      runs.add({
+        kind: "self",
+        file,
+        message: `${file}: test selector changed`,
+      });
       continue;
     }
     for (const suite of wired) {
-      reasons.push(`${file}: wires the ${suite.name} suite`);
-      full.add(suite.name);
+      runs.add({
+        kind: "wiring",
+        suites: [suite.name],
+        file,
+        message: `${file}: wires the ${suite.name} suite`,
+      });
     }
     // A wired lockfile still changes packages the other suites import.
     if (wired.length > 0 && !diffed) continue;
@@ -115,17 +147,19 @@ export function classify(
       if (reason === undefined) {
         packageFiles.push(file);
       } else {
-        reasons.push(`${file}: ${reason}`);
-        runAll();
+        runs.add({ kind: "lockfile", file, message: `${file}: ${reason}` });
       }
     } else if (read || config.roots.some((root) => inRoot(file, root))) {
       (ignored ? quiet : relevant).push(file);
     } else {
-      reasons.push(`${file}: outside the dependency graph`);
-      runAll();
+      runs.add({
+        kind: "outside",
+        file,
+        message: `${file}: outside the dependency graph`,
+      });
     }
   }
-  return { relevant, quiet, packageFiles, reasons, full };
+  return { relevant, quiet, packageFiles, runs };
 }
 
 // What a suite's narrowers select: the walk from the matched files stops at
@@ -172,7 +206,7 @@ export function planTests(
     packages,
   }: PlanOptions = {},
 ): Plan {
-  const { relevant, quiet, packageFiles, reasons, full } = classify(
+  const { relevant, quiet, packageFiles, runs } = classify(
     graph,
     changed,
     config,
@@ -182,10 +216,8 @@ export function planTests(
     packages && packageFiles.length > 0
       ? packageSeeds(graph, config, packages, packageFiles)
       : { seeds: new Map<string, string>(), notes: [], reasons: [] };
-  reasons.push(...bumped.reasons);
-  if (bumped.reasons.length > 0) {
-    for (const suite of config.suites) full.add(suite.name);
-  }
+  const { add, full } = runs;
+  for (const unused of bumped.reasons) add({ kind: "package", ...unused });
   const seeds = [
     ...relevant,
     ...barrelNames,
@@ -223,8 +255,12 @@ export function planTests(
       // page no test reaches, and the files only such pages load, are wired
       // to no test at all.
       if ([...reach].some(suite.isPage)) continue;
-      reasons.push(`${file}: no ${suite.name} test imports it`);
-      full.add(suite.name);
+      add({
+        kind: "orphan",
+        suites: [suite.name],
+        file,
+        message: `${file}: no ${suite.name} test imports it`,
+      });
     }
   }
 
@@ -233,8 +269,12 @@ export function planTests(
     const matched = relevant.filter(narrower.match);
     if (matched.length === 0) continue;
     if ("all" in result) {
-      reasons.push(`${narrower.name}: ${result.all}`);
-      for (const name of narrower.suites) full.add(name);
+      add({
+        kind: "narrower",
+        suites: narrower.suites,
+        narrower: narrower.name,
+        message: `${narrower.name}: ${result.all}`,
+      });
       continue;
     }
     for (const name of narrower.suites) {
@@ -267,7 +307,14 @@ export function planTests(
   }
   return {
     suites,
-    reasons,
+    reasons: runs.reasons,
+    causes: runs.causes,
+    totals: Object.fromEntries(
+      config.suites.map((suite) => [
+        suite.name,
+        tests.get(suite.name)?.length ?? 0,
+      ]),
+    ),
     full: [...full],
     packages: bumped.notes,
     seeds,
