@@ -786,7 +786,9 @@ function jsdocImport(start: number, at: number, stop: number) {
       const clause = tag[1].replace(JSDOC_LINE_STAR, "\n");
       const names = clause.includes("{") ? namedBindings(clause) : undefined;
       out.imports.push(
-        names ? { specifier: tag[3], names } : { specifier: tag[3] },
+        names
+          ? { specifier: tag[3], names, type: true }
+          : { specifier: tag[3], type: true },
       );
     }
     return;
@@ -798,14 +800,21 @@ function jsdocImport(start: number, at: number, stop: number) {
   JSDOC_IMPORT_TYPE.lastIndex = at;
   const type = JSDOC_IMPORT_TYPE.exec(src);
   if (type && JSDOC_IMPORT_TYPE.lastIndex <= stop) {
-    out.imports.push({ specifier: type[2] });
+    out.imports.push({ specifier: type[2], type: true });
   }
 }
 
-function record(specifier: string, names: string[] | undefined, disk: boolean) {
+function record(
+  specifier: string,
+  names: string[] | undefined,
+  disk: boolean,
+  type = false,
+) {
   if (specifier === "") return;
-  out.imports.push(names ? { specifier, names } : { specifier });
-  if (disk && DISK.has(specifier)) out.readsDisk = true;
+  const ref: ImportRef = names ? { specifier, names } : { specifier };
+  if (type) ref.type = true;
+  out.imports.push(ref);
+  if (disk && !type && DISK.has(specifier)) out.readsDisk = true;
 }
 
 function isSpace(c: number) {
@@ -835,12 +844,18 @@ function importAt(j: number) {
 // `import <clause> from "x"`: reads up to the specifier, if it is one.
 function declaration(k: number) {
   let clauseStart = k;
-  // `import type X from` (the regex extractor's `type\s+`).
+  let type = false;
+  // `import type X from` (the regex extractor's `type\s+`), but not
+  // `import type from "x"`, a default import named `type`.
   if (src.startsWith("type", k) && isSpace(src.charCodeAt(k + 4))) {
     clauseStart = k + 5;
     while (clauseStart < end && isSpace(src.charCodeAt(clauseStart))) {
       clauseStart++;
     }
+    type = !(
+      isWord(clauseStart, "from") &&
+      isQuote(src.charCodeAt(skipTrivia(clauseStart + 4)))
+    );
   }
   let p = k;
   for (let steps = 0; steps < 256; steps++) {
@@ -854,7 +869,12 @@ function declaration(k: number) {
         if (isQuote(src.charCodeAt(r))) {
           const e = stringEnd(r);
           if (e !== -1) {
-            record(src.slice(r + 1, e - 1), clauseNames(clauseStart, p), true);
+            record(
+              src.slice(r + 1, e - 1),
+              clauseNames(clauseStart, p),
+              true,
+              type,
+            );
           }
           return;
         }
@@ -914,10 +934,14 @@ function braceEnd(open: number) {
 // `export {…} from "x"`, `export * [as n] from "x"`.
 function exportAt(j: number) {
   let p = skipTrivia(j);
+  let type = false;
   if (isWord(p, "type")) {
     const q = skipTrivia(p + 4);
     const c = src.charCodeAt(q);
-    if (c === 123 || c === 42) p = q;
+    if (c === 123 || c === 42) {
+      p = q;
+      type = true;
+    }
   }
   const clauseStart = p;
   const c = src.charCodeAt(p);
@@ -944,7 +968,7 @@ function exportAt(j: number) {
   if (!isQuote(src.charCodeAt(r))) return;
   const e = stringEnd(r);
   if (e === -1) return;
-  record(src.slice(r + 1, e - 1), clauseNames(clauseStart, q), true);
+  record(src.slice(r + 1, e - 1), clauseNames(clauseStart, q), true, type);
 }
 
 // The literal first argument of the call whose `(` is at `k`.

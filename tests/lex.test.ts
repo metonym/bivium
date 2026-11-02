@@ -109,9 +109,45 @@ describe("comments and strings", () => {
       "/**\n * @example\n * vi.mock('./x', () => { import('./example') })\n */",
     ].join("\n");
     expect(lexed("a.js", source).imports).toEqual([
-      { specifier: "./types" },
-      { specifier: "./barrel", names: ["A", "B"] },
+      { specifier: "./types", type: true },
+      { specifier: "./barrel", names: ["A", "B"], type: true },
     ]);
+  });
+
+  it("marks type-only imports and re-exports, and only those", () => {
+    const source = [
+      `import type { A } from "./a";`,
+      `import type B from "./b";`,
+      `import type * as C from "./c";`,
+      `import type from "./default-named-type";`,
+      `import { type D, type E } from "./inline";`,
+      `import { type F, g } from "./mixed";`,
+      `export type { H } from "./h";`,
+      `export type * from "./star";`,
+      `export { type I } from "./inline-export";`,
+      `import type { Stats } from "node:fs";`,
+      `const t = await import("./dynamic");`,
+    ].join("\n");
+    const result = lexed("a.ts", source);
+    expect(
+      result.imports.map(({ specifier, type }) =>
+        type ? `type ${specifier}` : specifier,
+      ),
+    ).toEqual([
+      "type ./a",
+      "type ./b",
+      "type ./c",
+      "./default-named-type",
+      "./inline",
+      "./mixed",
+      "type ./h",
+      "type ./star",
+      "./inline-export",
+      "type node:fs",
+      "./dynamic",
+    ]);
+    // A type from `fs` reads nothing.
+    expect(result.unknown).toEqual([]);
   });
 
   it("ignores goto() in comments and strings", () => {

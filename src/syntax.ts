@@ -3,6 +3,10 @@ export interface ImportRef {
   // Set for a static import or re-export with only named bindings, so a
   // barrel can bind each name. Absent means the whole module.
   names?: string[];
+  // `import type`, `export type … from`, or a JSDoc type: erased before
+  // anything runs. An inline `import { type A }` isn't: under
+  // `verbatimModuleSyntax` it still loads the module.
+  type?: true;
 }
 
 export interface Scan {

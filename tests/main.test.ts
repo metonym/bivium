@@ -191,6 +191,71 @@ describe("bivium plan", () => {
     });
   });
 
+  it("selects through type-only edges only for a suite that observes types", async () => {
+    const dir = repo();
+    const suites = (types?: boolean) => ({
+      unit: { tests: "test/**/*.test.ts", root: "src", types },
+    });
+    write(dir, {
+      "bivium.config.json": JSON.stringify({ suites: suites(false) }),
+      "src/types.ts": "export type Props = { a: string };",
+      "src/feature.ts": `import type { Props } from "./types.ts";\nexport const feature = (p: Props) => p.a;`,
+      "src/reexport.ts": `export type { Props as P } from "./types.ts";`,
+      "src/shape.d.ts": "export type Shape = 1;",
+      "test/feature.test.ts": `import { feature } from "../src/feature.ts";`,
+      "test/reexport.test.ts": `import type { P } from "../src/reexport.ts";`,
+      "test/shape.test.ts": `/** @type {import("../src/shape").Shape} */\nexport const s = 1;`,
+      "test/other.test.ts": `import { b } from "../src/b.js";`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "types");
+    git(dir, "branch", "-f", "base");
+    const changes = {
+      "src/types.ts": "export type Props = { a: string; b?: number };",
+      "src/shape.d.ts": "export type Shape = 2;",
+    };
+    write(dir, changes);
+    // Reached only through types: no test, and no orphan rule.
+    expect(await planJson(dir)).toMatchObject({
+      suites: { unit: { mode: "none" } },
+      reasons: [],
+    });
+    // The config is the selector's own file: commit it before the change.
+    git(dir, "checkout", "-q", ".");
+    write(dir, {
+      "bivium.config.json": JSON.stringify({ suites: suites(undefined) }),
+    });
+    git(dir, "commit", "-q", "-am", "observe types");
+    git(dir, "branch", "-f", "base");
+    write(dir, changes);
+    expect((await planJson(dir)).suites.unit).toEqual({
+      mode: "some",
+      files: [
+        "test/feature.test.ts",
+        "test/reexport.test.ts",
+        "test/shape.test.ts",
+      ],
+    });
+    const { output } = await run([
+      "why",
+      "test/feature.test.ts",
+      "src/types.ts",
+      "--format",
+      "chain",
+      "--cwd",
+      dir,
+      "--base",
+      "base",
+    ]);
+    expect(output).toBe(
+      [
+        "if src/types.ts changes",
+        "  type-imported by  src/feature.ts:1",
+        "  imported by       test/feature.test.ts:1  ← selected",
+      ].join("\n"),
+    );
+  });
+
   it("runs everything for a change outside the roots or to its config", async () => {
     const dir = repo();
     write(dir, { "README.md": "x", "package.json": "{}" });

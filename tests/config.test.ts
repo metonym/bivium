@@ -43,6 +43,10 @@ describe("checkConfig", () => {
     ],
     [{ suites: { unit: { tests: 1 } } }, "suites.unit.tests must be"],
     [{ suites: { unit: {} } }, "suite unit has no tests"],
+    [
+      { suites: { unit: { tests: "a/**", types: "no" } } },
+      "suites.unit.types must be a boolean",
+    ],
     [{ suites: SUITES, edges: { "a/*.css": [1] } }, "edges must be"],
     [{ suites: SUITES, reads: { "a/*.ts": 1 } }, "reads must be"],
     [

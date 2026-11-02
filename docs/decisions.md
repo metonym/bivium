@@ -942,3 +942,42 @@ which are relative URLs, are prefixed with `./` unless they start with
 `./` or `../`, so `.well-known/x.js` stays relative. That changes what
 the scanner extracts for such a value, so `SCANNER_VERSION` is bumped.
 
+## 50. Type-only edges are a suite's choice, followed by default
+
+`import type` and `export type … from` are erased before anything runs,
+so a change that reaches a runtime test only through them can't change
+what it does. On a TypeScript app with ~800 Vitest files, an analytics
+map that type-imports a prop type from each component made a one-line
+component change select ~620 files; without the type-only edges, 24.
+
+But a type-checking suite (`tsc`, `vitest --typecheck`, `*.test-d.ts`)
+observes exactly those edges, and dropping them for it would be a silent
+miss. So it's per suite: `types: false` says the suite runs code. The
+default stays `true`, today's selection, since fail-closed is the
+default everywhere else and only the user knows what a suite's runner
+reads.
+
+What counts as type-only, from the extraction (so `SCANNER_VERSION` is
+bumped and the cache stores a flag per import):
+
+- `import type X`, `import type { A }`, `import type * as N`, but not
+  `import type from "x"`, a default import named `type`.
+- `export type { A } from`, `export type * from`.
+- JSDoc `@type {import("x")}` and `@import`, which only TypeScript reads.
+- Any edge to or from a declaration file (`.d.ts`, `.d.mts`, `.d.cts`,
+  `.d.css.ts`): nothing that runs loads one. So `./uid` resolving to
+  `uid.js` and `uid.d.ts` (decision 3) is a value edge and a type edge.
+
+Not type-only: an inline `import { type A, type B }`. Without
+`verbatimModuleSyntax` it's erased, but with it (and with esbuild under
+`preserveValueImports`) it becomes `import "x"`, which runs the module.
+Nor is a value import used only as a type: that needs a type checker.
+A node a file imports both ways is a value edge.
+
+A suite with `types: false` walks without the type-only edges (the
+reverse index builds a second dependents map the first time one asks).
+The orphan rule still walks with them: a file only type imports reach is
+reached, so it doesn't run the suite, it selects nothing. `check` counts
+a test as running on any change by its own suite's walk. `why` labels
+the edges `type` in every suite, and walks as the suite does.
+

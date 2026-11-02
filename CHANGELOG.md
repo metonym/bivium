@@ -30,6 +30,14 @@
 
 **Features**
 
+- `suites.<name>.types: false` says a suite runs code and can't observe
+  types: a change that reaches its tests only through `import type`,
+  `export type … from`, JSDoc types or declaration files selects none
+  of them, and still counts as reaching them for the orphan rule. The
+  default, `true`, keeps today's selection, which a type-checking suite
+  needs. `why` labels these edges `type` (`type-imported by`) whatever
+  the setting, and a type import from `fs` no longer counts as reading
+  the disk (#38).
 - An `edges` key can name generated files git doesn't list: an import
   of `.velite`, `../.contentlayer/generated` or a `paths` alias for
   one resolves to the file the key matches, with an extension or as an

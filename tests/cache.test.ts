@@ -38,7 +38,7 @@ describe("ExtractionCache", () => {
     const extractions = [
       extract(
         "ts",
-        `import { a, b as c } from "./a";\nimport "./side";\nexport * from "./star";\nconst x = import(y);\nawait page.goto("/x.html");\n// @depends-on css/**\n// @reads data/*.json\nimport.meta.glob("./g/*.ts?raw");`,
+        `import { a, b as c } from "./a";\nimport type { T } from "./t";\nimport "./side";\nexport * from "./star";\nconst x = import(y);\nawait page.goto("/x.html");\n// @depends-on css/**\n// @reads data/*.json\nimport.meta.glob("./g/*.ts?raw");`,
       ),
       extract("js", `export { a } from "./a.js";\nexport * from "./b.js";`),
       extract("ts", "const s = 'unterminated"),
@@ -158,8 +158,8 @@ const SCANNER_SOURCES = [
   "syntax.ts",
 ];
 const FINGERPRINT = {
-  version: 3,
-  sha1: "9ed8e51254c98677950c8eb14d37f9198729eb44",
+  version: 4,
+  sha1: "af758f0dc1f598091ccf907475e100b92fc3d21d",
 };
 
 describe("SCANNER_VERSION", () => {

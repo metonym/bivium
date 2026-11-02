@@ -2,6 +2,7 @@ import {
   inRoot,
   type ResolvedConfig,
   type ResolvedNarrower,
+  type ResolvedSuite,
 } from "./config.ts";
 import { affectedBy, type Graph } from "./graph.ts";
 import { type PackageDiff, packageSeeds } from "./lockfile.ts";
@@ -129,7 +130,7 @@ export function classify(
 function narrowedWalk(
   graph: Graph,
   seeds: string[],
-  quiet: string[],
+  { quiet, types }: { quiet: string[]; types: boolean },
   coarse: Set<string>,
   narrowings: Narrowing[],
 ): Set<string> {
@@ -137,11 +138,12 @@ function narrowedWalk(
   const fine = affectedBy(
     graph,
     seeds.filter((seed) => !matched.has(seed)),
-    { quiet },
+    { quiet, types },
   );
   for (const narrowing of narrowings) {
     const walk = affectedBy(graph, [...narrowing.matched, ...narrowing.seeds], {
       opaque: narrowing.narrower.opaque,
+      types,
     });
     for (const node of walk) fine.add(node);
   }
@@ -177,6 +179,13 @@ export function planTests(
     ...bumped.seeds.keys(),
   ];
   const affected = affectedBy(graph, seeds, { quiet });
+  // A suite that can't observe types walks without the type-only edges.
+  let runtime: Set<string> | undefined;
+  const affectedFor = (suite: ResolvedSuite) => {
+    if (suite.types) return affected;
+    runtime ??= affectedBy(graph, seeds, { quiet, types: false });
+    return runtime;
+  };
   const nodes = [...graph.keys()];
   const tests = new Map(
     config.suites.map((suite) => [suite.name, nodes.filter(suite.isTest)]),
@@ -223,20 +232,24 @@ export function planTests(
 
   const suites: Record<string, Selection> = {};
   for (const suite of config.suites) {
-    suites[suite.name] = full.has(suite.name)
-      ? { mode: "all" }
-      : select(
-          narrowings.has(suite.name)
-            ? narrowedWalk(
-                graph,
-                seeds,
-                quiet,
-                affected,
-                narrowings.get(suite.name) ?? [],
-              )
-            : affected,
-          tests.get(suite.name) ?? [],
-        );
+    if (full.has(suite.name)) {
+      suites[suite.name] = { mode: "all" };
+      continue;
+    }
+    const coarse = affectedFor(suite);
+    const narrowing = narrowings.get(suite.name);
+    suites[suite.name] = select(
+      narrowing
+        ? narrowedWalk(
+            graph,
+            seeds,
+            { quiet, types: suite.types },
+            coarse,
+            narrowing,
+          )
+        : coarse,
+      tests.get(suite.name) ?? [],
+    );
   }
   return {
     suites,
