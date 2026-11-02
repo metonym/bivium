@@ -161,6 +161,33 @@ describe("bivium why", () => {
     );
   });
 
+  it("agrees with plan that an ignored change selects only through edges", async () => {
+    const dir = repo({
+      "bivium.config.json": JSON.stringify({
+        suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
+        roots: ["src", "test"],
+        ignore: "src/notes/**",
+      }),
+      "src/notes/a.md": "notes",
+      "src/notes/value.js": "export const v = 1;",
+      "test/v.test.js": `import { v } from "../src/notes/value.js";\n`,
+    });
+    git(dir, "checkout", "-q", "src/a.js");
+    write(dir, {
+      "src/notes/a.md": "more notes",
+      "src/notes/value.js": "export const v = 2;",
+    });
+    expect((await why(dir, "test/u.test.js")).output).toBe(
+      "Not selected: none of the 2 changed files reaches it.",
+    );
+    expect((await why(dir, "test/v.test.js", "--format", "chain")).output).toBe(
+      [
+        "src/notes/value.js changed",
+        "  imported by  test/v.test.js:1  ← selected",
+      ].join("\n"),
+    );
+  });
+
   it("explains a given file, and says what it reaches when not this test", async () => {
     const dir = repo({ "test/b.test.js": `import { b } from "lib";\n` });
     expect((await why(dir, "test/a.test.js", "src/b.js")).output).toBe(

@@ -149,12 +149,31 @@ describe("planTests", () => {
     expect(plan(["tests/Gone/Gone.test.ts"]).reasons).toEqual([]);
   });
 
-  it("selects the tests that import an ignored file", () => {
+  it("selects the tests that import an ignored file, and no others", () => {
     expect(plan(["docs/src/token-reference.ts"])).toEqual({
-      unit: "tests/css/unknown.test.ts tests/docs/token-reference.test.ts",
+      unit: "tests/docs/token-reference.test.ts",
       e2e: "none",
       reasons: [],
     });
+  });
+
+  it("never runs a suite for an ignored file no test reaches", () => {
+    const rooted = resolveConfig({
+      ...CONFIG,
+      suites: { ...CONFIG.suites, unit: { ...CONFIG.suites.unit, root: "." } },
+      ignore: [...[CONFIG.ignore ?? []].flat(), "src/**/*.stories.ts"],
+    });
+    const stories = graphOf(
+      { ...REPO, "src/Button/Button.stories.ts": `import "./Button.svelte";` },
+      { config: CONFIG },
+    );
+    for (const file of ["README.md", "src/Button/Button.stories.ts"]) {
+      const { suites, reasons } = planTests(stories, [file], rooted);
+      expect({ unit: formatSelection(suites.unit), reasons }).toEqual({
+        unit: "none",
+        reasons: [],
+      });
+    }
   });
 
   it("skips deleted import-only files, non-inputs and ignored workflows", () => {

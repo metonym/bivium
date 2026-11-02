@@ -501,6 +501,9 @@ function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
 
 interface Walk {
   includeUnknown?: boolean;
+  // Seeds no unknown node depends on: ignored files, which no test can
+  // observe except through an edge the graph has.
+  quiet?: Iterable<string>;
   // Whether `changed` seeds the files that read them as text. An unknown
   // node isn't a change, so what it puts on every change skips its readers.
   readers?: boolean;
@@ -510,14 +513,16 @@ interface Walk {
   parents?: Map<string, Via>;
 }
 
-// Every node that transitively depends on one of `changed` (inclusive).
-// Files with unknown dependencies count as depending on any change unless
-// `includeUnknown` is false. The walk doesn't enter `opaque` nodes.
+// Every node that transitively depends on one of `changed` or `quiet`
+// (inclusive). Files with unknown dependencies count as depending on any
+// change but a quiet one, unless `includeUnknown` is false. The walk
+// doesn't enter `opaque` nodes.
 export function affectedBy(
   graph: Graph,
   changed: Iterable<string>,
   {
     includeUnknown = true,
+    quiet = [],
     readers: seedReaders = true,
     opaque,
     parents,
@@ -539,7 +544,11 @@ export function affectedBy(
     }
   };
 
-  const changedPaths = [...changed];
+  const loud = [...changed];
+  for (const path of loud) visit(path);
+  // A file unknown nodes depend on: the first seed that isn't quiet.
+  const first = queue[0];
+  const changedPaths = [...loud, ...quiet];
   for (const path of changedPaths) visit(path);
   // Text reads only see the files themselves, not what they import.
   if (seedReaders) {
@@ -552,7 +561,6 @@ export function affectedBy(
       }
     }
   }
-  const first = queue[0];
   if (includeUnknown && first !== undefined) {
     for (const path of unknown) visit(path, { from: first, kind: "unknown" });
   }
