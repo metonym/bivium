@@ -55,6 +55,25 @@ describe("relative specifiers", () => {
     expect(resolve("src/x.ts", "./c.js")).toEqual({ files: ["src/c.js"] });
   });
 
+  it("rewrites .js to each TypeScript source that exists, declarations too", () => {
+    const resolve = resolver([
+      "src/a.tsx",
+      "src/u.d.ts",
+      "src/both.ts",
+      "src/both.d.ts",
+      "src/c.d.cts",
+      "src/v.tsx",
+    ]);
+    expect(resolve("src/x.ts", "./a.js")).toEqual({ files: ["src/a.tsx"] });
+    expect(resolve("src/x.ts", "./u.js")).toEqual({ files: ["src/u.d.ts"] });
+    expect(resolve("src/x.ts", "./both.js")).toEqual({
+      files: ["src/both.ts", "src/both.d.ts"],
+    });
+    expect(resolve("src/x.ts", "./c.cjs")).toEqual({ files: ["src/c.d.cts"] });
+    expect(resolve("src/x.ts", "./v.jsx")).toEqual({ files: ["src/v.tsx"] });
+    expect(resolve("src/x.ts", "./c.mjs")).toBeUndefined();
+  });
+
   it("drops a query or hash, and fails on a missing file", () => {
     const resolve = resolver(["src/a.ts"]);
     expect(resolve("src/x.ts", "./a?raw")).toEqual({ files: ["src/a.ts"] });
@@ -171,6 +190,42 @@ describe("package specifiers", () => {
     expect(resolve("tests/x.test.ts", "lib/src/b.js")).toEqual({
       files: ["src/b.js"],
     });
+  });
+
+  it("reads an alias key with a trailing slash as its prefix, as Vite does", () => {
+    const resolve = resolver(["al/a.ts", "al/b/index.ts"], {
+      config: { alias: { "@al/": "al/" } },
+    });
+    expect(resolve("tests/x.test.ts", "@al/a")).toEqual({ files: ["al/a.ts"] });
+    expect(resolve("tests/x.test.ts", "@al/a.js")).toEqual({
+      files: ["al/a.ts"],
+    });
+    expect(resolve("tests/x.test.ts", "@al/b")).toEqual({
+      files: ["al/b/index.ts"],
+    });
+    expect(resolve("tests/x.test.ts", "@al//a.ts")).toEqual({
+      files: ["al/a.ts"],
+    });
+    expect(resolve("tests/x.test.ts", "@alpha/a")).toBeUndefined();
+  });
+
+  it("rewrites a .js target of the package's exports to its TypeScript source", () => {
+    const resolve = resolver(
+      ["packages/ui/src/Button.ts", "packages/ui/src/types.d.ts"],
+      {
+        packages: {
+          ".": { dependencies: { "@acme/ui": "workspace:*" } },
+          "packages/ui": { name: "@acme/ui", exports: { "./*": "./src/*" } },
+        },
+      },
+    );
+    expect(resolve("tests/x.test.ts", "@acme/ui/Button.js")).toEqual({
+      files: ["packages/ui/src/Button.ts"],
+    });
+    expect(resolve("tests/x.test.ts", "@acme/ui/types.js")).toEqual({
+      files: ["packages/ui/src/types.d.ts"],
+    });
+    expect(resolve("tests/x.test.ts", "@acme/ui/Missing.js")).toBeUndefined();
   });
 
   it("makes builtins pkg: nodes", () => {
@@ -345,6 +400,16 @@ describe("tsconfig paths", () => {
     expect(resolve("src/x.ts", "@/lib/a")).toEqual({ files: ["src/lib/a.ts"] });
     expect(resolve("src/x.ts", "utils")).toEqual({ files: ["src/utils.ts"] });
     expect(resolve("src/x.ts", "missing")).toBeUndefined();
+  });
+
+  it("reads a doubled slash as one", async () => {
+    const { tsconfigs: ts } = await tsconfigs({
+      "tsconfig.json": `{ "compilerOptions": { "paths": { "#lib/*": ["./lib/*"] } } }`,
+    });
+    const resolve = resolver(["lib/a.ts"], { tsconfigs: ts });
+    expect(resolve("tests/x.test.ts", "#lib//a.ts")).toEqual({
+      files: ["lib/a.ts"],
+    });
   });
 
   it("takes every target that exists", async () => {

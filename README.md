@@ -45,7 +45,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 
 | It follows | As |
 |:---|:---|
-| Static, side-effect and dynamic imports, `export … from`, `require()` | Edges to every file the specifier can load: each extension that exists, each `exports` condition |
+| Static, side-effect and dynamic imports, `export … from`, `require()` | Edges to every file the specifier can load: each extension that exists, each `exports` condition. A missing `x.js` (`.jsx`, `.mjs`, `.cjs`) is its TypeScript source, as TypeScript reads it: `x.ts`, `x.tsx` or `x.d.ts`, through any path, alias or `exports` target |
 | `vi.mock()`, `vi.importActual()` and the rest of the family | Edges |
 | `import.meta.glob()` | Every matching file, now and later |
 | JSDoc `@type {import("x")}` and `@import` | Edges (TypeScript reads them) |
@@ -77,7 +77,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.output` | The step output `plan --github` writes. Default: `<name>-tests` |
 | `roots` | Paths the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe. A file some test reaches still counts |
-| `alias` | Specifier prefix → path, as the bundler aliases it. Tried before tsconfig `paths` and `package.json` `exports` |
+| `alias` | Specifier prefix → path, as the bundler aliases it. Tried before tsconfig `paths` and `package.json` `exports`. A key ending in `/` is the prefix, as Vite reads it: `{ "@/": "src/" }` maps `@/x` to `src/x` |
 | `edges` | Generated file glob → its inputs, which it depends on transitively, as with `@depends-on`: `{ "dist/*.css": "styles/**" }`. In a value, `$1`, `$2`… are what the key's wildcards matched, counted from the left: `{ "examples/*/package.json": "examples/$1/**" }` |
 | `reads` | File glob → the files it reads as text, as with `@reads`: only a direct change to one counts, so their imports and unknowns don't spread to it. Values take `$1`… as in `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }` |
 | `self` | The selector's own files: a change to one runs everything. The config file is always one |

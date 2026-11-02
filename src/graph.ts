@@ -221,7 +221,9 @@ export function graphFrom(
     for (const { specifier, names } of found.imports) {
       const resolved = resolve(path, specifier);
       if (resolved === undefined) {
-        deps.unknown.push(`unresolved "${specifier}"`);
+        // `import` and `vi.mock()` of one specifier are one cause.
+        const cause = `unresolved "${specifier}"`;
+        if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
       } else if ("pkg" in resolved) {
         deps.files.add(`pkg:${resolved.pkg}`);
         external.add(`pkg:${resolved.pkg}`);
