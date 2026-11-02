@@ -162,6 +162,35 @@ describe("bivium plan", () => {
     });
   });
 
+  it("reaches a generated file git ignores through its edges", async () => {
+    const dir = repo();
+    write(dir, {
+      ".gitignore": ".velite/\n",
+      ".velite/index.js": "export const docs = [];",
+      "content/a.md": "# a",
+      "tsconfig.json": `{ "compilerOptions": { "paths": { "#velite": ["./.velite"] } } }`,
+      "bivium.config.json": JSON.stringify({
+        suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
+        roots: ["src", "test", "content"],
+        edges: { ".velite/*": "content/**" },
+      }),
+      "test/docs.test.js": `import { docs } from "#velite";`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "velite");
+    git(dir, "branch", "-f", "base");
+    const check = await run(["check", "--json", "--cwd", dir]);
+    expect(JSON.parse(check.output)).toMatchObject({
+      unknown: [],
+      deadGlobs: [],
+    });
+    write(dir, { "content/a.md": "# b" });
+    expect((await planJson(dir)).suites.unit).toEqual({
+      mode: "some",
+      files: ["test/docs.test.js"],
+    });
+  });
+
   it("runs everything for a change outside the roots or to its config", async () => {
     const dir = repo();
     write(dir, { "README.md": "x", "package.json": "{}" });

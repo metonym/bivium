@@ -19,7 +19,7 @@ import type { ImportRef } from "./syntax.ts";
 // Bump on any change to what `extract` returns for some input (lexer,
 // host formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 2;
+export const SCANNER_VERSION = 3;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 

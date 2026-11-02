@@ -88,6 +88,65 @@ describe("relative specifiers", () => {
     expect(resolve("src/x.ts", "./a")).toEqual({ files: ["src/a.vue"] });
   });
 
+  it("finds a generated file git doesn't list with an extension, or as an index", () => {
+    const resolve = resolver([], {
+      config: {
+        edges: { ".velite/*": ["content/**"], "gen/api.ts": "api/**" },
+      },
+    });
+    expect(resolve("src/x.ts", "../.velite")).toEqual({
+      files: [
+        ".velite/index.ts",
+        ".velite/index.tsx",
+        ".velite/index.mts",
+        ".velite/index.cts",
+        ".velite/index.js",
+        ".velite/index.jsx",
+        ".velite/index.mjs",
+        ".velite/index.cjs",
+        ".velite/index.d.ts",
+        ".velite/index.svelte",
+        ".velite/index.vue",
+        ".velite/index.json",
+      ],
+    });
+    expect(resolve("src/x.ts", "../gen/api")).toEqual({
+      files: ["gen/api.ts"],
+    });
+    expect(resolve("src/x.ts", "../gen/other")).toBeUndefined();
+  });
+
+  it("doesn't take a bare name under baseUrl for a generated file", async () => {
+    const { tsconfigs: ts } = await readTsconfigs(["tsconfig.json"], () =>
+      Promise.resolve(`{ "compilerOptions": { "baseUrl": "." } }`),
+    );
+    const resolve = resolver([], {
+      config: { edges: { "**/*.d.ts": "types/**" } },
+      packages: { ".": { dependencies: { react: "19" } } },
+      tsconfigs: ts,
+    });
+    expect(resolve("src/x.ts", "react")).toEqual({ pkg: "react" });
+    expect(resolve("src/x.ts", "./types")).toEqual({
+      files: ["src/types.d.ts", "src/types/index.d.ts"],
+    });
+  });
+
+  it("reads a specifier that starts with a dot but not `./` or `../` as bare", async () => {
+    const { tsconfigs: ts } = await readTsconfigs(["tsconfig.json"], (file) =>
+      Promise.resolve(
+        file === "tsconfig.json"
+          ? `{ "compilerOptions": { "paths": { ".gen": ["./.gen"], ".gen/*": ["./.gen/*"] } } }`
+          : undefined,
+      ),
+    );
+    const resolve = resolver([".gen/index.js", ".gen/a.ts", "src/.gen.ts"], {
+      tsconfigs: ts,
+    });
+    expect(resolve("src/x.ts", ".gen")).toEqual({ files: [".gen/index.js"] });
+    expect(resolve("src/x.ts", ".gen/a")).toEqual({ files: [".gen/a.ts"] });
+    expect(resolve("src/x.ts", "./.gen")).toEqual({ files: ["src/.gen.ts"] });
+  });
+
   it("accepts a generated file that doesn't exist yet", () => {
     const resolve = resolver([], {
       config: { edges: { "css/*.css": ["css/**"] } },

@@ -6,6 +6,7 @@ import {
   namedBindings,
   QUERY,
   READS,
+  RELATIVE,
   type Scan,
   URL_REF,
 } from "./syntax.ts";
@@ -65,7 +66,7 @@ export function extractRegex(source: string, html: boolean): Scan {
     for (const [, ref] of source.matchAll(HTML_REF)) {
       if (!URL_REF.test(ref)) {
         result.imports.push({
-          specifier: ref.startsWith(".") ? ref : `./${ref}`,
+          specifier: RELATIVE.test(ref) ? ref : `./${ref}`,
         });
       }
     }

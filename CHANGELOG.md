@@ -28,8 +28,20 @@
   quietly stopped for it: a change no test reached selected nothing
   instead of the suite (#21).
 
+**Features**
+
+- An `edges` key can name generated files git doesn't list: an import
+  of `.velite`, `../.contentlayer/generated` or a `paths` alias for
+  one resolves to the file the key matches, with an extension or as an
+  index, instead of being unresolved, and depends on the key's inputs
+  (#20).
+
 **Fixes**
 
+- A specifier that starts with a dot but not `./` or `../`
+  (`.velite`) is bare, as TypeScript and Node read it, so tsconfig
+  `paths` and `alias` apply to it. An HTML `src=".well-known/x.js"`
+  is still relative (#20).
 - An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite
   configs spell it) matches the specifiers that start with it. It
   matched none, so each was unresolved (#29).

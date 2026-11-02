@@ -23,6 +23,10 @@ export interface Scan {
 
 export const QUERY = /[?#].*$/;
 
+// A relative specifier, as Node and TypeScript read one: `.`, `..`, or one
+// that starts with `./` or `../`. `.velite` is bare.
+export const RELATIVE = /^\.\.?(?:\/|$)/;
+
 export const URL_REF = /^[a-z]+:|^\/\//;
 
 // Commas inside `{a,b}` belong to the glob.
