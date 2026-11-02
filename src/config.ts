@@ -310,13 +310,35 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
   return {
     tests,
     run: field(value, "run", isString, at, "a command"),
-    root: field(value, "root", isGlobs, at, "a path or a list of paths"),
+    root: paths(value, "root", at),
     urls: field(value, "urls", isStringRecord, at, "a map of URL patterns"),
     pages: field(value, "pages", isGlobs, at, globs),
     wiring: field(value, "wiring", isGlobs, at, globs),
     nonInputs: field(value, "nonInputs", isGlobs, at, globs),
     output: field(value, "output", isString, at, "an output name"),
   };
+}
+
+const WILDCARD = /[*?{}[\]]/;
+
+// `root` and `roots` are path prefixes: a glob there matches no path, and
+// the orphan rule and `goto()` reading quietly stop where it was meant to
+// apply, so one is an error.
+function paths(
+  record: Record<string, unknown>,
+  key: string,
+  at: string,
+): Globs | undefined {
+  const value = field(record, key, isGlobs, at, "a path or a list of paths");
+  for (const path of typeof value === "string" ? [value] : (value ?? [])) {
+    const wildcard = WILDCARD.exec(path);
+    if (!wildcard) continue;
+    const prefix = normalizeRoot(path.slice(0, wildcard.index));
+    throw new Error(
+      `bivium config: ${at}${key} takes paths, not globs: "${path}" (the directory is "${prefix}")`,
+    );
+  }
+  return value;
 }
 
 function isResult(value: unknown): value is NarrowResult {
@@ -426,7 +448,7 @@ export function checkConfig(value: unknown): Config {
     narrowers: narrowers?.map((narrower, i) =>
       checkNarrower(narrower, `narrowers[${i}]`),
     ),
-    roots: field(value, "roots", isGlobs, "", "a path or a list of paths"),
+    roots: paths(value, "roots", ""),
     ignore: field(value, "ignore", isGlobs, "", globs),
     alias: field(value, "alias", isStringRecord, "", "a map of paths"),
     edges,

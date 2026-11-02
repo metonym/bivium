@@ -69,13 +69,13 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 |:---|:---|
 | `suites.<name>.tests` | The suite's test files |
 | `suites.<name>.run` | The command `bivium run` runs. `{files}` is replaced by the selection (nothing for `all`); without it, the files are appended |
-| `suites.<name>.root` | Where the orphan rule applies: a changed file here that no test of the suite reaches is wired some other way (a setup file, a runner config), so the whole suite runs. Default: the whole repository |
+| `suites.<name>.root` | Where the orphan rule applies: a changed file here that no test of the suite reaches is wired some other way (a setup file, a runner config), so the whole suite runs. Paths, not globs (`e2e`, not `e2e/**`): a glob is an error. Default: the whole repository |
 | `suites.<name>.urls` | URL pattern → file pattern, for `page.goto()` calls under `root` |
 | `suites.<name>.pages` | Pages only a `goto()` opens; files only they load are wired to no test |
 | `suites.<name>.wiring` | Files whose change runs the whole suite: another harness, a runner config |
 | `suites.<name>.nonInputs` | Files under `root` the runner never reads, such as type-check inputs |
 | `suites.<name>.output` | The step output `plan --github` writes. Default: `<name>-tests` |
-| `roots` | Paths the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
+| `roots` | Paths (not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe. A file some test reaches still counts |
 | `alias` | Specifier prefix → path, as the bundler aliases it. Tried before tsconfig `paths` and `package.json` `exports`. A key ending in `/` is the prefix, as Vite reads it: `{ "@/": "src/" }` maps `@/x` to `src/x` |
 | `edges` | Generated file glob → its inputs, which it depends on transitively, as with `@depends-on`: `{ "dist/*.css": "styles/**" }`. In a value, `$1`, `$2`… are what the key's wildcards matched, counted from the left: `{ "examples/*/package.json": "examples/$1/**" }` |
