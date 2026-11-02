@@ -14,6 +14,9 @@
   `packages/ui/src/Button.ts` through `"./*": "./src/*"` (#28).
 - A doubled slash in a specifier resolves through `alias` and tsconfig
   `paths`, as it already did for a relative one (#33).
+- The lexer reads a JSX element with type arguments in `.tsx`
+  (`<List<string> items={[]} />`), which sent the file to the regex
+  extractor (#30).
 - `check` lists an unresolved specifier once per file, not once per
   import of it (an `import` and a `vi.mock()`).
 
