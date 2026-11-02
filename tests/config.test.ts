@@ -61,6 +61,14 @@ describe("checkConfig", () => {
       { suites: SUITES, deadGlobs: [{ file: "a.ts", glob: "b/**" }] },
       "deadGlobs[0] needs a file, glob and reason",
     ],
+    [
+      { suites: { e2e: { tests: "e2e/**", root: ["e2e", "components/**"] } } },
+      `suites.e2e.root takes paths, not globs: "components/**" (the directory is "components")`,
+    ],
+    [
+      { suites: SUITES, roots: "src/*.ts" },
+      `roots takes paths, not globs: "src/*.ts" (the directory is "src")`,
+    ],
     [[], "not an object"],
   ])("rejects %j", (config, message) => {
     expect(() => checkConfig(config)).toThrow(message);

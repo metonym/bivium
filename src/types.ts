@@ -14,9 +14,9 @@ export interface SuiteConfig {
    * Where the orphan rule applies: a changed file under one of these paths
    * that no test of the suite reaches is wired some other way (a setup
    * file, a runner config), so the whole suite runs. Also where `goto()`
-   * calls are read. Default: the whole repository.
+   * calls are read. Paths, not globs. Default: the whole repository.
    */
-  root?: Globs;
+  root?: string | readonly string[];
   /** URL pattern → file pattern for `page.goto()`: `{ "/*": "e2e/fixtures/*" }`. */
   urls?: Readonly<Record<string, string>>;
   /** Pages only a `goto()` opens. A changed file that only such pages load, and that no test opens, is wired to no test. */
@@ -34,8 +34,8 @@ export interface Config<Suite extends string = string> {
   suites: Readonly<Record<Suite, SuiteConfig>>;
   /** Plugins that narrow what a change to some files selects. */
   narrowers?: readonly Narrower<NoInfer<Suite>>[];
-  /** Paths (directories or files) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository. */
-  roots?: Globs;
+  /** Paths (directories or files, not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository. */
+  roots?: string | readonly string[];
   /** Files no test can observe. A file some test reaches still counts. */
   ignore?: Globs;
   /** Specifier prefix → path, as the bundler aliases it: `{ "my-package": "src" }`. Tried before `package.json` `exports`. */

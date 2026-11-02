@@ -16,6 +16,13 @@
   instead of over 64 MB, and peaks at 124 MB of RSS instead of 285 MB
   (Bun: 88 MB instead of 115 MB), and is no slower (#42).
 
+**Breaking changes**
+
+- A suite's `root`, and `roots`, with a wildcard is an error. Both take
+  paths, so `root: "components/**"` matched nothing and the orphan rule
+  quietly stopped for it: a change no test reached selected nothing
+  instead of the suite (#21).
+
 **Fixes**
 
 - An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite
