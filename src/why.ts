@@ -190,6 +190,8 @@ function rootCause(
 
 interface Walk {
   seeds: string[];
+  // Seeds no unknown node depends on (changed ignored files).
+  quiet?: string[];
   opaque: ((path: string) => boolean) | undefined;
 }
 
@@ -201,12 +203,14 @@ function walks(
 ): Walk[] {
   const { plan, graph } = computed;
   if (from !== undefined) return [{ seeds: [from], opaque: undefined }];
+  const { quiet } = plan;
   const narrowings = plan.narrowings.get(suite);
-  if (!narrowings) return [{ seeds: plan.seeds, opaque: undefined }];
+  if (!narrowings) return [{ seeds: plan.seeds, quiet, opaque: undefined }];
   const matched = new Set(narrowings.flatMap((narrowing) => narrowing.matched));
   return [
     {
       seeds: plan.seeds.filter((seed) => !matched.has(seed)),
+      quiet,
       opaque: undefined,
     },
     ...narrowings.map((narrowing) => ({
@@ -229,6 +233,7 @@ function shortestChain(
   for (const walk of candidates) {
     const parents = new Map<string, Via>();
     const reached = affectedBy(computed.graph, walk.seeds, {
+      quiet: walk.quiet,
       opaque: walk.opaque,
       parents,
     });
@@ -255,11 +260,17 @@ function reachers(
   except: string,
 ): string[] {
   const found = new Set<string>();
-  for (const { seeds, opaque } of candidates) {
-    for (const seed of seeds) {
-      if (seed === except || found.has(seed)) continue;
-      if (affectedBy(computed.graph, [seed], { opaque }).has(test)) {
-        found.add(seed);
+  for (const { seeds, quiet = [], opaque } of candidates) {
+    for (const [list, isQuiet] of [
+      [seeds, false],
+      [quiet, true],
+    ] as const) {
+      for (const seed of list) {
+        if (seed === except || found.has(seed)) continue;
+        const reached = isQuiet
+          ? affectedBy(computed.graph, [], { quiet: [seed], opaque })
+          : affectedBy(computed.graph, [seed], { opaque });
+        if (reached.has(test)) found.add(seed);
       }
     }
   }
@@ -370,6 +381,7 @@ export async function explain(
         const alone = candidates.map((walk) => ({
           ...walk,
           seeds: walk.seeds.filter((candidate) => candidate === seed),
+          quiet: walk.quiet?.filter((candidate) => candidate === seed),
         }));
         const other = shortestChain(computed, alone, test);
         return other && chainOf(context, other, undefined);

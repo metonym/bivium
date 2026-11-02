@@ -36,7 +36,12 @@ export interface Config<Suite extends string = string> {
   narrowers?: readonly Narrower<NoInfer<Suite>>[];
   /** Paths (directories or files, not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository. */
   roots?: string | readonly string[];
-  /** Files no test can observe. A file some test reaches still counts. */
+  /**
+   * Files no test can observe except through an edge (docs, stories). A
+   * change to one selects only the tests that reach it: it never runs a
+   * suite by the orphan rule, and doesn't select the tests whose
+   * dependencies are unknown.
+   */
   ignore?: Globs;
   /** Specifier prefix → path, as the bundler aliases it: `{ "my-package": "src" }`. Tried before `package.json` `exports`. */
   alias?: Readonly<Record<string, string>>;

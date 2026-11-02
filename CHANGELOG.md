@@ -18,6 +18,11 @@
 
 **Breaking changes**
 
+- A changed `ignore`d file the graph reads selects only the tests that
+  reach it through an edge. It no longer trips the orphan rule (with
+  the default `root`, any ignored change ran the whole suite), and no
+  longer selects the tests whose dependencies are unknown, so a
+  docs-only change selects `none` (#31, #32).
 - A suite's `root`, and `roots`, with a wildcard is an error. Both take
   paths, so `root: "components/**"` matched nothing and the orphan rule
   quietly stopped for it: a change no test reached selected nothing

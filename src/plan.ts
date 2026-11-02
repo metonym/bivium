@@ -18,6 +18,9 @@ export interface Plan {
   // What the walk started from, and each narrowed suite's narrowers: enough
   // to walk again and explain a selection.
   seeds: string[];
+  // Changed ignored files the graph has: they seed the walk, but no unknown
+  // node depends on them.
+  quiet: string[];
   // `pkg:` seed → the package change it stands for.
   packageCauses: Map<string, string>;
   narrowings: Map<string, Narrowing[]>;
@@ -57,6 +60,10 @@ interface Narrowing {
 interface Changes {
   // Changed files the graph places: the walk's seeds.
   relevant: string[];
+  // Changed ignored files the graph has. No test can observe one except
+  // through an edge to it, so they seed the walk without selecting the
+  // tests that depend on every change, and the orphan rule skips them.
+  quiet: string[];
   // Changed lockfiles and `package.json` files whose package diff stands in
   // for them. Each seeds the walk, for the files that read it, but isn't
   // subject to the orphan rule: the packages it changed are how it's wired.
@@ -77,12 +84,14 @@ export function classify(
     for (const suite of config.suites) full.add(suite.name);
   };
   const relevant: string[] = [];
+  const quiet: string[] = [];
   const packageFiles: string[] = [];
   for (const file of changed) {
-    // `ignore` means "not a seed", never "not a node": a file some test
-    // reaches still counts.
+    // `ignore` means "no test observes it", never "not a node": a file some
+    // test reaches still selects that test.
     const read = graph.has(file);
-    if (!read && config.isIgnored(file)) continue;
+    const ignored = config.isIgnored(file);
+    if (!read && ignored) continue;
     const wired = config.suites.filter((suite) => suite.isWiring(file));
     const diffed = packages?.files.has(file) ?? false;
     if (config.isSelf(file)) {
@@ -105,13 +114,13 @@ export function classify(
         runAll();
       }
     } else if (read || config.roots.some((root) => inRoot(file, root))) {
-      relevant.push(file);
+      (ignored ? quiet : relevant).push(file);
     } else {
       reasons.push(`${file}: outside the dependency graph`);
       runAll();
     }
   }
-  return { relevant, packageFiles, reasons, full };
+  return { relevant, quiet, packageFiles, reasons, full };
 }
 
 // What a suite's narrowers select: the walk from the matched files stops at
@@ -120,6 +129,7 @@ export function classify(
 function narrowedWalk(
   graph: Graph,
   seeds: string[],
+  quiet: string[],
   coarse: Set<string>,
   narrowings: Narrowing[],
 ): Set<string> {
@@ -127,6 +137,7 @@ function narrowedWalk(
   const fine = affectedBy(
     graph,
     seeds.filter((seed) => !matched.has(seed)),
+    { quiet },
   );
   for (const narrowing of narrowings) {
     const walk = affectedBy(graph, [...narrowing.matched, ...narrowing.seeds], {
@@ -145,7 +156,7 @@ export function planTests(
   config: ResolvedConfig,
   { barrelNames = [], narrowed = [], packages }: PlanOptions = {},
 ): Plan {
-  const { relevant, packageFiles, reasons, full } = classify(
+  const { relevant, quiet, packageFiles, reasons, full } = classify(
     graph,
     changed,
     config,
@@ -165,7 +176,7 @@ export function planTests(
     ...packageFiles,
     ...bumped.seeds.keys(),
   ];
-  const affected = affectedBy(graph, seeds);
+  const affected = affectedBy(graph, seeds, { quiet });
   const nodes = [...graph.keys()];
   const tests = new Map(
     config.suites.map((suite) => [suite.name, nodes.filter(suite.isTest)]),
@@ -219,6 +230,7 @@ export function planTests(
             ? narrowedWalk(
                 graph,
                 seeds,
+                quiet,
                 affected,
                 narrowings.get(suite.name) ?? [],
               )
@@ -232,6 +244,7 @@ export function planTests(
     full: [...full],
     packages: bumped.notes,
     seeds,
+    quiet,
     packageCauses: bumped.seeds,
     narrowings,
   };

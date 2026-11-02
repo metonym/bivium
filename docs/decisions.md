@@ -897,3 +897,24 @@ RSS from 285 MB to 124 MB on Node and from 115 MB to 88 MB on Bun, and it
 took 0.32 s against 0.35 s on Node, 0.13 s against 0.14 s on Bun.
 Extractions are unchanged, so the cache is too.
 
+## 48. An ignored change is quiet
+
+`ignore` said "files no test can observe", but a changed ignored file the
+graph read (under the roots) was a seed like any other: the orphan rule
+ran a suite for it when no test reached it, which with the default
+`root` meant every docs change ran the whole suite, and every test with
+unknown dependencies ran too. Only ignored files outside the graph were
+skipped.
+
+A changed ignored file the graph reads is now a quiet seed. It still
+walks to whatever reaches it through an edge (an import, a glob, an
+`@reads`), so `ignore` stays "not a seed", never "not a node", and a
+test that imports a docs helper still runs. But the orphan rule skips
+it, since the user said no test observes it some other way, and the
+nodes with unknown dependencies don't depend on it: an unknown node
+stands for "any file", and the user said this file isn't one any test
+can see. A walk from a quiet seed and other seeds is the union of the
+two, so `why` walks the same way and agrees.
+
+A `self`, `wiring` or lockfile entry still wins over `ignore`, as before.
+
