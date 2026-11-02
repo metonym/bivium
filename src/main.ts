@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { version } from "../package.json" with { type: "json" };
-import { check, formatReport, widening } from "./check.ts";
+import { check, failed, formatReport } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { formatSelection } from "./plan.ts";
@@ -163,11 +163,7 @@ async function inspect(
         ? JSON.stringify(report, null, 2)
         : formatReport(report, max),
     );
-    const failed =
-      (max !== undefined && widening(report).length > max) ||
-      report.deadGlobs.length > 0 ||
-      report.staleDeadGlobs.length > 0;
-    return failed ? 1 : 0;
+    return failed(report, max) ? 1 : 0;
   }
   const [test, file] = positional;
   if (test === undefined) throw new Error("bivium why: which test?");

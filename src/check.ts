@@ -13,6 +13,8 @@ interface Unknown {
   // The tests that depend on the node, each of which runs on any change. A
   // node no test reaches widens nothing: plans only ever run tests.
   tests: string[];
+  // Why `knownUnknowns` allows it, when it does.
+  known?: string;
 }
 
 type GlobKind = "depends-on" | "reads" | "lists" | "glob" | "edges" | "setup";
@@ -50,6 +52,10 @@ export interface Report {
   deadGlobs: DeadGlob[];
   // `deadGlobs` entries that match no dead glob.
   staleDeadGlobs: { file: string; glob: string; reason: string; fix: string }[];
+  // With `knownUnknowns` in the config: the unknown nodes some test reaches
+  // that it doesn't list, and its entries for nodes that aren't unknown.
+  unlistedUnknowns: string[];
+  staleKnownUnknowns: { file: string; reason: string; fix: string }[];
 }
 
 const EXAMPLES = 3;
@@ -322,6 +328,14 @@ export async function check(
       }),
     ),
   );
+  const known = new Map(
+    (config.knownUnknowns ?? []).map((entry) => [entry.file, entry.reason]),
+  );
+  for (const entry of unknown) {
+    const reason = known.get(entry.node);
+    if (reason !== undefined) entry.known = reason;
+  }
+  const listed = config.knownUnknowns !== undefined;
   const fallbacks = [...computed.fallbacks].map(([file, reason]) => ({
     file,
     reason,
@@ -336,6 +350,19 @@ export async function check(
     deadGlobs: dead.filter(
       (found) => !config.deadGlobs.some((entry) => allows(entry, found)),
     ),
+    unlistedUnknowns: listed
+      ? unknown
+          .filter(
+            (entry) => entry.tests.length > 0 && entry.known === undefined,
+          )
+          .map((entry) => entry.node)
+      : [],
+    staleKnownUnknowns: (config.knownUnknowns ?? [])
+      .filter((entry) => !unknown.some(({ node }) => node === entry.file))
+      .map((entry) => ({
+        ...entry,
+        fix: "remove the entry: its dependencies are known now",
+      })),
     staleDeadGlobs: config.deadGlobs
       .filter((entry) => !dead.some((found) => allows(entry, found)))
       .map((entry) => ({
@@ -354,12 +381,23 @@ function summary({ problem, matches, ignored, examples }: DeadGlob) {
 }
 
 // The unknown nodes some test depends on: the ones `--max-unknown` counts.
-export function widening(report: Report): Unknown[] {
+function widening(report: Report): Unknown[] {
   return report.unknown.filter((node) => node.tests.length > 0);
 }
 
-function pushUnknown(lines: string[], { node, causes, tests }: Unknown) {
-  lines.push(node);
+/** Whether `check` fails: past `--max-unknown`, or on a list it keeps. */
+export function failed(report: Report, max: number | undefined): boolean {
+  return (
+    (max !== undefined && widening(report).length > max) ||
+    report.unlistedUnknowns.length > 0 ||
+    report.staleKnownUnknowns.length > 0 ||
+    report.deadGlobs.length > 0 ||
+    report.staleDeadGlobs.length > 0
+  );
+}
+
+function pushUnknown(lines: string[], { node, causes, tests, known }: Unknown) {
+  lines.push(known === undefined ? node : `${node}    (known: ${known})`);
   for (const { cause, at, fix } of causes) {
     lines.push(`  ✗ ${cause}${at ? `    ${at}` : ""}`, `    fix: ${fix}`);
   }
@@ -420,14 +458,32 @@ export function formatReport(report: Report, max: number | undefined): string {
       lines.push(`  ${file}: ${glob}`, `    fix: ${fix}`);
     }
   }
+  if (report.staleKnownUnknowns.length > 0) {
+    lines.push("", "`knownUnknowns` entries whose dependencies are known:");
+    for (const { file, fix } of report.staleKnownUnknowns) {
+      lines.push(`  ${file}`, `    fix: ${fix}`);
+    }
+  }
   const count = widen.length;
   const limit = max === undefined ? "" : ` (at most ${max})`;
   lines.push(
     "",
     `${count} ${count === 1 ? "node" : "nodes"} with unknown dependencies ${count === 1 ? "reaches" : "reach"} a test${limit}: each such test runs on any change.`,
   );
+  const unlisted = report.unlistedUnknowns.length;
+  if (unlisted > 0) {
+    lines.push(
+      `${unlisted} of them not in \`knownUnknowns\`: fix ${unlisted === 1 ? "it" : "them"}, or list ${unlisted === 1 ? "it" : "them"} with a reason.`,
+    );
+  }
   if (idle.length > 0) {
     lines.push(`${idle.length} more no test reaches.`);
+  }
+  const staleKnown = report.staleKnownUnknowns.length;
+  if (staleKnown > 0) {
+    lines.push(
+      `${staleKnown} stale \`knownUnknowns\` ${staleKnown === 1 ? "entry" : "entries"}.`,
+    );
   }
   const dead = report.deadGlobs.length;
   const stale = report.staleDeadGlobs.length;

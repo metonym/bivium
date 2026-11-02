@@ -73,6 +73,10 @@ describe("checkConfig", () => {
       { suites: SUITES, roots: "src/*.ts" },
       `roots takes paths, not globs: "src/*.ts" (the directory is "src")`,
     ],
+    [
+      { suites: SUITES, knownUnknowns: [{ file: "a.ts" }] },
+      "knownUnknowns[0] needs a file and reason",
+    ],
     [[], "not an object"],
   ])("rejects %j", (config, message) => {
     expect(() => checkConfig(config)).toThrow(message);

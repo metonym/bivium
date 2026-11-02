@@ -90,6 +90,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `inert` | Packages no test uses except by importing them: linters, formatters, type packages (`["@biomejs/biome", "knip", "@types/*"]`). A [lockfile change](#lockfiles) that only they reach selects nothing |
 | `extensions` | Suffixes tried after a specifier |
 | `deadGlobs` | Dead globs `check` allows, each `{ file, glob, reason }`, the glob as `file` spells it |
+| `knownUnknowns` | Nodes `check` allows to have unknown dependencies, each `{ file, reason }`. With it set, `check` fails on an unknown node some test reaches that it doesn't list, and on an entry that's no longer unknown, so a new unknown can't replace one that went away unnoticed, as it can under `--max-unknown` |
 | `narrowers` | See [Narrowers](#narrowers) |
 | `base` | The default base ref. Otherwise the upstream default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`) |
 | `cache` | The cache's directory, or `false`. Default: `node_modules/.cache/bivium`, or `.bivium/cache` |
@@ -124,7 +125,7 @@ unit tests: 4 files
 | `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results and changed packages. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
 | `bivium why <test> [file] [--format tree\|chain\|source] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
-| `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
+| `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
 
 `--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
 
