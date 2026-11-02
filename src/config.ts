@@ -40,6 +40,8 @@ export interface ResolvedSuite {
   isWiring: Matcher;
   isNonInput: Matcher;
   output: string;
+  // Whether a type-only edge can select its tests.
+  types: boolean;
 }
 
 export interface ResolvedNarrower {
@@ -159,6 +161,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       isWiring: matcher(suite.wiring),
       isNonInput: matcher(suite.nonInputs),
       output: suite.output ?? `${name}-tests`,
+      types: suite.types ?? true,
     }),
   );
   const narrowers = (config.narrowers ?? []).map(
@@ -234,6 +237,10 @@ function isGlobsRecord(value: unknown): value is Record<string, Globs> {
   return isRecord(value) && Object.values(value).every(isGlobs);
 }
 
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
 function isString(value: unknown): value is string {
   return typeof value === "string";
 }
@@ -263,6 +270,7 @@ const SUITE_KEYS = new Set([
   "wiring",
   "nonInputs",
   "output",
+  "types",
 ]);
 const NARROWER_KEYS = new Set(["name", "match", "opaque", "suites", "narrow"]);
 const DEAD_GLOB_KEYS = new Set(["file", "glob", "reason"]);
@@ -319,6 +327,7 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
     wiring: field(value, "wiring", isGlobs, at, globs),
     nonInputs: field(value, "nonInputs", isGlobs, at, globs),
     output: field(value, "output", isString, at, "an output name"),
+    types: field(value, "types", isBoolean, at, "a boolean"),
   };
 }
 

@@ -25,6 +25,15 @@ export interface SuiteConfig {
   wiring?: Globs;
   /** Files under `root` the runner never reads, such as type-check inputs: exempt from the orphan rule. */
   nonInputs?: Globs;
+  /**
+   * Whether the suite's tests can observe types. `false` for a suite that
+   * runs code (Vitest, Jest, Playwright, `bun test`): a change that reaches
+   * its tests only through type-only edges (`import type`, `export type …
+   * from`, JSDoc types, declaration files) selects none of them. Such a
+   * change still counts as reaching them for the orphan rule. Default:
+   * `true`, for a type-checking suite (`tsc`, `vitest --typecheck`).
+   */
+  types?: boolean;
   /** The step output `bivium plan --github` writes the selection to. Default: `<name>-tests`. */
   output?: string;
 }

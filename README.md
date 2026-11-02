@@ -74,6 +74,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.pages` | Pages only a `goto()` opens; files only they load are wired to no test |
 | `suites.<name>.wiring` | Files whose change runs the whole suite: another harness, a runner config |
 | `suites.<name>.nonInputs` | Files under `root` the runner never reads, such as type-check inputs |
+| `suites.<name>.types` | `false` when the suite runs code and can't observe types (Vitest, Jest, Playwright, `bun test`): a change that reaches its tests only through `import type`, `export type … from`, JSDoc types or a declaration file selects none of them, though it still counts as reaching them for the orphan rule. Default: `true`, which a type-checking suite (`tsc`, `vitest --typecheck`) needs. An inline `import { type A }` is always an edge: under `verbatimModuleSyntax` it still loads the module |
 | `suites.<name>.output` | The step output `plan --github` writes. Default: `<name>-tests` |
 | `roots` | Paths (not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe except through an edge (docs, stories). A change to one selects only the tests that reach it, never runs a suite by the orphan rule, and doesn't select the tests whose dependencies are unknown |
@@ -125,7 +126,7 @@ unit tests: 4 files
 
 `--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
 
-`why` names each edge by what spells it: `import`, `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
+`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts

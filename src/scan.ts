@@ -13,7 +13,7 @@ import {
   TSX,
 } from "./lex.ts";
 import { extractRegex } from "./scan-regex.ts";
-import { QUERY, type Scan } from "./syntax.ts";
+import { type ImportRef, QUERY, type Scan } from "./syntax.ts";
 
 // Raw dependency extraction from source text, before resolution: a one-pass
 // lexer (`lex.ts`, with `host.ts` for files that embed scripts), which
@@ -83,11 +83,13 @@ function detach(extraction: Extraction): Extraction {
   const list = (texts: string[]) => texts.map(own);
   const { imports, barrel, fallback } = extraction;
   const detached: Extraction = {
-    imports: imports.map(({ specifier, names }) =>
-      names
+    imports: imports.map(({ specifier, names, type }) => {
+      const ref: ImportRef = names
         ? { specifier: own(specifier), names: list(names) }
-        : { specifier: own(specifier) },
-    ),
+        : { specifier: own(specifier) };
+      if (type) ref.type = true;
+      return ref;
+    }),
     globs: list(extraction.globs),
     gotos: list(extraction.gotos),
     dependsOn: list(extraction.dependsOn),

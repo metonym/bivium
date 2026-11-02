@@ -19,7 +19,7 @@ import type { ImportRef } from "./syntax.ts";
 // Bump on any change to what `extract` returns for some input (lexer,
 // host formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 3;
+export const SCANNER_VERSION = 4;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 
@@ -47,7 +47,8 @@ function isHeader(value: unknown): value is Header {
     typeof value.strings === "number"
   );
 }
-// `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback, barrel]`.
+// `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback, barrel,
+// types]`, where `types` lists the indexes of the type-only imports.
 type Row = unknown[];
 
 type CacheOption = boolean | string | undefined;
@@ -202,6 +203,12 @@ class Strings {
   }
 }
 
+function typeIndexes(imports: ImportRef[]): number[] | 0 {
+  const indexes: number[] = [];
+  for (const [i, ref] of imports.entries()) if (ref.type) indexes.push(i);
+  return indexes.length === 0 ? 0 : indexes;
+}
+
 function encode(key: string, e: Extraction, table: Strings): Row {
   const imports = e.imports.map(({ specifier, names }) =>
     names
@@ -225,6 +232,7 @@ function encode(key: string, e: Extraction, table: Strings): Row {
     table.ids(e.unknown),
     e.fallback === undefined ? 0 : table.id(e.fallback),
     barrel ?? 0,
+    typeIndexes(e.imports),
   ];
 }
 
@@ -248,6 +256,14 @@ function decode(row: Row, strings: unknown[]): Extraction {
         ? { specifier: str(item[0]), names: item.slice(1).map(str) }
         : { specifier: str(item) },
   );
+  if (row[9] !== 0) {
+    if (!Array.isArray(row[9])) throw new Error("bad types");
+    for (const i of row[9]) {
+      const ref = typeof i === "number" ? imports[i] : undefined;
+      if (!ref) throw new Error("bad type index");
+      ref.type = true;
+    }
+  }
   const extraction: Extraction = {
     imports,
     globs: list(row[2]),

@@ -39,6 +39,10 @@ export interface FileDeps {
   // spells (the rest are `import.meta.glob`s). The walk ignores them.
   pages?: Set<string>;
   patternKinds?: Map<RegExp, "depends-on" | "edges">;
+  // The `files` only type-only edges reach: `import type`, `export type …
+  // from`, JSDoc types, and any edge to or from a declaration file. A walk
+  // for a suite that can't observe types skips them.
+  types?: Set<string>;
 }
 
 export type Graph = Map<string, FileDeps>;
@@ -59,6 +63,9 @@ const leaf = (): FileDeps => ({
 });
 
 const LEADING_DOT_SLASH = /^\.\//;
+// A declaration file: `x.d.ts`, `x.d.mts`, `x.d.cts`, and `x.d.css.ts`
+// for an arbitrary extension. Nothing that runs loads one.
+const DECLARATION = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
 
 function addPattern(
   deps: FileDeps,
@@ -220,28 +227,42 @@ export function graphFrom(
       continue;
     }
     const deps = leaf();
-    for (const { specifier, names } of found.imports) {
+    // Nodes some import that runs reaches, and nodes only types reach.
+    const valued = new Set<string>();
+    const typed = new Set<string>();
+    const declaration = DECLARATION.test(path);
+    for (const { specifier, names, type } of found.imports) {
       const resolved = resolve(path, specifier);
+      const add = (node: string) => {
+        deps.files.add(node);
+        const erased = type === true || declaration || DECLARATION.test(node);
+        (erased ? typed : valued).add(node);
+      };
       if (resolved === undefined) {
         // `import` and `vi.mock()` of one specifier are one cause.
         const cause = `unresolved "${specifier}"`;
         if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
       } else if ("pkg" in resolved) {
-        deps.files.add(`pkg:${resolved.pkg}`);
+        add(`pkg:${resolved.pkg}`);
         external.add(`pkg:${resolved.pkg}`);
       } else {
         for (const file of resolved.files) {
           const barrel = names && named.get(file);
           if (!barrel || !names) {
-            deps.files.add(file);
+            add(file);
             continue;
           }
           // Unknown names (types, typos) fall back to the whole barrel.
           for (const name of names) {
-            deps.files.add(barrel.has(name) ? `${file}#${name}` : file);
+            add(barrel.has(name) ? `${file}#${name}` : file);
           }
         }
       }
+    }
+    for (const node of typed) {
+      if (valued.has(node)) continue;
+      deps.types ??= new Set();
+      deps.types.add(node);
     }
     deps.unknown.push(
       ...(config.isHermetic(path)
@@ -383,6 +404,8 @@ interface Patterns {
 
 interface ReverseIndex {
   dependents: Map<string, string[]>;
+  // `dependents` without the type-only edges, built when a walk asks.
+  runtime?: Map<string, string[]>;
   globbers: Patterns;
   readers: Patterns;
   unknown: string[];
@@ -464,6 +487,23 @@ function reverseIndex(graph: Graph): ReverseIndex {
   return index;
 }
 
+function runtimeDependents(
+  graph: Graph,
+  index: ReverseIndex,
+): Map<string, string[]> {
+  if (index.runtime) return index.runtime;
+  const runtime = new Map<string, string[]>();
+  for (const [path, deps] of graph) {
+    for (const file of deps.files) {
+      if (deps.types?.has(file)) continue;
+      const list = runtime.get(file);
+      list ? list.push(path) : runtime.set(file, [path]);
+    }
+  }
+  index.runtime = runtime;
+  return runtime;
+}
+
 export function importersOf(graph: Graph, node: string): readonly string[] {
   return reverseIndex(graph).dependents.get(node) ?? [];
 }
@@ -480,6 +520,7 @@ export interface Via {
   from: string;
   kind:
     | "import"
+    | "type"
     | "goto"
     | "html"
     | "name"
@@ -494,7 +535,9 @@ export interface Via {
 // What spells the edge from `dependent` to `node`, one of its `files`.
 function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
   if (dependent.includes("#")) return "export";
-  if (graph.get(dependent)?.pages?.has(node)) return "goto";
+  const deps = graph.get(dependent);
+  if (deps?.types?.has(node)) return "type";
+  if (deps?.pages?.has(node)) return "goto";
   if (node.includes("#")) return "name";
   return dependent.endsWith(".html") ? "html" : "import";
 }
@@ -504,6 +547,8 @@ interface Walk {
   // Seeds no unknown node depends on: ignored files, which no test can
   // observe except through an edge the graph has.
   quiet?: Iterable<string>;
+  // Whether to follow type-only edges: `false` for a suite that runs code.
+  types?: boolean;
   // Whether `changed` seeds the files that read them as text. An unknown
   // node isn't a change, so what it puts on every change skips its readers.
   readers?: boolean;
@@ -523,12 +568,15 @@ export function affectedBy(
   {
     includeUnknown = true,
     quiet = [],
+    types = true,
     readers: seedReaders = true,
     opaque,
     parents,
   }: Walk = {},
 ): Set<string> {
-  const { dependents, globbers, readers, unknown } = reverseIndex(graph);
+  const index = reverseIndex(graph);
+  const { globbers, readers, unknown } = index;
+  const dependents = types ? index.dependents : runtimeDependents(graph, index);
   const affected = new Set<string>();
   const queue: string[] = [];
   const visit = (path: string, via?: Via) => {

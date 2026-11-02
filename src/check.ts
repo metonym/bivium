@@ -274,8 +274,25 @@ export async function check(
   const nodes = [...computed.graph]
     .filter(([, deps]) => deps.unknown.length > 0)
     .map(([node]) => node);
-  const isTest = (node: string) =>
-    config.suites.some((suite) => suite.isTest(node));
+  // A suite that can't observe types reaches its tests without the
+  // type-only edges, as `plan` walks for it.
+  const testsOf = (node: string) => {
+    const reach = new Map<boolean, Set<string>>();
+    const found = new Set<string>();
+    for (const suite of config.suites) {
+      let reached = reach.get(suite.types);
+      if (!reached) {
+        reached = affectedBy(computed.graph, [node], {
+          includeUnknown: false,
+          readers: false,
+          types: suite.types,
+        });
+        reach.set(suite.types, reached);
+      }
+      for (const test of reached) if (suite.isTest(test)) found.add(test);
+    }
+    return sorted(found);
+  };
   const unknown = await Promise.all(
     nodes.map(
       async (node): Promise<Unknown> => ({
@@ -285,14 +302,7 @@ export async function check(
             ? { cause, fix: fixFor(cause) }
             : { cause, at, fix: fixFor(cause) },
         ),
-        tests: sorted(
-          [
-            ...affectedBy(computed.graph, [node], {
-              includeUnknown: false,
-              readers: false,
-            }),
-          ].filter(isTest),
-        ),
+        tests: testsOf(node),
       }),
     ),
   );
