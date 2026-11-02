@@ -69,10 +69,10 @@ function repo() {
   return dir;
 }
 
-async function run(args: string[]) {
+async function run(args: readonly string[]) {
   const log = jest.spyOn(console, "log").mockImplementation(() => undefined);
   try {
-    const status = await main(args);
+    const status = await main([...args]);
     return {
       status,
       output: log.mock.calls.map((call) => call.join(" ")).join("\n"),
@@ -310,12 +310,39 @@ describe("bivium plan", () => {
     );
   });
 
+  it("prints each selection's scale, and tells a full run from every test reached", async () => {
+    const dir = repo();
+    const text = async () => (await run(["plan", "base", "--cwd", dir])).output;
+    write(dir, { "src/a.js": "export const a = 3;" });
+    expect(await text()).toBe("unit tests: 1 of 2 files\n  test/a.test.js");
+    write(dir, { "src/b.js": "export const b = 3;" });
+    expect(await text()).toBe(
+      "unit tests: all 2 files (each reaches a change)",
+    );
+    write(dir, { "package.json": "{}" });
+    expect(await text()).toBe(
+      [
+        "Full run: package.json: outside the dependency graph",
+        "unit tests: all (full run)",
+      ].join("\n"),
+    );
+  });
+
   it("runs everything for a change outside the roots or to its config", async () => {
     const dir = repo();
     write(dir, { "README.md": "x", "package.json": "{}" });
     expect(await planJson(dir)).toMatchObject({
       suites: { unit: { mode: "all" } },
       reasons: ["package.json: outside the dependency graph"],
+      causes: [
+        {
+          kind: "outside",
+          suites: ["unit"],
+          file: "package.json",
+          message: "package.json: outside the dependency graph",
+        },
+      ],
+      totals: { unit: 2 },
     });
     git(dir, "checkout", "-q", "package.json");
     write(dir, {
@@ -324,8 +351,13 @@ describe("bivium plan", () => {
         "utf-8",
       ).replace("**/*.md", "*.md"),
     });
-    expect((await planJson(dir)).reasons).toEqual([
-      "bivium.config.json: test selector changed",
+    expect((await planJson(dir)).causes).toEqual([
+      {
+        kind: "self",
+        suites: ["unit"],
+        file: "bivium.config.json",
+        message: "bivium.config.json: test selector changed",
+      },
     ]);
   });
 
@@ -436,6 +468,52 @@ describe("plan", () => {
       base: "base",
       changed: ["src/a.js"],
     });
+  });
+});
+
+describe("the command line", () => {
+  it("takes options before the command", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": "export const a = 3;" });
+    const { status, output } = await run([
+      "--no-cache",
+      "--cwd",
+      dir,
+      "plan",
+      "base",
+      "--json",
+    ]);
+    expect(status).toBe(0);
+    expect(JSON.parse(output).suites.unit.files).toEqual(["test/a.test.js"]);
+  });
+
+  it.each([
+    { args: ["--help"] },
+    { args: ["-h"] },
+    { args: ["plan", "--help"] },
+    { args: ["help"] },
+  ])("prints usage for $args, and exits 0", async ({ args }) => {
+    const { status, output } = await run(args);
+    expect({ status, usage: output.startsWith("Usage:") }).toEqual({
+      status: 0,
+      usage: true,
+    });
+  });
+
+  it.each([
+    { args: [] },
+    { args: ["nope"] },
+    { args: ["--bogus"] },
+    { args: ["plan", "--bogus"] },
+  ])("exits 2 for the usage error $args", async ({ args }) => {
+    const error = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      expect((await run(args)).status).toBe(2);
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

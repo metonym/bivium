@@ -138,6 +138,35 @@ export type Selection =
   | { mode: "none" }
   | { mode: "some"; files: string[] };
 
+/** Why some suites run in full, for a program to act on. */
+export interface FullRunCause {
+  /**
+   * `self`: the selector's own file changed. `wiring`: a suite's `wiring`
+   * file. `outside`: a file outside the roots. `lockfile`: a lockfile
+   * bivium can't diff. `package`: a changed package no test imports.
+   * `orphan`: a file under a suite's `root` no test of it reaches.
+   * `narrower`: a narrower that couldn't decide.
+   */
+  kind:
+    | "self"
+    | "wiring"
+    | "outside"
+    | "lockfile"
+    | "package"
+    | "orphan"
+    | "narrower";
+  /** The suites it runs in full. */
+  suites: string[];
+  /** The changed file, when one is the cause. */
+  file?: string;
+  /** For `package`: the package no test imports. */
+  package?: string;
+  /** For `narrower`: its name. */
+  narrower?: string;
+  /** The sentence `reasons` has for it. */
+  message: string;
+}
+
 /** Options for {@link plan}. */
 export interface PlanOptions<Suite extends string = string> {
   /** The repository. Default: the current directory. */
@@ -156,6 +185,10 @@ export interface PlanResult<Suite extends string = string> {
   suites: Record<Suite, Selection>;
   /** Why a suite runs in full. */
   reasons: string[];
+  /** The same, as data: one per reason, in order. */
+  causes: FullRunCause[];
+  /** How many test files each suite has. */
+  totals: Record<Suite, number>;
   /** A line per package a lockfile or `package.json` change changed, and that selects through its importers or nothing: `bun.lock: svelte 5.1.0 → 5.2.0`. */
   packages: string[];
   /** The base ref. */

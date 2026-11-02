@@ -251,6 +251,16 @@ describe("a lockfile change", () => {
       unit: { mode: "all" },
       reasons: ["bun.lock: runner 3.0.0 → 3.1.0, and no test imports it"],
     });
+    const { causes } = await plan({ cwd: dir, base: "HEAD", config: CONFIG });
+    expect(causes).toEqual([
+      {
+        kind: "package",
+        suites: ["unit"],
+        package: "runner",
+        file: "bun.lock",
+        message: "bun.lock: runner 3.0.0 → 3.1.0, and no test imports it",
+      },
+    ]);
     // Through a dependency, too.
     write(dir, { "bun.lock": bunLock(bump("dep-y", "1.0.1")) });
     expect((await planOf(dir)).reasons).toEqual([

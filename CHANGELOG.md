@@ -72,6 +72,23 @@
   index, instead of being unresolved, and depends on the key's inputs
   (#20).
 
+**CLI**
+
+- Options can come before the command (`bivium --no-cache plan`), and
+  `--help` or `-h` anywhere prints usage and exits 0. A usage error
+  (no command, an unknown command or option) exits 2; it exited 1, as
+  `check` does when it finds problems.
+- `plan` prints each selection's scale (`unit tests: 3 of 822 files`),
+  and tells a full run (`all (full run)`) from every test reaching a
+  change (`all 822 files (each reaches a change)`). `plan --json` and
+  `plan()` add `totals` and `causes`, each reason as data
+  (`{ kind, suites, file?, package?, narrower?, message }`).
+- `check` leads with counts by cause, and a fix for an unresolved
+  specifier names the file that's there: a sibling with another
+  extension, a file outside `roots`, or one git ignores.
+- `why --format json` is `why --json`. The usage text lists `--json`
+  for `check` and `why`, the exit codes, and examples (#40).
+
 **Fixes**
 
 - A specifier that starts with a dot but not `./` or `../`

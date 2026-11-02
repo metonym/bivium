@@ -31,7 +31,7 @@ export default defineConfig({
 
 ```console
 $ bunx bivium plan
-unit tests: 3 files
+unit tests: 3 of 12 files
   tests/Button.test.ts
   tests/Modal.test.ts
   tests/css/unknown.test.ts
@@ -106,7 +106,7 @@ A changed package can also be used in ways the graph can't see: a CLI a test spa
 $ bunx bivium plan
 bun.lock: @biomejs/biome 2.5.14 → 2.6.3, inert
 bun.lock: svelte 5.57.1 → 5.57.2
-unit tests: 4 files
+unit tests: 4 of 12 files
 …
 ```
 
@@ -123,12 +123,12 @@ unit tests: 4 files
 
 | Command | Does |
 |:---|:---|
-| `bivium plan [base] [--json] [--github]` | Prints each suite's selection: `all`, `none` or the files, and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results and changed packages. `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
+| `bivium plan [base] [--json] [--github]` | Prints each suite's selection (`none`, the files out of how many, `all` files when each reaches a change, or `all (full run)`) and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results, changed packages, each suite's test count (`totals`), and the reasons as data (`causes`: `{ kind, suites, file?, package?, narrower?, message }`, `kind` one of `self`, `wiring`, `outside`, `lockfile`, `package`, `orphan`, `narrower`). `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
-| `bivium why <test> [file] [--format tree\|chain\|source] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
-| `bivium check [--max-unknown <n>]` | Lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none |
+| `bivium why <test> [file] [--format tree\|chain\|source\|json] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source; `json` (or `--json`) prints the chain as data. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
+| `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. A fix for an unresolved specifier names the file that's there when it can: a sibling with another extension, one outside `roots`, or one git ignores. `--json` prints the report as data |
 
-`--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
+`--config`, `--cwd` and `--no-cache` work with every command, before or after it, and `why` and `check` take `--base <ref>`. `--help` (or `-h`) prints usage. An unknown command, option or `--format` is an error. Exit status: 0 when done, 1 when `check` finds problems or `run`'s command fails, 2 for a usage or configuration error.
 
 `why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's), `reads` and `lists`.
 
@@ -270,7 +270,7 @@ const result = await plan({ config, base: "origin/main" });
 result.suites.unit; // { mode: "some", files: [...] }; result.suites.e2e is a type error
 ```
 
-`plan(options?)` takes `cwd`, `base`, `config` (default: the config file in `cwd`) and `cache`, and returns each suite's selection, the reasons, the packages a lockfile change seeded or found inert, the base, merge base and changed files, and what each narrower returned. Given a config, the suite names carry through to the result's type. The package exports only `plan`, `defineConfig` and their types.
+`plan(options?)` takes `cwd`, `base`, `config` (default: the config file in `cwd`) and `cache`, and returns each suite's selection, its test count, the reasons as sentences and as data, the packages a lockfile change seeded or found inert, the base, merge base and changed files, and what each narrower returned. Given a config, the suite names carry through to the result's type. The package exports only `plan`, `defineConfig` and their types.
 
 ## Compared with
 

@@ -12,27 +12,38 @@ const USAGE = `Usage:
   bivium plan [base] [--json] [--github]   print the tests a change can affect
   bivium run [base] [--suite <name>]       run a suite's selected tests
   bivium why <test> [file] [--base <ref>]  the chain from a change (or file) to a test
-             [--format <f>] [--all]
-  bivium check [--max-unknown <n>]         what the graph can't read, and dead globs
+             [--format <f>] [--all] [--json]
+  bivium check [--max-unknown <n>] [--json]
+                                           what the graph can't read, and dead globs
   bivium --version                         print the version
+  bivium --help                            print this
 
   base defaults to the config's base, else the upstream default branch.
+  Options go before or after the command.
 
 Options:
   --config <file>   config file (default: bivium.config.{ts,mts,mjs,js,json})
   --cwd <dir>       repository (default: the current directory)
   --no-cache        read every file; don't read or write the extraction cache
   --suite <name>    for run: the suite (default: the first one)
-  --json            for plan: print the plan as JSON, with its reasons
+  --json            for plan, why and check: print JSON
   --github          for plan: also write each suite's selection to
                     $GITHUB_OUTPUT as <output>=all|none|<files>
   --base <ref>      for why and check: the base ref
   --format <f>      for why: tree (default), chain (from the change to the
-                    test) or source (each hop's line of source)
+                    test), source (each hop's line of source) or json
   --all             for why: every change's chain to the test, not only the
                     shortest
   --max-unknown <n> for check: fail when more unknown nodes than this reach
-                    a test`;
+                    a test
+
+Exit status: 0 done; 1 check found problems, or run's command failed;
+2 a usage or configuration error.
+
+Examples:
+  bivium plan origin/main --json
+  bivium why tests/Button.test.ts src/Button.svelte --format chain
+  bivium check --json`;
 
 const WHITESPACE = /\s+/;
 const VALUED = new Set([
@@ -101,11 +112,21 @@ export function commandFor(run: string, files: string[]): string[] {
   return [...words.slice(0, at), ...files, ...words.slice(at + 1)];
 }
 
-function logSelection(label: string, selection: Selection) {
-  const count =
-    selection.mode === "some"
-      ? `${selection.files.length} files`
-      : selection.mode;
+// The selection with its scale, and a full run told apart from every test
+// being reached.
+function logSelection(
+  label: string,
+  selection: Selection,
+  total: number,
+  forced: boolean,
+) {
+  const files = total === 1 ? "file" : "files";
+  let count: string;
+  if (selection.mode === "some") {
+    count = `${selection.files.length} of ${total} ${files}`;
+  } else if (selection.mode === "none") count = "none";
+  else if (forced) count = "all (full run)";
+  else count = `all ${total} ${files} (each reaches a change)`;
   console.log(`${label}: ${count}`);
   if (selection.mode === "some") {
     for (const file of selection.files) console.log(`  ${file}`);
@@ -121,7 +142,8 @@ function logPlan({ plan, narrowed }: Computed) {
     }
   }
   for (const [name, selection] of Object.entries(plan.suites)) {
-    logSelection(`${name} tests`, selection);
+    const total = plan.totals[name] ?? 0;
+    logSelection(`${name} tests`, selection, total, plan.full.includes(name));
   }
 }
 
@@ -139,8 +161,8 @@ async function inspect(
   { flags, positional }: Args,
 ): Promise<0 | 1> {
   const format = flags.get("--format") ?? "tree";
-  if (!isFormat(format)) {
-    throw new Error("bivium why: --format takes tree, chain or source");
+  if (format !== "json" && !isFormat(format)) {
+    throw new Error("bivium why: --format takes tree, chain, source or json");
   }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
@@ -171,7 +193,7 @@ async function inspect(
     all: flags.has("--all"),
   });
   console.log(
-    flags.has("--json")
+    flags.has("--json") || format === "json"
       ? JSON.stringify(explanation, null, 2)
       : formatExplanation(explanation, format),
   );
@@ -205,7 +227,7 @@ async function runCommand(
 
   if (command === "plan") {
     if (flags.has("--json")) {
-      const { suites, reasons, packages } = computed.plan;
+      const { suites, reasons, causes, totals, packages } = computed.plan;
       const narrowed = computed.narrowed.map((ran) => ({
         name: ran.narrower.name,
         result: ran.result,
@@ -218,6 +240,8 @@ async function runCommand(
             changed: computed.changed,
             suites,
             reasons,
+            causes,
+            totals,
             packages,
             narrowed,
           },
@@ -250,20 +274,43 @@ async function runCommand(
   return result.status ?? 1;
 }
 
+// The command: the first argument that's neither an option nor an
+// option's value, so options can come before it.
+function commandAt(argv: string[]) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg.startsWith("-")) return i;
+    if (VALUED.has(arg)) i++;
+  }
+  return -1;
+}
+
 export async function main(argv: string[]): Promise<number> {
-  const [command, ...rest] = argv;
-  if (command === "--version" || command === "-v") {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (argv.includes("--version") || argv.includes("-v")) {
     console.log(version);
     return 0;
   }
-  if (!command || command === "help" || rest.includes("--help")) {
+  const at = commandAt(argv);
+  const command = at === -1 ? undefined : argv[at];
+  if (command === "help") {
     console.log(USAGE);
-    return command ? 0 : 1;
+    return 0;
+  }
+  if (command === undefined) {
+    const first = argv[0];
+    const why = first === undefined ? "" : `unknown option ${first}\n\n`;
+    console.error(`bivium: ${why}${USAGE}`);
+    return 2;
   }
   if (!(command in FLAGS)) {
     console.error(`bivium: unknown command "${command}"\n\n${USAGE}`);
-    return 1;
+    return 2;
   }
+  const rest = [...argv.slice(0, at), ...argv.slice(at + 1)];
   try {
     const args = parseArgs(command, rest);
     if (command === "why" || command === "check")

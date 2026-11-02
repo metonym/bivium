@@ -458,6 +458,8 @@ export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   return {
     suites: computed.plan.suites,
     reasons: computed.plan.reasons,
+    causes: computed.plan.causes,
+    totals: computed.plan.totals,
     packages: computed.plan.packages,
     base,
     mergeBase: await computed.mergeBase(),

@@ -536,9 +536,9 @@ interface PackageSeeds {
   // A line per changed package that selects through its importers, or that
   // selects nothing.
   notes: string[];
-  // A line per package no test imports that a change reaches: these run
-  // everything.
-  reasons: string[];
+  // A line per package no test imports that a change reaches, and the
+  // package: these run everything.
+  reasons: { package: string; file: string; message: string }[];
 }
 
 /**
@@ -647,11 +647,13 @@ export function packageSeeds(
       more.length === 0
         ? ""
         : ` (and ${more.length} more ${more.length === 1 ? "package" : "packages"} ${user} depends on)`;
-    result.reasons.push(
-      own
+    result.reasons.push({
+      package: user,
+      file: first.file,
+      message: own
         ? `${first.detail}${also}, and no test imports it`
         : `${first.detail}, which ${user} depends on${also}, and no test imports ${user}`,
-    );
+    });
   }
   return result;
 }
