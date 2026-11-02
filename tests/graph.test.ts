@@ -586,6 +586,40 @@ describe("a pattern many nodes share", () => {
   });
 });
 
+describe("setup files", () => {
+  const files = {
+    "src/setupTests.ts": `import { server } from "./mocks/server.ts";`,
+    "src/mocks/server.ts": `import "./fixtures.ts";`,
+    "src/mocks/fixtures.ts": "export {};",
+    "src/queries.ts": "export {};",
+    "src/a.test.ts": `import "./queries.ts";`,
+    "src/b.test.ts": "export {};",
+    "e2e/c.test.ts": "export {};",
+  };
+  const config: Config = {
+    suites: {
+      unit: { tests: "src/**/*.test.ts", setup: "src/setupTests.ts" },
+      e2e: { tests: "e2e/**/*.test.ts" },
+    },
+  };
+  const setup = graphOf(files, { config });
+
+  it("makes every test of the suite depend on them, and on what they import", () => {
+    const parents = new Map<string, Via>();
+    const affected = affectedBy(setup, ["src/mocks/fixtures.ts"], { parents });
+    expect(affected.has("src/a.test.ts")).toBe(true);
+    expect(affected.has("src/b.test.ts")).toBe(true);
+    expect(affected.has("e2e/c.test.ts")).toBe(false);
+    expect(parents.get("src/b.test.ts")).toEqual({
+      from: "src/setupTests.ts",
+      kind: "setup",
+    });
+    expect(affectedBy(setup, ["src/queries.ts"]).has("src/a.test.ts")).toBe(
+      true,
+    );
+  });
+});
+
 describe("directives", () => {
   // A host page globs every fixture but each test names its own, and its
   // helper reads entries as text: neither may widen a fixture change.

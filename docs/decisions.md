@@ -981,3 +981,19 @@ reached, so it doesn't run the suite, it selects nothing. `check` counts
 a test as running on any change by its own suite's walk. `why` labels
 the edges `type` in every suite, and walks as the suite does.
 
+## 51. A suite names its setup files
+
+A runner loads its setup files (`setupFiles`, `--require`, `globalSetup`)
+before every test, and no test imports them. A change to one was an
+orphan (the suite ran in full, by luck of `root`), and a change to a
+module the setup file and three tests import selected only those three:
+a silent miss. The workaround, an `edges` entry from every test glob to
+the setup file, worked but hid the intent.
+
+`suites.<name>.setup` names them. Every test of the suite gets an import
+edge to each (kind `setup`, so `why` can say so), and so depends on what
+they import. It's an edge per test and setup file, not an `edges` pattern
+per test: the reverse index holds one list per setup file. bivium doesn't
+read the runner's config, which would tie it to one runner's format; the
+user names the files, as with `wiring`.
+

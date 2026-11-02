@@ -15,7 +15,7 @@ interface Unknown {
   tests: string[];
 }
 
-type GlobKind = "depends-on" | "reads" | "glob" | "edges";
+type GlobKind = "depends-on" | "reads" | "glob" | "edges" | "setup";
 
 interface Declared {
   kind: GlobKind;
@@ -58,6 +58,7 @@ const TAGS: Record<GlobKind, string> = {
   reads: "@reads",
   glob: "import.meta.glob",
   edges: "edges",
+  setup: "setup",
 };
 
 const QUOTED = /"([^"]+)"/;
@@ -209,6 +210,13 @@ function configDeadGlobs(
     for (const [i, glob] of map.values.entries()) {
       const expanded = [...(patterns[i]?.values() ?? [])];
       const dead = deadOf(file, kind, glob, expanded, listed, skipped);
+      if (dead) found.push(dead);
+    }
+  }
+  for (const suite of config.suites) {
+    for (const glob of suite.setup) {
+      const pattern = globToRegExp(glob);
+      const dead = deadOf(file, "setup", glob, [pattern], listed, skipped);
       if (dead) found.push(dead);
     }
   }

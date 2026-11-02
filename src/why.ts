@@ -75,6 +75,12 @@ interface Context {
 }
 
 const CONFIG_EDGES = "edges in the config";
+const CONFIG_SETUP = "setup in the config";
+// Edges the config spells, which no line of the file does.
+const CONFIGURED: Partial<Record<Via["kind"], string>> = {
+  edges: CONFIG_EDGES,
+  setup: CONFIG_SETUP,
+};
 const CONFIG_READS = "reads in the config";
 
 // Where `node` spells its edge to `via.from`, and the line.
@@ -83,7 +89,8 @@ async function edgeAt(
   node: string,
   via: Via,
 ): Promise<{ at?: string; text?: string }> {
-  if (via.kind === "edges") return { at: CONFIG_EDGES };
+  const spelled = CONFIGURED[via.kind];
+  if (spelled !== undefined) return { at: spelled };
   if (via.kind === "unknown") return {};
   const file = fileOf(node);
   const source = SCANNED.test(file)
@@ -425,6 +432,7 @@ export function isFormat(value: string): value is Format {
 const VERBS: Record<Exclude<Via["kind"], "export">, string> = {
   import: "imported by",
   type: "type-imported by",
+  setup: "a setup file of",
   goto: "opened by",
   html: "loaded by page",
   name: "imported by",
@@ -491,7 +499,8 @@ function verbOf(link: Link) {
 }
 
 function whereOf(link: Link) {
-  if (link.kind === "edges") return `${link.node} (${CONFIG_EDGES})`;
+  const configured = CONFIGURED[link.kind];
+  if (configured !== undefined) return `${link.node} (${configured})`;
   return link.at ?? link.node;
 }
 
@@ -568,8 +577,9 @@ function sourced(test: string, chain: Chain): string[] {
         ];
   lines.push("");
   for (const link of hops) {
-    const where = link.kind === "edges" ? link.node : (link.at ?? link.node);
-    const kind = link.kind === "edges" ? CONFIG_EDGES : link.kind;
+    const configured = CONFIGURED[link.kind];
+    const where = configured === undefined ? (link.at ?? link.node) : link.node;
+    const kind = configured ?? link.kind;
     lines.push(`${gutter}--> ${where}  ${kind}`, ...cited(link.at, link.text));
   }
   if (unknownAt === -1) {
