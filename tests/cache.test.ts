@@ -158,8 +158,8 @@ const SCANNER_SOURCES = [
   "syntax.ts",
 ];
 const FINGERPRINT = {
-  version: 1,
-  sha1: "6029000feed8e1d935add67d5c8a1ffe9d6bd9b7",
+  version: 2,
+  sha1: "839781362484310e659a5aa9dfd51c752aea3121",
 };
 
 describe("SCANNER_VERSION", () => {

@@ -1225,6 +1225,14 @@ function jsxElement(i: number): number {
   let p = i + 1;
   if (src.charCodeAt(p) === 62) return jsxChildren(p + 1);
   p = jsxNameEnd(p);
+  // A generic component's type arguments: `<List<string> items={…} />`.
+  if (dialect.tsx) {
+    const q = skipTrivia(p);
+    if (src.charCodeAt(q) === 60) {
+      p = genericEnd(q);
+      if (p === -1) fail("unterminated JSX type arguments", q);
+    }
+  }
   for (;;) {
     p = skipTrivia(p);
     if (p >= end) fail("unterminated JSX", i);

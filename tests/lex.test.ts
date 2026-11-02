@@ -226,6 +226,22 @@ describe("JSX", () => {
     ).toEqual(["./real"]);
   });
 
+  it("reads an element's type arguments in .tsx", () => {
+    const source = [
+      `import { helper } from "./helper";`,
+      "const List = <T,>(p: { items: T[] }) => helper(p.items);",
+      "export const one = <List<string> items={[]} />;",
+      `export const nested = <List<Omit<{ a: 1 }, "a">> items={[import("./real")]}>{"x"}</List>;`,
+      "export const arrow = <Table<(row: Row) => void> render={f} />;",
+    ].join("\n");
+    const result = lexed("a.tsx", source);
+    expect(result.fallback).toBeUndefined();
+    expect(result.imports.map((ref) => ref.specifier)).toEqual([
+      "./helper",
+      "./real",
+    ]);
+  });
+
   it("reads an element after a keyword, and a comparison after a value", () => {
     const source = `function f(a, b) {\n  if (a <b) return "'";\n  return <p>it's {import("./real")}</p>;\n}\nimport "./also";`;
     expect(lexed("a.jsx", source).imports.map((ref) => ref.specifier)).toEqual([
