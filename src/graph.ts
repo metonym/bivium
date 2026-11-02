@@ -39,6 +39,8 @@ export interface FileDeps {
   // spells (the rest are `import.meta.glob`s). The walk ignores them.
   pages?: Set<string>;
   patternKinds?: Map<RegExp, "depends-on" | "edges">;
+  // The `files` that are a suite's setup files, for a test.
+  setup?: Set<string>;
   // The `files` only type-only edges reach: `import type`, `export type …
   // from`, JSDoc types, and any edge to or from a declaration file. A walk
   // for a suite that can't observe types skips them.
@@ -313,6 +315,22 @@ export function graphFrom(
     }
   }
   for (const id of external) graph.set(id, leaf());
+  // Every test of a suite depends on its setup files, as the runner loads
+  // them first.
+  for (const suite of config.suites) {
+    const setup = paths.filter(suite.isSetup);
+    if (setup.length === 0) continue;
+    for (const path of paths) {
+      const deps = suite.isTest(path) ? graph.get(path) : undefined;
+      if (!deps) continue;
+      for (const file of setup) {
+        if (file === path || deps.files.has(file)) continue;
+        deps.files.add(file);
+        deps.setup ??= new Set();
+        deps.setup.add(file);
+      }
+    }
+  }
   // Generated files depend on their inputs, whether they're tracked or
   // only referenced.
   for (const deps of [...graph.values()]) {
@@ -521,6 +539,7 @@ export interface Via {
   kind:
     | "import"
     | "type"
+    | "setup"
     | "goto"
     | "html"
     | "name"
@@ -536,6 +555,7 @@ export interface Via {
 function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
   if (dependent.includes("#")) return "export";
   const deps = graph.get(dependent);
+  if (deps?.setup?.has(node)) return "setup";
   if (deps?.types?.has(node)) return "type";
   if (deps?.pages?.has(node)) return "goto";
   if (node.includes("#")) return "name";

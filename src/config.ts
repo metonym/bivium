@@ -38,6 +38,9 @@ export interface ResolvedSuite {
   urls: UrlPattern[];
   isPage: Matcher;
   isWiring: Matcher;
+  // Setup files, and the globs as written, which `check` reports.
+  isSetup: Matcher;
+  setup: string[];
   isNonInput: Matcher;
   output: string;
   // Whether a type-only edge can select its tests.
@@ -159,6 +162,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
       })),
       isPage: matcher(suite.pages),
       isWiring: matcher(suite.wiring),
+      isSetup: matcher(suite.setup),
+      setup: list(suite.setup, []),
       isNonInput: matcher(suite.nonInputs),
       output: suite.output ?? `${name}-tests`,
       types: suite.types ?? true,
@@ -268,6 +273,7 @@ const SUITE_KEYS = new Set([
   "urls",
   "pages",
   "wiring",
+  "setup",
   "nonInputs",
   "output",
   "types",
@@ -325,6 +331,7 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
     urls: field(value, "urls", isStringRecord, at, "a map of URL patterns"),
     pages: field(value, "pages", isGlobs, at, globs),
     wiring: field(value, "wiring", isGlobs, at, globs),
+    setup: field(value, "setup", isGlobs, at, globs),
     nonInputs: field(value, "nonInputs", isGlobs, at, globs),
     output: field(value, "output", isString, at, "an output name"),
     types: field(value, "types", isBoolean, at, "a boolean"),

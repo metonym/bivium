@@ -72,6 +72,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.root` | Where the orphan rule applies: a changed file here that no test of the suite reaches is wired some other way (a setup file, a runner config), so the whole suite runs. Paths, not globs (`e2e`, not `e2e/**`): a glob is an error. Default: the whole repository |
 | `suites.<name>.urls` | URL pattern → file pattern, for `page.goto()` calls under `root` |
 | `suites.<name>.pages` | Pages only a `goto()` opens; files only they load are wired to no test |
+| `suites.<name>.setup` | Files the runner loads before every test (Vitest and Jest `setupFiles`, Mocha `--require`, Playwright `globalSetup`): every test of the suite depends on them and what they import. bivium doesn't read the runner's config, so name them here |
 | `suites.<name>.wiring` | Files whose change runs the whole suite: another harness, a runner config |
 | `suites.<name>.nonInputs` | Files under `root` the runner never reads, such as type-check inputs |
 | `suites.<name>.types` | `false` when the suite runs code and can't observe types (Vitest, Jest, Playwright, `bun test`): a change that reaches its tests only through `import type`, `export type … from`, JSDoc types or a declaration file selects none of them, though it still counts as reaching them for the orphan rule. Default: `true`, which a type-checking suite (`tsc`, `vitest --typecheck`) needs. An inline `import { type A }` is always an edge: under `verbatimModuleSyntax` it still loads the module |
@@ -126,7 +127,7 @@ unit tests: 4 files
 
 `--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
 
-`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
+`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts
@@ -179,7 +180,7 @@ tests/e2e.test.ts runs on every change
 
 ## Dead globs
 
-A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads` and `import.meta.glob` pattern, and every `edges` and `reads` value, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
+A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads` and `import.meta.glob` pattern, every `edges` and `reads` value, and every suite's `setup`, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
 
 | Problem | Means |
 |:---|:---|

@@ -188,6 +188,42 @@ describe("bivium why", () => {
     );
   });
 
+  it("names a setup file's edge, and check reports a setup glob that matches nothing", async () => {
+    const dir = repo({
+      "bivium.config.json": JSON.stringify({
+        suites: {
+          unit: {
+            tests: "test/**/*.test.js",
+            root: "test",
+            setup: ["test/setup.js", "test/missing-setup.js"],
+          },
+        },
+        roots: ["src", "test"],
+      }),
+      "test/setup.js": `import "../src/b.js";\n`,
+    });
+    expect(
+      (await why(dir, "test/a.test.js", "src/b.js", "--format", "chain"))
+        .output,
+    ).toBe(
+      [
+        "if src/b.js changes",
+        "  imported by      test/setup.js:1",
+        "  a setup file of  test/a.test.js (setup in the config)  ← selected",
+      ].join("\n"),
+    );
+    const { output } = await run(["check", "--json", "--cwd", dir]);
+    const report: Report = JSON.parse(output);
+    expect(report.deadGlobs).toMatchObject([
+      {
+        node: "bivium.config.json",
+        kind: "setup",
+        glob: "test/missing-setup.js",
+        problem: "matches nothing",
+      },
+    ]);
+  });
+
   it("explains a given file, and says what it reaches when not this test", async () => {
     const dir = repo({ "test/b.test.js": `import { b } from "lib";\n` });
     expect((await why(dir, "test/a.test.js", "src/b.js")).output).toBe(

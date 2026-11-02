@@ -23,6 +23,12 @@ export interface SuiteConfig {
   pages?: Globs;
   /** Files whose change runs the whole suite: a second harness, a runner config. */
   wiring?: Globs;
+  /**
+   * Files the runner loads before every test (Vitest and Jest `setupFiles`,
+   * Mocha `--require`, Playwright `globalSetup`): every test of the suite
+   * depends on them, and on what they import.
+   */
+  setup?: Globs;
   /** Files under `root` the runner never reads, such as type-check inputs: exempt from the orphan rule. */
   nonInputs?: Globs;
   /**

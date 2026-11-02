@@ -30,6 +30,12 @@
 
 **Features**
 
+- `suites.<name>.setup` names the files a runner loads before every
+  test (`setupFiles`, `--require`, `globalSetup`). Every test of the
+  suite depends on them and on what they import, so a change to a
+  module only the setup file imports selects the suite's tests instead
+  of only those that import it too. `why` labels the hop `setup`, and
+  `check` reports a `setup` glob that matches nothing (#35).
 - `suites.<name>.types: false` says a suite runs code and can't observe
   types: a change that reaches its tests only through `import type`,
   `export type … from`, JSDoc types or declaration files selects none
