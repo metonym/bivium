@@ -85,6 +85,8 @@ export interface ResolvedConfig {
   isBarrel: Matcher;
   external: Set<string>;
   isInert: Matcher;
+  // `undefined` when the config doesn't say: any package may be.
+  isLoadedByName?: Matcher;
   extensions: readonly string[];
   deadGlobs: readonly DeadGlobEntry[];
   // `undefined` when the config doesn't list them: `check` then counts.
@@ -209,6 +211,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
     isBarrel: config.barrels ? matcher(config.barrels) : () => true,
     external: new Set(config.external),
     isInert: matcher(config.inert),
+    ...(config.loadedByName !== undefined && {
+      isLoadedByName: matcher(config.loadedByName),
+    }),
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
     deadGlobs: config.deadGlobs ?? [],
     ...(config.knownUnknowns && { knownUnknowns: config.knownUnknowns }),
@@ -299,6 +304,7 @@ const CONFIG_KEYS = new Set([
   "barrels",
   "external",
   "inert",
+  "loadedByName",
   "extensions",
   "deadGlobs",
   "knownUnknowns",
@@ -500,6 +506,7 @@ export function checkConfig(value: unknown): Config {
     barrels: field(value, "barrels", isGlobs, "", globs),
     external: field(value, "external", isStrings, "", "a list of packages"),
     inert: field(value, "inert", isGlobs, "", globs),
+    loadedByName: field(value, "loadedByName", isGlobs, "", globs),
     extensions: field(value, "extensions", isStrings, "", "a list"),
     deadGlobs: deadGlobs?.map((entry: unknown, i) =>
       checkDeadGlob(entry, `deadGlobs[${i}]`),

@@ -1050,3 +1050,23 @@ everything. On vite, sveltekit, vue and astro's lockfiles (6,000 to
 lockfile commits, five select through their importers; the other two
 bumped pnpm itself.
 
+## 54. `loadedByName` says which packages load other than by import
+
+A lockfile change that reached a package no test imports ran everything
+(decision 42), unless the package was `inert`. That's right for a CLI, a
+runner or a test environment, but most such packages are libraries: an
+undici security bump reached `sanity-plugin-media`, which only a CMS
+config no test reaches imports, and ran all 53 test files. Listing every
+library in `inert` doesn't scale, and says the wrong thing.
+
+A package can be used without an import in two ways: run (its `bin`), or
+loaded by name from a config string (`environment: "jsdom"`, a PostCSS
+plugin, `ts-jest`). The lockfiles record the first (`bin` in `bun.lock`
+and `package-lock.json`, `hasBin` in `pnpm-lock.yaml`); nothing records
+the second. So `loadedByName` is opt-in: unset, any package may be used
+that way, as before. Set (even to `[]`), it lists the packages loaded by
+name, and every other package without a `bin` is import-only: if no test
+imports it, a change that reaches it selects its importers' tests and
+nothing more. bivium has no built-in list: `happy-dom` is a library to
+one repository and a test environment to another.
+

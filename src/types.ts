@@ -98,6 +98,16 @@ export interface Config<Suite extends string = string> {
    * package no test imports runs everything, unless that package is here.
    */
   inert?: Globs;
+  /**
+   * Packages a test may load other than by an import bivium sees: a test
+   * environment, a plugin a config names by string (`jsdom`, `happy-dom`,
+   * `ts-jest`). Globs over package names. Setting it says every other
+   * package without an executable is loaded only by imports, so a lockfile
+   * change that reaches one no test imports selects nothing beyond its
+   * importers. A package with a `bin` in the lockfile is always taken to
+   * be one a test may run. Default: unset, and any package may be.
+   */
+  loadedByName?: Globs;
   /** Suffixes tried after a specifier, in order. */
   extensions?: readonly string[];
   /**

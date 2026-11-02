@@ -25,6 +25,8 @@ interface Installed {
   versions: string[];
   // The packages its copies depend on, by name.
   dependencies: Set<string>;
+  // Some copy has an executable (`bin`, pnpm's `hasBin`).
+  bin: boolean;
 }
 
 interface Lockfile {
@@ -92,7 +94,15 @@ function install(
     entries: [],
     versions: [],
     dependencies: new Set<string>(),
+    bin: false,
   };
+  if (
+    info?.bin !== undefined ||
+    info?.hasBin === true ||
+    info?.hasBin === "true"
+  ) {
+    installed.bin = true;
+  }
   installed.entries.push(JSON.stringify(entry));
   if (!installed.versions.includes(version)) installed.versions.push(version);
   for (const field of [
@@ -327,6 +337,9 @@ export interface PackageDiff {
   dependents: Map<string, Set<string>>;
   // Names a workspace declares, in either revision.
   declared: Set<string>;
+  // Packages with an executable, in either revision: a test can run one
+  // without importing it.
+  bins: Set<string>;
 }
 
 function describe(name: string, before?: string, after?: string): string {
@@ -438,6 +451,7 @@ export async function readPackageDiff(
     changes: [],
     dependents: new Map(),
     declared: new Set(),
+    bins: new Set(),
   };
   // The lockfiles the working tree has, parsed (`undefined` if they don't
   // parse), to check a `package.json` against.
@@ -450,6 +464,7 @@ export async function readPackageDiff(
     for (const lockfile of [before, after]) {
       if (!lockfile) continue;
       for (const [name, installed] of lockfile.packages) {
+        if (installed.bin) diff.bins.add(name);
         for (const dependency of installed.dependencies) {
           const set = diff.dependents.get(dependency) ?? new Set<string>();
           set.add(name);
@@ -541,6 +556,12 @@ export function packageSeeds(
   files: readonly string[],
 ): PackageSeeds {
   const result: PackageSeeds = { seeds: new Map(), notes: [], reasons: [] };
+  // Whether a test may load the package other than by an import: run it,
+  // or name it in a config. With `loadedByName` set, only a package with
+  // an executable or one it lists; without it, any.
+  const { isLoadedByName } = config;
+  const loadedOtherwise = (name: string) =>
+    isLoadedByName === undefined || diff.bins.has(name) || isLoadedByName(name);
   const reaches = new Map<string, boolean>();
   const reachesTest = (name: string) => {
     let found = reaches.get(name);
@@ -577,6 +598,8 @@ export function packageSeeds(
     }
     const through: string[] = [];
     let covered = true;
+    // Some package it reaches is covered only by being import-only.
+    let importOnly = false;
     for (const user of closure) {
       const node = `pkg:${user}`;
       const imported = graph.has(node);
@@ -591,17 +614,22 @@ export function packageSeeds(
       }
       const entry =
         imported || diff.declared.has(user) || !diff.dependents.has(user);
-      if (entry && !reachesTest(user) && !config.isInert(user)) {
+      if (!entry || reachesTest(user) || config.isInert(user)) continue;
+      if (loadedOtherwise(user)) {
         covered = false;
         const list = unused.get(user) ?? [];
         if (user === name) list.unshift(change);
         else list.push(change);
         unused.set(user, list);
+      } else {
+        importOnly = true;
       }
     }
     if (!covered) continue;
     if (through.length === 0) {
-      result.notes.push(`${detail}, inert`);
+      result.notes.push(
+        `${detail}, ${importOnly ? "imported by no test" : "inert"}`,
+      );
       continue;
     }
     const others = through.filter((user) => user !== name);
