@@ -56,6 +56,7 @@ export interface ResolvedNarrower {
 }
 
 type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
+type KnownUnknown = NonNullable<Config["knownUnknowns"]>[number];
 
 // An `edges` or `reads` entry: a file glob and the globs a file it matches
 // depends on or reads, where `$1`… stand for what the key's wildcards matched.
@@ -86,6 +87,8 @@ export interface ResolvedConfig {
   isInert: Matcher;
   extensions: readonly string[];
   deadGlobs: readonly DeadGlobEntry[];
+  // `undefined` when the config doesn't list them: `check` then counts.
+  knownUnknowns?: readonly KnownUnknown[];
   base?: string;
   cache?: boolean | string;
   // The file it was loaded from, which `check` reports its dead globs under.
@@ -208,6 +211,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     isInert: matcher(config.inert),
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
     deadGlobs: config.deadGlobs ?? [],
+    ...(config.knownUnknowns && { knownUnknowns: config.knownUnknowns }),
     base: config.base,
     cache: config.cache,
   };
@@ -280,6 +284,7 @@ const SUITE_KEYS = new Set([
 ]);
 const NARROWER_KEYS = new Set(["name", "match", "opaque", "suites", "narrow"]);
 const DEAD_GLOB_KEYS = new Set(["file", "glob", "reason"]);
+const KNOWN_UNKNOWN_KEYS = new Set(["file", "reason"]);
 const CONFIG_KEYS = new Set([
   "suites",
   "narrowers",
@@ -296,6 +301,7 @@ const CONFIG_KEYS = new Set([
   "inert",
   "extensions",
   "deadGlobs",
+  "knownUnknowns",
   "base",
   "cache",
 ]);
@@ -419,6 +425,19 @@ function checkDeadGlob(value: unknown, at: string): DeadGlobEntry {
   return { file, glob, reason };
 }
 
+function checkKnownUnknown(value: unknown, at: string): KnownUnknown {
+  if (!isRecord(value)) {
+    throw new Error(`bivium config: ${at} must be an object`);
+  }
+  checkKeys(value, KNOWN_UNKNOWN_KEYS, `${at}.`);
+  const file = field(value, "file", isString, `${at}.`, "a path");
+  const reason = field(value, "reason", isString, `${at}.`, "a string");
+  if (!(file && reason)) {
+    throw new Error(`bivium config: ${at} needs a file and reason`);
+  }
+  return { file, reason };
+}
+
 // A value can only refer to a wildcard its key has: `$2` of a key with one
 // would stand for nothing.
 function checkCaptures(
@@ -446,12 +465,15 @@ export function checkConfig(value: unknown): Config {
     throw new Error("bivium config: suites must be an object");
   }
   checkKeys(value, CONFIG_KEYS, "");
-  const { narrowers, deadGlobs } = value;
+  const { narrowers, deadGlobs, knownUnknowns } = value;
   if (narrowers !== undefined && !Array.isArray(narrowers)) {
     throw new Error("bivium config: narrowers must be a list");
   }
   if (deadGlobs !== undefined && !Array.isArray(deadGlobs)) {
     throw new Error("bivium config: deadGlobs must be a list");
+  }
+  if (knownUnknowns !== undefined && !Array.isArray(knownUnknowns)) {
+    throw new Error("bivium config: knownUnknowns must be a list");
   }
   const suites: Record<string, SuiteConfig> = {};
   for (const [name, suite] of Object.entries(value.suites)) {
@@ -481,6 +503,9 @@ export function checkConfig(value: unknown): Config {
     extensions: field(value, "extensions", isStrings, "", "a list"),
     deadGlobs: deadGlobs?.map((entry: unknown, i) =>
       checkDeadGlob(entry, `deadGlobs[${i}]`),
+    ),
+    knownUnknowns: knownUnknowns?.map((entry: unknown, i) =>
+      checkKnownUnknown(entry, `knownUnknowns[${i}]`),
     ),
     base: field(value, "base", isString, "", "a ref"),
     cache: field(value, "cache", isCache, "", "a directory or a boolean"),

@@ -109,6 +109,13 @@ export interface Config<Suite extends string = string> {
    * dead glob fails the check, so the list stays current.
    */
   deadGlobs?: readonly { file: string; glob: string; reason: string }[];
+  /**
+   * Nodes `bivium check` allows to have unknown dependencies, each with a
+   * reason. With this set, `check` fails on an unknown node some test
+   * reaches that isn't listed, and on a listed node that's no longer
+   * unknown, so a new unknown can't hide behind one that went away.
+   */
+  knownUnknowns?: readonly { file: string; reason: string }[];
   /** The default base ref. */
   base?: string;
   /** The extraction cache's directory, or `false` for none. Default: `node_modules/.cache/bivium`, or `.bivium/cache` without `node_modules`. */

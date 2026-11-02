@@ -510,6 +510,47 @@ describe("bivium check", () => {
     ).toBe(0);
   });
 
+  it("fails on an unknown node knownUnknowns doesn't list, and on a stale entry", async () => {
+    const config = (knownUnknowns: { file: string; reason: string }[]) =>
+      JSON.stringify({
+        suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
+        roots: ["src", "test"],
+        knownUnknowns,
+      });
+    const dir = repo({
+      "bivium.config.json": config([
+        { file: "test/u.test.js", reason: "reads fixtures it writes" },
+      ]),
+    });
+    const listed = await run(["check", "--cwd", dir]);
+    expect(listed.status).toBe(0);
+    expect(listed.output).toContain(
+      "test/u.test.js    (known: reads fixtures it writes)",
+    );
+    write(dir, {
+      "test/v.test.js": `import x from "./missing.js";
+`,
+      "bivium.config.json": config([
+        { file: "test/u.test.js", reason: "reads fixtures it writes" },
+        { file: "src/a.js", reason: "was unknown once" },
+      ]),
+    });
+    const { status, output } = await run(["check", "--cwd", dir]);
+    expect(status).toBe(1);
+    expect(output.split("\n").slice(-3)).toEqual([
+      "2 nodes with unknown dependencies reach a test: each such test runs on any change.",
+      "1 of them not in `knownUnknowns`: fix it, or list it with a reason.",
+      "1 stale `knownUnknowns` entry.",
+    ]);
+    const report: Report = JSON.parse(
+      (await run(["check", "--json", "--cwd", dir])).output,
+    );
+    expect(report).toMatchObject({
+      unlistedUnknowns: ["test/v.test.js"],
+      staleKnownUnknowns: [{ file: "src/a.js", reason: "was unknown once" }],
+    });
+  });
+
   it("lists unknown nodes no test reaches apart, and doesn't count them", async () => {
     const dir = repo();
     write(dir, {

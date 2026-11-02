@@ -30,6 +30,11 @@
 
 **Features**
 
+- `knownUnknowns` lists the nodes `check` allows to have unknown
+  dependencies, each with a reason. With it set, `check` fails on an
+  unknown node some test reaches that it doesn't list, and on an entry
+  that's no longer unknown: `--max-unknown` passed when one unknown
+  went away and another appeared (#24).
 - `// @lists <glob>` declares files a test lists without reading them,
   as a convention test does (every route has a handler). Adding,
   deleting or renaming a match selects the test; editing one doesn't,
