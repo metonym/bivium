@@ -89,6 +89,54 @@ function packageLock(packages: Record<string, Pkg>) {
   );
 }
 
+// pnpm's v9 lockfile: importers with each declared range and the version
+// it resolved, `packages` metadata, and `snapshots` with dependencies.
+function pnpmLock(
+  packages: Record<string, Pkg>,
+  declared: typeof DECLARED = DECLARED,
+  extra = "",
+) {
+  const importer = Object.entries(declared)
+    .map(
+      ([field, deps]) =>
+        `    ${field}:\n${Object.entries(deps)
+          .map(
+            ([name, range]) =>
+              `      ${name}:\n        specifier: ${range}\n        version: ${packages[name]?.version}`,
+          )
+          .join("\n")}`,
+    )
+    .join("\n");
+  const entries = Object.entries(packages);
+  const metadata = entries.map(
+    ([name, pkg]) =>
+      `  ${name}@${pkg.version}:\n    resolution: {integrity: sha512-${name}${pkg.version}}\n`,
+  );
+  const snapshots = entries.map(([name, pkg]) => {
+    const deps = Object.keys(pkg.dependencies ?? {});
+    if (deps.length === 0) return `  ${name}@${pkg.version}: {}\n`;
+    const lines = deps.map((dep) => `      ${dep}: ${packages[dep]?.version}`);
+    return `  ${name}@${pkg.version}:\n    dependencies:\n${lines.join("\n")}\n`;
+  });
+  return `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+${extra}
+importers:
+
+  .:
+${importer}
+
+packages:
+
+${metadata.join("\n")}
+snapshots:
+
+${snapshots.join("\n")}`;
+}
+
 const CONFIG: Config = {
   suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
   roots: ["src", "test"],
@@ -97,7 +145,13 @@ const CONFIG: Config = {
 
 // src/a.js imports lib-a, which depends on dep-x; src/b.js imports lib-b.
 // runner and linter are declared, and nothing imports them.
-function repo(lockfile: "bun.lock" | "package-lock.json" = "bun.lock") {
+const LOCKFILES = {
+  "bun.lock": bunLock,
+  "package-lock.json": packageLock,
+  "pnpm-lock.yaml": pnpmLock,
+};
+
+function repo(lockfile: keyof typeof LOCKFILES = "bun.lock") {
   const dir = mkdtempSync(join(tmpdir(), "bivium-lockfile-"));
   dirs.push(dir);
   git(dir, "init", "-q", "-b", "main");
@@ -105,8 +159,7 @@ function repo(lockfile: "bun.lock" | "package-lock.json" = "bun.lock") {
   git(dir, "config", "user.name", "t");
   write(dir, {
     "package.json": JSON.stringify({ name: "app", ...DECLARED }, null, 2),
-    [lockfile]:
-      lockfile === "bun.lock" ? bunLock(PACKAGES) : packageLock(PACKAGES),
+    [lockfile]: LOCKFILES[lockfile](PACKAGES),
     "src/a.js": `import a from "lib-a";\nexport default a;`,
     "src/b.js": `import b from "lib-b";\nexport default b;`,
     "test/a.test.js": `import "../src/a.js";`,
@@ -271,11 +324,89 @@ describe("a lockfile change", () => {
     });
   });
 
+  it("reads pnpm-lock.yaml the same way", async () => {
+    const dir = repo("pnpm-lock.yaml");
+    write(dir, { "pnpm-lock.yaml": pnpmLock(bump("lib-b", "2.1.0")) });
+    expect(await planOf(dir)).toEqual({
+      unit: { mode: "some", files: ["test/b.test.js"] },
+      reasons: [],
+      packages: ["pnpm-lock.yaml: lib-b 2.0.0 → 2.1.0"],
+    });
+    write(dir, { "pnpm-lock.yaml": pnpmLock(bump("dep-x", "1.0.1")) });
+    expect(await planOf(dir)).toEqual({
+      unit: { mode: "some", files: ["test/a.test.js"] },
+      reasons: [],
+      // A snapshot records the versions its dependencies resolved to.
+      packages: [
+        "pnpm-lock.yaml: dep-x 1.0.0 → 1.0.1, through lib-a",
+        "pnpm-lock.yaml: lib-a 1.0.0, entry changed",
+      ],
+    });
+    write(dir, { "pnpm-lock.yaml": pnpmLock(bump("dep-y", "1.0.1")) });
+    expect((await planOf(dir)).reasons).toEqual([
+      "pnpm-lock.yaml: runner 3.0.0, entry changed (and 1 more package runner depends on), and no test imports it",
+    ]);
+  });
+
+  it("reads a package.json bump that pnpm-lock.yaml records", async () => {
+    const dir = repo("pnpm-lock.yaml");
+    const declared = {
+      ...DECLARED,
+      dependencies: { ...DECLARED.dependencies, "lib-a": "^1.1.0" },
+    };
+    write(dir, {
+      "pnpm-lock.yaml": pnpmLock(bump("lib-a", "1.1.0"), declared),
+      "package.json": JSON.stringify({ name: "app", ...declared }, null, 2),
+    });
+    expect(await planOf(dir)).toEqual({
+      unit: { mode: "some", files: ["test/a.test.js"] },
+      reasons: [],
+      packages: ["pnpm-lock.yaml: lib-a 1.0.0 → 1.1.0"],
+    });
+  });
+
+  it("sees a workspace switch to a version pnpm-lock.yaml already has", async () => {
+    const both = { ...PACKAGES, "lib-b@3": { version: "3.0.0" } };
+    const dir = repo("pnpm-lock.yaml");
+    write(dir, { "pnpm-lock.yaml": pnpmLock(both) });
+    git(dir, "commit", "-q", "-am", "two versions");
+    // Only the importer's resolved version moves.
+    const switched = pnpmLock(both).replace(
+      "specifier: ^2.0.0\n        version: 2.0.0",
+      "specifier: ^2.0.0\n        version: 3.0.0",
+    );
+    write(dir, { "pnpm-lock.yaml": switched });
+    expect((await planOf(dir)).unit).toEqual({
+      mode: "some",
+      files: ["test/b.test.js"],
+    });
+  });
+
+  it("runs everything for a pnpm setting, or a pnpm-lock.yaml it can't read", async () => {
+    const dir = repo("pnpm-lock.yaml");
+    write(dir, {
+      "pnpm-lock.yaml": pnpmLock(
+        PACKAGES,
+        DECLARED,
+        "\noverrides:\n  dep-x: 1.0.1\n",
+      ),
+    });
+    expect((await planOf(dir)).reasons).toEqual([
+      "pnpm-lock.yaml: a setting other than the packages changed",
+    ]);
+    write(dir, {
+      "pnpm-lock.yaml": `lockfileVersion: '9.0'\nfoo: &anchor x\n`,
+    });
+    expect((await planOf(dir)).reasons).toEqual([
+      "pnpm-lock.yaml: can't parse it",
+    ]);
+  });
+
   it("runs everything for a lockfile format it doesn't read", async () => {
     const dir = repo();
-    write(dir, { "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" });
+    write(dir, { "yarn.lock": "# yarn lockfile v1\n" });
     expect((await planOf(dir)).reasons).toEqual([
-      "pnpm-lock.yaml: outside the dependency graph",
+      "yarn.lock: outside the dependency graph",
     ]);
   });
 });

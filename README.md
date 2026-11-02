@@ -57,7 +57,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | A file's own package and its ancestors' `package.json` dependencies, and builtins | `pkg:` nodes |
 | Anything else | Unknown: the file depends on every change |
 
-A root `bun.lock` or `package-lock.json` isn't a source file: a change to one seeds the packages it changed (see [Lockfiles](#lockfiles)).
+A root `bun.lock`, `package-lock.json` or `pnpm-lock.yaml` isn't a source file: a change to one seeds the packages it changed (see [Lockfiles](#lockfiles)).
 
 A file it can't lex cleanly is read by a regex extractor instead, which over-approximates. CSS isn't scanned: generated stylesheets reach their inputs through `edges`, and a [narrower](#narrowers) can do better.
 
@@ -97,9 +97,9 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 
 ## Lockfiles
 
-A dependency bump changes a lockfile, which no file imports. When a root `bun.lock` or `package-lock.json` (v2 or v3) changes, bivium diffs it against the merge base and seeds the walk with the `pkg:` nodes of the packages whose entries changed, and of every package that depends on one, so a `svelte` bump selects what imports `svelte`, or a package built on it. A `package.json` whose only change is to dependencies the lockfile records the same way counts as those packages changing.
+A dependency bump changes a lockfile, which no file imports. When a root `bun.lock`, `package-lock.json` (v2 or v3) or `pnpm-lock.yaml` (v6 or v9) changes, bivium diffs it against the merge base and seeds the walk with the `pkg:` nodes of the packages whose entries changed, and of every package that depends on one, so a `svelte` bump selects what imports `svelte`, or a package built on it. A `package.json` whose only change is to dependencies the lockfile records the same way counts as those packages changing.
 
-A changed package can also be used in ways the graph can't see: a CLI a test spawns, a runner, a type package. So when a change reaches a package that a `package.json` declares, or that some file imports, and that no test imports, everything runs, with the reason (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`), unless the package is `inert`. Everything also runs for a lockfile bivium can't parse, one whose settings other than its packages changed (`overrides`, patches), and a `package.json` change the lockfile doesn't record. Other lockfiles (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`) are files like any other: outside the roots, a change to one runs everything.
+A changed package can also be used in ways the graph can't see: a CLI a test spawns, a runner, a type package. So when a change reaches a package that a `package.json` declares, or that some file imports, and that no test imports, everything runs, with the reason (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`), unless the package is `inert`. Everything also runs for a lockfile bivium can't parse, one whose settings other than its packages changed (`overrides`, patches, pnpm's `settings`, `catalogs`, or the version of pnpm itself), and a `package.json` change the lockfile doesn't record. Other lockfiles (`yarn.lock`, `bun.lockb`) are files like any other: outside the roots, a change to one runs everything.
 
 ```console
 $ bunx bivium plan
