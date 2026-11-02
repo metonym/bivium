@@ -521,6 +521,46 @@ describe("affectedBy", () => {
   });
 });
 
+describe("a pattern many nodes share", () => {
+  const files: Record<string, string> = {
+    "src/setup.ts": "export {};",
+    "src/hub.ts": "export {};",
+    "src/other.ts": "export {};",
+  };
+  for (let i = 0; i < 50; i++) {
+    files[`tests/t${i}.test.ts`] = `import "../src/hub.ts";`;
+  }
+  const config: Config = {
+    suites: { unit: { tests: "tests/*.test.ts" } },
+    edges: { "tests/*.test.ts": ["src/setup.ts", "src/o*.ts"] },
+  };
+  const shared = graphOf(files, { config });
+  const tests = Object.keys(files).filter((file) => file.startsWith("tests/"));
+
+  it("reaches every node that declares it, literal or not", () => {
+    for (const seed of ["src/setup.ts", "src/other.ts"]) {
+      const parents = new Map<string, Via>();
+      const affected = affectedBy(shared, [seed], { parents });
+      expect(tests.filter((test) => !affected.has(test))).toEqual([]);
+      expect(parents.get("tests/t7.test.ts")).toEqual({
+        from: seed,
+        kind: "edges",
+      });
+    }
+    expect(affectedBy(shared, ["src/hub.ts"]).size).toBe(51);
+  });
+
+  it("still reaches a node the walk gets to after the pattern first matched", () => {
+    const later = graphOf(
+      { ...files, "src/setup.ts": `import "./other.ts";` },
+      { config },
+    );
+    const affected = affectedBy(later, ["src/other.ts"]);
+    expect(affected.has("src/setup.ts")).toBe(true);
+    expect(tests.filter((test) => !affected.has(test))).toEqual([]);
+  });
+});
+
 describe("directives", () => {
   // A host page globs every fixture but each test names its own, and its
   // helper reads entries as text: neither may widen a fixture change.

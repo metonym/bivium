@@ -352,33 +352,101 @@ export function baseBarrelNames(
   return names;
 }
 
+// The nodes that declare one pattern (an `import.meta.glob`, `@depends-on`,
+// `edges` input or text read), each with what spells it for that node.
+interface PatternGroup {
+  re: RegExp;
+  nodes: string[];
+  kinds: Via["kind"][];
+}
+
+// Patterns by source, each tested once per path however many nodes declare
+// it: an `edges` key that matches every test gives every test the same
+// input. A pattern without a wildcard is a lookup.
+interface Patterns {
+  literal: Map<string, PatternGroup[]>;
+  wild: PatternGroup[];
+}
+
 interface ReverseIndex {
   dependents: Map<string, string[]>;
-  globbers: [string, FileDeps][];
-  readers: [string, RegExp[]][];
+  globbers: Patterns;
+  readers: Patterns;
   unknown: string[];
 }
 
 const indexes = new WeakMap<Graph, ReverseIndex>();
 
+const REGEX_SYNTAX = "[](){}|*+?.^$";
+
+// The one path a compiled glob matches, or `undefined` if it has a
+// wildcard.
+function literalOf(re: RegExp): string | undefined {
+  const { source } = re;
+  if (!source.startsWith("^") || !source.endsWith("$")) return undefined;
+  let path = "";
+  for (let i = 1; i < source.length - 1; i++) {
+    const char = source[i];
+    if (char === "\\") path += source[++i];
+    else if (REGEX_SYNTAX.includes(char)) return undefined;
+    else path += char;
+  }
+  return path;
+}
+
+function patterns(): Patterns & {
+  add: (re: RegExp, node: string, kind: Via["kind"]) => void;
+} {
+  const literal = new Map<string, PatternGroup[]>();
+  const wild: PatternGroup[] = [];
+  const bySource = new Map<string, PatternGroup>();
+  return {
+    literal,
+    wild,
+    add: (re, node, kind) => {
+      let group = bySource.get(re.source);
+      if (!group) {
+        group = { re, nodes: [], kinds: [] };
+        bySource.set(re.source, group);
+        const path = literalOf(re);
+        if (path === undefined) wild.push(group);
+        else {
+          const list = literal.get(path);
+          list ? list.push(group) : literal.set(path, [group]);
+        }
+      }
+      // A node that declares a pattern twice keeps the first kind.
+      if (group.nodes.at(-1) === node) return;
+      group.nodes.push(node);
+      group.kinds.push(kind);
+    },
+  };
+}
+
 function reverseIndex(graph: Graph): ReverseIndex {
   const cached = indexes.get(graph);
   if (cached) return cached;
-  const index: ReverseIndex = {
-    dependents: new Map(),
-    globbers: [],
-    readers: [],
-    unknown: [],
-  };
+  const dependents = new Map<string, string[]>();
+  const globbers = patterns();
+  const readers = patterns();
+  const unknown: string[] = [];
   for (const [path, deps] of graph) {
     for (const file of deps.files) {
-      const list = index.dependents.get(file);
-      list ? list.push(path) : index.dependents.set(file, [path]);
+      const list = dependents.get(file);
+      list ? list.push(path) : dependents.set(file, [path]);
     }
-    if (deps.patterns.length > 0) index.globbers.push([path, deps]);
-    if (deps.reads.length > 0) index.readers.push([path, deps.reads]);
-    if (deps.unknown.length > 0) index.unknown.push(path);
+    for (const re of deps.patterns) {
+      globbers.add(re, path, deps.patternKinds?.get(re) ?? "glob");
+    }
+    for (const re of deps.reads) readers.add(re, path, "reads");
+    if (deps.unknown.length > 0) unknown.push(path);
   }
+  const index: ReverseIndex = {
+    dependents,
+    globbers: { literal: globbers.literal, wild: globbers.wild },
+    readers: { literal: readers.literal, wild: readers.wild },
+    unknown,
+  };
   indexes.set(graph, index);
   return index;
 }
@@ -451,20 +519,40 @@ export function affectedBy(
     queue.push(path);
     if (via && parents) parents.set(path, via);
   };
+  const visitGroup = (group: PatternGroup, from: string) => {
+    const { nodes, kinds } = group;
+    for (let i = 0; i < nodes.length; i++) {
+      visit(nodes[i], parents && { from, kind: kinds[i] });
+    }
+  };
 
   const changedPaths = [...changed];
   for (const path of changedPaths) visit(path);
   // Text reads only see the files themselves, not what they import.
-  for (const [reader, patterns] of seedReaders ? readers : []) {
-    const read = changedPaths.find((path) =>
-      patterns.some((re) => re.test(path)),
-    );
-    if (read !== undefined) visit(reader, { from: read, kind: "reads" });
+  if (seedReaders) {
+    for (const path of changedPaths) {
+      for (const group of readers.literal.get(path) ?? []) {
+        visitGroup(group, path);
+      }
+      for (const group of readers.wild) {
+        if (group.re.test(path)) visitGroup(group, path);
+      }
+    }
   }
   const first = queue[0];
   if (includeUnknown && first !== undefined) {
     for (const path of unknown) visit(path, { from: first, kind: "unknown" });
   }
+  // Once a group's nodes are visited, a later match adds nothing, so a
+  // walk visits each group once and stops testing its pattern.
+  const { literal } = globbers;
+  let active = globbers.wild;
+  let spent: Set<PatternGroup> | undefined;
+  const spend = (group: PatternGroup, from: string) => {
+    visitGroup(group, from);
+    spent ??= new Set();
+    spent.add(group);
+  };
   for (let at = 0; at < queue.length; at++) {
     const path = queue[at];
     for (const dependent of dependents.get(path) ?? []) {
@@ -473,18 +561,19 @@ export function affectedBy(
         parents && { from: path, kind: fileKind(graph, dependent, path) },
       );
     }
-    for (const [globber, deps] of globbers) {
-      if (affected.has(globber)) continue;
-      const pattern = deps.patterns.find((re) => re.test(path));
-      if (pattern === undefined) continue;
-      visit(
-        globber,
-        parents && {
-          from: path,
-          kind: deps.patternKinds?.get(pattern) ?? "glob",
-        },
-      );
+    const exact = literal.size > 0 ? literal.get(path) : undefined;
+    if (exact) {
+      for (const group of exact) {
+        if (!spent?.has(group)) spend(group, path);
+      }
     }
+    let matched = false;
+    for (const group of active) {
+      if (!group.re.test(path)) continue;
+      spend(group, path);
+      matched = true;
+    }
+    if (matched) active = active.filter((group) => !spent?.has(group));
   }
   return affected;
 }
