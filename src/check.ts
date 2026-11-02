@@ -5,6 +5,7 @@ import { affectedBy } from "./graph.ts";
 import { annotationLine, causesOf, sourceOf, specifierLine } from "./locate.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
+import { RELATIVE } from "./syntax.ts";
 
 interface Unknown {
   node: string;
@@ -68,7 +69,7 @@ export function fixFor(cause: string) {
     if (specifier.startsWith("./%sveltekit.assets%/")) {
       return "no file in the SvelteKit project's `static/` (a custom `kit.files.assets` isn't read): fix the path, or add an `edges` entry for it";
     }
-    if (specifier.startsWith(".")) {
+    if (RELATIVE.test(specifier)) {
       return "no file at that path: fix the import, or add an `edges` entry if a build generates it";
     }
     if (specifier.startsWith("#")) {

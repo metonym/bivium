@@ -918,3 +918,27 @@ two, so `why` walks the same way and agrees.
 
 A `self`, `wiring` or lockfile entry still wins over `ignore`, as before.
 
+## 49. `edges` names generated files git doesn't list
+
+Content and type generators (Velite, Contentlayer, SvelteKit, Next) write
+into gitignored directories that source imports. Such a file was never a
+node, so an import of it was unresolved and its importers ran on every
+change. An `edges` key could already name a generated file, but only an
+import that spelled its exact path landed on it (`probe` returns a base
+`edges` matches); `import "#velite"` with `paths` to `./.velite` probed
+`.velite`, which no key matches.
+
+When a base finds no file, the resolver now tries it with each extension
+and as a directory index against the `edges` keys, and takes every
+candidate a key matches (decision 3). It does this only for a path the
+user mapped (relative, `alias`, `paths`, `exports`, `imports`), not for a
+bare name under `baseUrl`: with a broad key such as `**/*.d.ts`, every
+undeclared package would otherwise become a phantom `<name>.d.ts`.
+
+A specifier that starts with `.` but isn't `.`, `..`, `./…` or `../…`
+was read as relative. TypeScript and Node read `.velite` as bare, so it
+goes through `alias` and `paths` now. HTML `src` and `href` values,
+which are relative URLs, are prefixed with `./` unless they start with
+`./` or `../`, so `.well-known/x.js` stays relative. That changes what
+the scanner extracts for such a value, so `SCANNER_VERSION` is bumped.
+

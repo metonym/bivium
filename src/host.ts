@@ -7,7 +7,7 @@ import {
   TS,
   TSX,
 } from "./lex.ts";
-import { URL_REF } from "./syntax.ts";
+import { RELATIVE, URL_REF } from "./syntax.ts";
 
 // Files that embed scripts in markup. Only the code is lexed: `<script>`
 // blocks, and for Svelte the `{…}` expressions in markup (where an
@@ -147,7 +147,7 @@ function ref(tag: string, out: Lexed) {
   const value = match && (match[1] ?? match[2] ?? match[3]);
   if (value && !URL_REF.test(value)) {
     out.imports.push({
-      specifier: value.startsWith(".") ? value : `./${value}`,
+      specifier: RELATIVE.test(value) ? value : `./${value}`,
     });
   }
 }

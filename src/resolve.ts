@@ -1,7 +1,7 @@
 import { builtinModules } from "node:module";
 import { posix } from "node:path";
 import type { ResolvedConfig } from "./config.ts";
-import { QUERY } from "./syntax.ts";
+import { QUERY, RELATIVE } from "./syntax.ts";
 import type { TsConfigs, TsPaths } from "./tsconfig.ts";
 
 export interface PackageJson {
@@ -301,7 +301,9 @@ export function createResolver({
     generated(path) || exists(path) ? [path] : tsSources(path);
 
   // Every file `base` can mean: itself, with an extension, or an index.
-  const probe = (base: string): string[] => {
+  // `guess` is a lookup the user didn't map (a bare name under `baseUrl`),
+  // which a generated file git doesn't list can't answer.
+  const probe = (base: string, guess = false): string[] => {
     if (generated(base)) return [base];
     const found: string[] = [];
     if (exists(base)) found.push(base);
@@ -309,6 +311,17 @@ export function createResolver({
     // TypeScript's `./x.js` → `./x.ts`, `./x.tsx` or `./x.d.ts`.
     if (found.length === 0) found.push(...tsSources(base));
     for (const [, file] of indexes.get(base) ?? []) found.push(file);
+    if (found.length === 0 && !guess && config.generated.length > 0) {
+      // A generated file git doesn't list (a build's output directory, an
+      // ignored `.velite/`) is a file `edges` names with an extension or as
+      // an index.
+      for (const ext of extensions) {
+        if (generated(base + ext)) found.push(base + ext);
+      }
+      for (const ext of extensions) {
+        if (generated(`${base}/index${ext}`)) found.push(`${base}/index${ext}`);
+      }
+    }
     return found;
   };
 
@@ -444,7 +457,7 @@ export function createResolver({
       return found.length > 0 ? { files: found } : undefined;
     }
     if (ts?.baseUrl !== undefined) {
-      const found = probe(posix.join(ts.baseUrl, bare));
+      const found = probe(posix.join(ts.baseUrl, bare), true);
       if (found.length > 0) return { files: found };
     }
     const node = builtin(bare);
@@ -478,7 +491,7 @@ export function createResolver({
     const { dir, relative, scope } = last;
     // A subpath import's leading `#` isn't a hash.
     const hash = specifier.startsWith("#") ? "#" : "";
-    const isRelative = specifier.startsWith(".");
+    const isRelative = RELATIVE.test(specifier);
     const memo = isRelative ? relative : scope.resolved;
     if (memo.has(specifier)) return memo.get(specifier);
     const bare = hash + specifier.slice(hash.length).replace(QUERY, "");
