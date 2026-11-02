@@ -41,6 +41,9 @@ export interface Revision {
   listed: string[];
   // Changed against the merge base, plus untracked files.
   changed: string[];
+  // The changed paths added or deleted since the merge base, untracked
+  // files included: what a directory listing sees.
+  layout: Set<string>;
   // The merge base of `base` and HEAD, asked of git on the first call (or
   // up front, with `mergeBase: true`): only a narrower, or a caller that
   // reports the commit, needs it.
@@ -120,11 +123,13 @@ export async function readRevision(
   // since. A conflicted path's line (`U`) or a submodule's names no blob.
   const before = new Map<string, string | undefined>();
   const diffed: string[] = [];
+  const layout = new Set(untracked);
   for (const line of lines(diff)) {
     const entry = RAW_ENTRY.exec(line);
     if (!entry) throw new Error(`git diff: unexpected line ${line}`);
     const [, mode, oid, status, path] = entry;
     diffed.push(path);
+    if (status === "A" || status === "D") layout.add(path);
     if (status === "A") before.set(path, undefined);
     else if ("MTD".includes(status) && mode !== "160000") {
       before.set(path, oid);
@@ -168,6 +173,7 @@ export async function readRevision(
     files: sorted(files),
     listed: [...tracked, ...untracked],
     changed,
+    layout,
     mergeBase,
     readBase,
     blobs: oids,

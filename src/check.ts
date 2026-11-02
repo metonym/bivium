@@ -15,7 +15,7 @@ interface Unknown {
   tests: string[];
 }
 
-type GlobKind = "depends-on" | "reads" | "glob" | "edges" | "setup";
+type GlobKind = "depends-on" | "reads" | "lists" | "glob" | "edges" | "setup";
 
 interface Declared {
   kind: GlobKind;
@@ -56,6 +56,7 @@ const EXAMPLES = 3;
 const TAGS: Record<GlobKind, string> = {
   "depends-on": "@depends-on",
   reads: "@reads",
+  lists: "@lists",
   glob: "import.meta.glob",
   edges: "edges",
   setup: "setup",
@@ -112,6 +113,13 @@ function declaredGlobs(node: string, extraction: Extraction): Declared[] {
     ...extraction.reads.map(
       (glob): Declared => ({
         kind: "reads",
+        glob,
+        pattern: globToRegExp(glob),
+      }),
+    ),
+    ...extraction.lists.map(
+      (glob): Declared => ({
+        kind: "lists",
         glob,
         pattern: globToRegExp(glob),
       }),

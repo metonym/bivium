@@ -3,6 +3,7 @@ import {
   DEPENDS_ON,
   GLOB_REGISTRY,
   LIST_SEPARATOR,
+  LISTS,
   namedBindings,
   QUERY,
   READS,
@@ -59,6 +60,7 @@ export function extractRegex(source: string, html: boolean): Scan {
     gotos: [],
     dependsOn: [],
     reads: [],
+    lists: [],
     unknown: [],
   };
 
@@ -119,6 +121,9 @@ export function extractRegex(source: string, html: boolean): Scan {
   result.reads = [
     ...(source.includes("@reads") ? source.matchAll(READS) : []),
   ].flatMap(([, list]) => list.split(LIST_SEPARATOR).filter(Boolean));
+  result.lists = [
+    ...(source.includes("@lists") ? source.matchAll(LISTS) : []),
+  ].flatMap(([, list]) => list.split(LIST_SEPARATOR).filter(Boolean));
   const disk =
     source.includes("fs") ||
     source.includes("child_process") ||
@@ -126,7 +131,7 @@ export function extractRegex(source: string, html: boolean): Scan {
   if (
     disk &&
     READS_DISK.test(source) &&
-    result.dependsOn.length + result.reads.length === 0
+    result.dependsOn.length + result.reads.length + result.lists.length === 0
   ) {
     result.unknown.push("reads the disk without @depends-on");
   }

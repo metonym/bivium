@@ -22,6 +22,8 @@ export interface Plan {
   // Changed ignored files the graph has: they seed the walk, but no unknown
   // node depends on them.
   quiet: string[];
+  // The changed paths added or deleted, which seed `@lists`.
+  layout: ReadonlySet<string>;
   // `pkg:` seed → the package change it stands for.
   packageCauses: Map<string, string>;
   narrowings: Map<string, Narrowing[]>;
@@ -35,6 +37,8 @@ export interface Narrowed {
 export interface PlanOptions {
   // Barrel-name nodes (`src/index.js#Button`) whose target moved.
   barrelNames?: string[];
+  // The changed paths added or deleted: only they select an `@lists`.
+  layout?: ReadonlySet<string>;
   narrowed?: Narrowed[];
   // What the changed lockfiles and `package.json` files changed.
   packages?: PackageDiff;
@@ -130,7 +134,11 @@ export function classify(
 function narrowedWalk(
   graph: Graph,
   seeds: string[],
-  { quiet, types }: { quiet: string[]; types: boolean },
+  {
+    quiet,
+    layout,
+    types,
+  }: { quiet: string[]; layout: ReadonlySet<string>; types: boolean },
   coarse: Set<string>,
   narrowings: Narrowing[],
 ): Set<string> {
@@ -138,11 +146,12 @@ function narrowedWalk(
   const fine = affectedBy(
     graph,
     seeds.filter((seed) => !matched.has(seed)),
-    { quiet, types },
+    { quiet, layout, types },
   );
   for (const narrowing of narrowings) {
     const walk = affectedBy(graph, [...narrowing.matched, ...narrowing.seeds], {
       opaque: narrowing.narrower.opaque,
+      layout,
       types,
     });
     for (const node of walk) fine.add(node);
@@ -156,7 +165,12 @@ export function planTests(
   graph: Graph,
   changed: string[],
   config: ResolvedConfig,
-  { barrelNames = [], narrowed = [], packages }: PlanOptions = {},
+  {
+    barrelNames = [],
+    layout = new Set<string>(),
+    narrowed = [],
+    packages,
+  }: PlanOptions = {},
 ): Plan {
   const { relevant, quiet, packageFiles, reasons, full } = classify(
     graph,
@@ -178,12 +192,12 @@ export function planTests(
     ...packageFiles,
     ...bumped.seeds.keys(),
   ];
-  const affected = affectedBy(graph, seeds, { quiet });
+  const affected = affectedBy(graph, seeds, { quiet, layout });
   // A suite that can't observe types walks without the type-only edges.
   let runtime: Set<string> | undefined;
   const affectedFor = (suite: ResolvedSuite) => {
     if (suite.types) return affected;
-    runtime ??= affectedBy(graph, seeds, { quiet, types: false });
+    runtime ??= affectedBy(graph, seeds, { quiet, layout, types: false });
     return runtime;
   };
   const nodes = [...graph.keys()];
@@ -243,7 +257,7 @@ export function planTests(
         ? narrowedWalk(
             graph,
             seeds,
-            { quiet, types: suite.types },
+            { quiet, layout, types: suite.types },
             coarse,
             narrowing,
           )
@@ -258,6 +272,7 @@ export function planTests(
     packages: bumped.notes,
     seeds,
     quiet,
+    layout,
     packageCauses: bumped.seeds,
     narrowings,
   };

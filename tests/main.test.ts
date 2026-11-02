@@ -256,6 +256,60 @@ describe("bivium plan", () => {
     );
   });
 
+  it("selects an @lists test when a path comes or goes, not when it's edited", async () => {
+    const dir = repo();
+    write(dir, {
+      "bivium.config.json": JSON.stringify({
+        suites: { unit: { tests: "test/**/*.test.js", root: "." } },
+      }),
+      "pages/about/page.js": "export default 1;",
+      "pages/blog/page.js": "export default 2;",
+      "test/layout.test.js": [
+        "// @lists pages/**",
+        `import { readdirSync } from "node:fs";`,
+        `readdirSync("pages");`,
+      ].join("\n"),
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "pages");
+    git(dir, "branch", "-f", "base");
+    write(dir, { "pages/about/page.js": "export default 3;" });
+    // Edited: no test lists contents, and the listing counts as reaching
+    // it, so the orphan rule doesn't run the suite.
+    expect(await planJson(dir)).toMatchObject({
+      suites: { unit: { mode: "none" } },
+      reasons: [],
+    });
+    write(dir, { "pages/careers/page.js": "export default 4;" });
+    expect((await planJson(dir)).suites.unit).toEqual({
+      mode: "some",
+      files: ["test/layout.test.js"],
+    });
+    git(dir, "checkout", "-q", ".");
+    rmSync(join(dir, "pages/careers"), { recursive: true });
+    unlinkSync(join(dir, "pages/blog/page.js"));
+    expect((await planJson(dir)).suites.unit).toEqual({
+      mode: "some",
+      files: ["test/layout.test.js"],
+    });
+    const { output } = await run([
+      "why",
+      "test/layout.test.js",
+      "--format",
+      "chain",
+      "--cwd",
+      dir,
+      "--base",
+      "base",
+    ]);
+    expect(output).toBe(
+      [
+        "pages/blog/page.js changed",
+        "  listed by  test/layout.test.js:1  ← selected",
+      ].join("\n"),
+    );
+  });
+
   it("runs everything for a change outside the roots or to its config", async () => {
     const dir = repo();
     write(dir, { "README.md": "x", "package.json": "{}" });

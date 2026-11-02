@@ -114,6 +114,19 @@ describe("comments and strings", () => {
     ]);
   });
 
+  it("reads @lists, which declares a disk read as @reads does", () => {
+    const source = `// @lists app/**/page.tsx, docs/*\nimport { readdirSync } from "node:fs";`;
+    for (const format of ["a.ts", "a.svelte"]) {
+      const file = format.endsWith("svelte")
+        ? `<script>\n${source}\n</script>`
+        : source;
+      expect(lexed(format, file)).toMatchObject({
+        lists: ["app/**/page.tsx", "docs/*"],
+        unknown: [],
+      });
+    }
+  });
+
   it("marks type-only imports and re-exports, and only those", () => {
     const source = [
       `import type { A } from "./a";`,
