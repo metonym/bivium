@@ -10,6 +10,11 @@
   entry that gives every test the same input
   (`{ "tests/*.test.ts": "src/setup.ts" }`) made a plan quadratic in the
   tests: with 4,000 tests a plan took 0.81 s, and now 0.08 s (#39).
+- A plan that reads files (no cache, or a cache miss) holds only what
+  it extracted from each, not the file's text, and reads 64 files at a
+  time. On 7,000 files (23 MB) a cold plan needs a 20 MB heap on Node
+  instead of over 64 MB, and peaks at 124 MB of RSS instead of 285 MB
+  (Bun: 88 MB instead of 115 MB), and is no slower (#42).
 
 **Fixes**
 

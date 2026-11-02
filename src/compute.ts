@@ -113,6 +113,25 @@ interface ComputeOptions {
   mergeBase?: boolean;
 }
 
+// Reads in flight at once. More don't read faster, and every read started
+// holds its file's text until it's extracted: with all of them started at
+// once, a cold plan of 7,000 files needed three times the heap.
+const READS_IN_FLIGHT = 64;
+
+// Runs `tasks` with at most `limit` in flight.
+async function inParallel(
+  tasks: readonly (() => Promise<void>)[],
+  limit: number,
+): Promise<void> {
+  let next = 0;
+  // Each worker starts the next task when its last one ends.
+  const worker = (): Promise<void> =>
+    next < tasks.length ? tasks[next++]().then(worker) : Promise.resolve();
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, worker),
+  );
+}
+
 // Whether the working tree has `path` as a file (or a link to one).
 async function isFile(path: string): Promise<boolean> {
   try {
@@ -141,7 +160,7 @@ export async function extractRevision(
   const extractions = new Map<string, Extraction>();
   const texts = new Map<string, string>();
   const missing = new Set<string>();
-  const pending: Promise<void>[] = [];
+  const tasks: (() => Promise<void>)[] = [];
   let cached = 0;
   const read = async (file: string) => {
     const text = await readIfFile(join(root, file));
@@ -158,7 +177,7 @@ export async function extractRevision(
         cached++;
         continue;
       }
-      pending.push(
+      tasks.push(() =>
         read(file).then((source) => {
           if (source === undefined) return;
           const extraction = extract(format, source);
@@ -167,20 +186,20 @@ export async function extractRevision(
         }),
       );
     } else if (file.endsWith("/package.json")) {
-      pending.push(
+      tasks.push(() =>
         read(file).then((source) => {
           if (source !== undefined) texts.set(file, source);
         }),
       );
     } else if (!revision.present.has(file)) {
-      pending.push(
+      tasks.push(() =>
         isFile(join(root, file)).then((found) => {
           if (!found) missing.add(file);
         }),
       );
     }
   }
-  await Promise.all(pending);
+  await inParallel(tasks, READS_IN_FLIGHT);
   const files = revision.files.filter((file) => !missing.has(file));
   // In file order, as reads finish in any.
   const manifests = new Map<string, string>();
