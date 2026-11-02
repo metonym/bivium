@@ -27,13 +27,19 @@ function git(dir: string, ...args: string[]) {
 interface Pkg {
   version: string;
   dependencies?: Record<string, string>;
+  bin?: Record<string, string>;
 }
 
 const PACKAGES: Record<string, Pkg> = {
   "lib-a": { version: "1.0.0", dependencies: { "dep-x": "^1.0.0" } },
   "lib-b": { version: "2.0.0" },
   "dep-x": { version: "1.0.0" },
-  runner: { version: "3.0.0", dependencies: { "dep-y": "^1.0.0" } },
+  runner: {
+    version: "3.0.0",
+    dependencies: { "dep-y": "^1.0.0" },
+    bin: { runner: "cli.js" },
+  },
+  "test-env": { version: "5.0.0" },
   "dep-y": { version: "1.0.0" },
   linter: { version: "4.0.0", dependencies: { "lint-core": "^1.0.0" } },
   "lint-core": { version: "1.0.0" },
@@ -41,7 +47,11 @@ const PACKAGES: Record<string, Pkg> = {
 
 const DECLARED = {
   dependencies: { "lib-a": "^1.0.0", "lib-b": "^2.0.0" },
-  devDependencies: { linter: "^4.0.0", runner: "^3.0.0" },
+  devDependencies: {
+    linter: "^4.0.0",
+    runner: "^3.0.0",
+    "test-env": "^5.0.0",
+  },
 };
 
 // Bun's text lockfile: JSON with trailing commas.
@@ -51,9 +61,10 @@ function bunLock(
   extra = "",
 ) {
   const entry = ([name, pkg]: [string, Pkg]) => {
-    const info = pkg.dependencies
-      ? JSON.stringify({ dependencies: pkg.dependencies })
-      : "{}";
+    const info = JSON.stringify({
+      ...(pkg.dependencies && { dependencies: pkg.dependencies }),
+      ...(pkg.bin && { bin: pkg.bin }),
+    });
     return `    "${name}": ["${name}@${pkg.version}", "", ${info}, "sha512-${name}${pkg.version}"],\n`;
   };
   return `{
@@ -264,6 +275,45 @@ describe("a lockfile change", () => {
     expect((await planOf(dir, { ...CONFIG, inert: undefined })).unit).toEqual({
       mode: "all",
     });
+  });
+
+  it("with loadedByName, selects nothing for a package only imports load", async () => {
+    const dir = repo();
+    write(dir, {
+      "src/tool.js": `import t from "test-env";\nexport default t;`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "tool");
+    write(dir, { "bun.lock": bunLock(bump("test-env", "5.1.0")) });
+    // Without it, the package could be a test environment the runner loads.
+    expect(await planOf(dir)).toMatchObject({
+      unit: { mode: "all" },
+      reasons: ["bun.lock: test-env 5.0.0 → 5.1.0, and no test imports it"],
+    });
+    expect(await planOf(dir, { ...CONFIG, loadedByName: [] })).toEqual({
+      unit: { mode: "none" },
+      reasons: [],
+      packages: ["bun.lock: test-env 5.0.0 → 5.1.0"],
+    });
+    // Listed: a runner config names it.
+    expect(
+      (await planOf(dir, { ...CONFIG, loadedByName: ["test-env"] })).unit,
+    ).toEqual({ mode: "all" });
+  });
+
+  it("with loadedByName, still runs everything for a package with a bin", async () => {
+    const dir = repo();
+    write(dir, { "bun.lock": bunLock(bump("dep-y", "1.0.1")) });
+    expect(
+      (await planOf(dir, { ...CONFIG, loadedByName: [] })).reasons,
+    ).toEqual([
+      "bun.lock: dep-y 1.0.0 → 1.0.1, which runner depends on, and no test imports runner",
+    ]);
+    // Nothing imports it, and no test can run it.
+    write(dir, { "bun.lock": bunLock(bump("test-env", "5.1.0")) });
+    expect(
+      (await planOf(dir, { ...CONFIG, loadedByName: [] })).packages,
+    ).toEqual(["bun.lock: test-env 5.0.0 → 5.1.0, imported by no test"]);
   });
 
   it("still runs the tests that depend on every change", async () => {

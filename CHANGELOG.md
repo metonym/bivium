@@ -30,6 +30,12 @@
 
 **Features**
 
+- `loadedByName` (globs over package names) lists the packages a test
+  may load other than by an import: a test environment, a plugin a
+  config names by string. Setting it says every other package without
+  a `bin` in the lockfile is loaded only by imports, so a lockfile bump
+  that reaches one no test imports selects only its importers instead
+  of running everything (#23).
 - A root `pnpm-lock.yaml` (v6 or v9) is diffed like `bun.lock`: a
   dependency bump selects the importers of what it changed instead of
   running everything. Its `settings`, `overrides`, `catalogs`,
