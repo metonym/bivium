@@ -30,6 +30,10 @@
 
 **Features**
 
+- `bivium graph` shows which files make plans wide: for each suite, the
+  files a change to which selects the most tests, and how files spread
+  from none to every test. `--json` exports every node with its
+  imports, importers, fan-in per suite, and whether it's unknown (#36).
 - `loadedByName` (globs over package names) lists the packages a test
   may load other than by an import: a test environment, a plugin a
   config names by string. Setting it says every other package without
