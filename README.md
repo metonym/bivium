@@ -96,6 +96,60 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `base` | The default base ref. Otherwise the upstream default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`) |
 | `cache` | The cache's directory, or `false`. Default: `node_modules/.cache/bivium`, or `.bivium/cache` |
 
+## A change no test reaches
+
+A changed file under a suite's `root` that no test of the suite reaches is wired some other way (a runner config, a setup file), so the whole suite runs: the orphan rule. With the default `root`, the whole repository, any file bivium can't trace to a test runs the suite, which is sound and coarse. Set `root` on every suite to the directories its tests and sources live in, and say what the rest is:
+
+| You changed… | and want… | Use |
+|:---|:---|:---|
+| a file no test can observe: docs, stories, a changelog | nothing to run, unless some test imports it | `ignore` |
+| a file under the suite's `root` only another tool reads: type-check inputs | nothing to run for this suite | the suite's `nonInputs` |
+| a runner config or a second harness | the whole suite | the suite's `wiring` |
+| a setup file the runner loads before every test, or what it imports | every test of the suite | the suite's `setup` |
+| the selector's config, or its own code | everything | `self` (the config file always is) |
+| a type only `import type` reaches, in a suite that runs code | nothing | the suite's `types: false` |
+| a file a test lists but doesn't read (a route, a story) | the test, when one is added or deleted | `// @lists <glob>` in the test |
+| a file a build turns into what tests load | the tests that load the output | `edges` from the output to its inputs |
+| a file a library reads only from paths its caller passes | no unknown | `hermetic` |
+
+A file outside `roots` that isn't ignored runs everything: it's the backstop for wiring the graph can't see, such as a CI workflow.
+
+## Recipes
+
+**Vitest or Jest.** Name the setup files the runner loads, mirror `resolve.alias` (a Vite key like `"@/"` works as written), give snapshots to their tests, and, for a suite that runs code, skip type-only edges:
+
+```ts
+suites: {
+  unit: {
+    tests: "src/**/*.test.{ts,tsx}",
+    run: "vitest run {files}",
+    root: "src",
+    setup: ["src/setupTests.ts"], // vitest.config.ts `setupFiles`
+    wiring: ["vitest.config.ts"],
+    types: false,
+  },
+},
+alias: { "@/": "src/" },
+reads: { "src/**/*.test.ts": "src/$1__snapshots__/$2.test.ts.snap" },
+```
+
+tsconfig `paths` (what `vite-tsconfig-paths` reads) are read without an `alias`. An extensionless `vi.mock("@/x")` resolves as an import does. A test environment the runner loads by name (`jsdom`, `happy-dom`) goes in `loadedByName` if you set it.
+
+**pnpm workspaces.** Workspace packages resolve through their `package.json` `exports`, and a `.js` specifier into one (`@acme/ui/Button.js`) reaches its `.ts` source. A `pnpm-lock.yaml` change selects through the packages it changed. Set `roots` to the packages and apps whose changes the suites should see, and a suite per test runner.
+
+**Playwright.** Map `page.goto()` URLs to the pages they open with `urls`, list pages only a `goto()` opens in `pages`, and name `playwright.config.ts` in `wiring`:
+
+```ts
+e2e: {
+  tests: "e2e/**/*.spec.ts",
+  root: "e2e",
+  urls: { "/*": "e2e/fixtures/*.html" },
+  wiring: ["playwright.config.ts"],
+},
+```
+
+**Generated code.** A content or type generator that writes into a gitignored directory (`.velite`, `.contentlayer/generated`) is an `edges` entry from what it writes to what it reads: `{ ".velite/*": ["content/**", "velite.config.ts"] }`. An import of `#velite` or `../.velite` then reaches the content, and not every change.
+
 ## Lockfiles
 
 A dependency bump changes a lockfile, which no file imports. When a root `bun.lock`, `package-lock.json` (v2 or v3) or `pnpm-lock.yaml` (v6 or v9) changes, bivium diffs it against the merge base and seeds the walk with the `pkg:` nodes of the packages whose entries changed, and of every package that depends on one, so a `svelte` bump selects what imports `svelte`, or a package built on it. A `package.json` whose only change is to dependencies the lockfile records the same way counts as those packages changing.
@@ -239,6 +293,15 @@ jobs:
 ```
 
 The cache holds what bivium extracted from each file, keyed by git blob, so a warm plan reads only the files a branch changed. Key it on the merge base: a pull request can restore caches from the default branch, whose run at that commit is the one to hit. Without `node_modules`, the cache lives in `.bivium/cache`; it writes a `.gitignore` so it never shows up as a change.
+
+What a plan costs, measured on an Apple M-series laptop under load (median of five, wall time):
+
+| Repository | Files | Bun, no cache | Bun, warm | Node 24, no cache | Node 24, warm | Cache |
+|:---|---:|---:|---:|---:|---:|---:|
+| carbon-components-svelte | 4,680 | 0.15 s | 0.09 s | 0.27 s | 0.13 s | 452 KB |
+| generated TypeScript, 23 MB | 7,000 | 0.14 s | 0.08 s | 0.30 s | 0.12 s | 896 KB |
+
+So the cache is optional at this size, `bunx --bun` is worth it, and planning inside a test job (no extra job, no install) costs well under a second. A cold plan of the generated repository peaks at 88 MB of RSS on Bun and 124 MB on Node.
 
 ## Narrowers
 
