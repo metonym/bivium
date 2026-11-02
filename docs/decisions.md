@@ -833,3 +833,28 @@ by 16% and sveld's by 27%, but `-m` checks each entry serially in the
 process that already walks for untracked files, the longest call: on
 carbon `readRevision` took 51 ms against 47. Parsing the listing without
 a regex saved under a millisecond of its 2–3.
+
+## 45. A missing `.js` is its TypeScript source, wherever it's resolved
+
+TypeScript (`bundler`, `node16`, `nodenext`) and Vite read `./x.js` as
+`x.ts`, `x.tsx` or `x.d.ts` when the `.js` file isn't there. bivium did
+this only for `.ts` (and `.mts`, `.cts`, `.tsx` from `.jsx`), and only
+where it probes a path: a relative specifier, an alias, `paths`. A
+workspace package imported as `@acme/ui/Button.js` through
+`"./*": "./src/*"` was unresolved, as was `./u.js` for `u.d.ts`.
+
+The rewrite now follows TypeScript's list for each extension (`.js` →
+`.ts`, `.tsx`, `.d.ts`; `.jsx` → `.tsx`, `.ts`, `.d.ts`; `.mjs` → `.mts`,
+`.d.mts`; `.cjs` → `.cts`, `.d.cts`), takes every one that exists
+(decision 3), and applies to `exports` and `imports` targets as well. It
+still applies only when the `.js` file is missing: a `.js` that exists
+is what Vite and Node load, and TypeScript loads its declarations from
+the same place.
+
+An `alias` key ending in `/` matched nothing: `{ "@al/": "al/" }` asked
+for `@al//x`. Vite strips the slash from a key and target that both end
+in one, which is how its docs spell a directory alias, so bivium strips
+it from the key. A doubled slash in a specifier is one slash through
+`alias` and `paths`, as it is for a relative specifier (`posix.join`)
+and for `exports` targets.
+

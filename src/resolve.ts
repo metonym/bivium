@@ -81,7 +81,15 @@ interface Directory {
 
 const BUILTINS = new Set(builtinModules);
 const RUNTIME_BUILTIN = /^(?:node:|bun(?:$|:))/;
-const JS_EXTENSION = /\.([cm]?)js(x?)$/;
+// TypeScript's sources for an emitted JavaScript name, in the order it
+// tries them: `./x.js` may be `x.ts`, `x.tsx` or `x.d.ts`.
+const JS_EXTENSION = /\.(?:js|jsx|mjs|cjs)$/;
+const TS_SOURCES: Record<string, readonly string[]> = {
+  ".js": [".ts", ".tsx", ".d.ts"],
+  ".jsx": [".tsx", ".ts", ".d.ts"],
+  ".mjs": [".mts", ".d.mts"],
+  ".cjs": [".cts", ".d.cts"],
+};
 const NODE_PREFIX = /^node:/;
 const INVALID_IMPORT_TARGET = /^[./#]/;
 // SvelteKit replaces it in `app.html` with the assets directory; the scanner
@@ -277,18 +285,29 @@ export function createResolver({
     return names;
   };
 
+  // The TypeScript sources of a missing `.js` file that exist.
+  const tsSources = (path: string): string[] => {
+    const js = JS_EXTENSION.exec(path);
+    if (!js) return [];
+    const stem = path.slice(0, js.index);
+    return (TS_SOURCES[js[0]] ?? [])
+      .map((ext) => stem + ext)
+      .filter((file) => generated(file) || exists(file));
+  };
+
+  // An exact path (an `exports` or `imports` target): itself, else its
+  // TypeScript sources.
+  const exact = (path: string): string[] =>
+    generated(path) || exists(path) ? [path] : tsSources(path);
+
   // Every file `base` can mean: itself, with an extension, or an index.
   const probe = (base: string): string[] => {
     if (generated(base)) return [base];
     const found: string[] = [];
     if (exists(base)) found.push(base);
     for (const [, file] of suffixed.get(base) ?? []) found.push(file);
-    // TypeScript's `./x.js` → `./x.ts`.
-    const js = found.length === 0 && JS_EXTENSION.exec(base);
-    if (js) {
-      const ts = `${base.slice(0, js.index)}.${js[1]}ts${js[2]}`;
-      if (exists(ts)) found.push(ts);
-    }
+    // TypeScript's `./x.js` → `./x.ts`, `./x.tsx` or `./x.d.ts`.
+    if (found.length === 0) found.push(...tsSources(base));
     for (const [, file] of indexes.get(base) ?? []) found.push(file);
     return found;
   };
@@ -334,9 +353,13 @@ export function createResolver({
   const resolveLocal = (dir: string, json: PackageJson, subpath: string) => {
     if (json.exports !== undefined) {
       const list = exportTargets(json.exports, subpath);
-      return (list ?? [])
-        .map((target) => inPackage(dir, posix.normalize(target)))
-        .filter((path) => generated(path) || exists(path));
+      return [
+        ...new Set(
+          (list ?? []).flatMap((target) =>
+            exact(inPackage(dir, posix.normalize(target))),
+          ),
+        ),
+      ];
     }
     if (subpath === ".") {
       return probe(inPackage(dir, posix.normalize(json.main ?? "index")));
@@ -357,9 +380,10 @@ export function createResolver({
     let pkg: string | undefined;
     for (const target of list) {
       if (target.startsWith("./")) {
-        const path = inPackage(owning[0], posix.normalize(target));
-        if ((generated(path) || exists(path)) && !found.includes(path)) {
-          found.push(path);
+        for (const path of exact(
+          inPackage(owning[0], posix.normalize(target)),
+        )) {
+          if (!found.includes(path)) found.push(path);
         }
         continue;
       }
@@ -396,14 +420,19 @@ export function createResolver({
   const resolveBare = (scope: Scope, bare: string): Resolution => {
     for (const [key, target] of config.alias) {
       if (bare !== key && !bare.startsWith(`${key}/`)) continue;
-      const found = probe(aliased(target, bare.slice(key.length + 1)));
+      // A doubled slash is one, as bundlers and TypeScript read it.
+      const found = probe(
+        posix.normalize(aliased(target, bare.slice(key.length + 1))),
+      );
       if (found.length > 0) return { files: found };
     }
     const { ts } = scope;
     const mapped = ts && mapTargets(ts.paths, bare);
     if (mapped) {
       // Every target that exists, where TypeScript takes the first.
-      const found = [...new Set(mapped.flatMap(probe))];
+      const found = [
+        ...new Set(mapped.flatMap((path) => probe(posix.normalize(path)))),
+      ];
       if (found.length > 0) return { files: found };
     }
     if (bare.startsWith("#")) return resolveImport(scope, bare);

@@ -180,8 +180,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
     narrowers,
     roots: list(config.roots, ["."]).map(normalizeRoot),
     isIgnored: matcher(config.ignore),
+    // `{ "@/": "src/" }` means `@/x` → `src/x`, as Vite reads it.
     alias: Object.entries(config.alias ?? {})
-      .map(([key, path]): [string, string] => [key, normalizeRoot(path)])
+      .map(([key, path]): [string, string] => [
+        key.replace(TRAILING_SLASHES, "") || key,
+        normalizeRoot(path),
+      ])
       .sort(([a], [b]) => b.length - a.length),
     generated: pathMaps(config.edges),
     reads: pathMaps(config.reads),

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**
+
+- An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite
+  configs spell it) matches the specifiers that start with it. It
+  matched none, so each was unresolved (#29).
+- A missing `x.js` resolves to `x.tsx` and `x.d.ts` as well as
+  `x.ts` (`x.cjs` to `x.cts` and `x.d.cts`, `x.mjs` to `x.mts` and
+  `x.d.mts`), and the rewrite applies to `exports` and `imports`
+  targets too, so `@acme/ui/Button.js` reaches
+  `packages/ui/src/Button.ts` through `"./*": "./src/*"` (#28).
+- A doubled slash in a specifier resolves through `alias` and tsconfig
+  `paths`, as it already did for a relative one (#33).
+- `check` lists an unresolved specifier once per file, not once per
+  import of it (an `import` and a `vi.mock()`).
+
 ## 0.2.1 — 2026-10-28
 
 **Performance**
