@@ -124,10 +124,17 @@ function edgeLine(
   const file = fileOf(node);
   const extraction = extract(formatOf(file), source);
   const matches = (glob: string) => globToRegExp(glob).test(via.from);
-  if (via.kind === "reads" || via.kind === "depends-on") {
+  if (
+    via.kind === "reads" ||
+    via.kind === "depends-on" ||
+    via.kind === "lists"
+  ) {
     const tag = `@${via.kind}`;
-    const globs =
-      via.kind === "reads" ? extraction.reads : extraction.dependsOn;
+    const globs = {
+      reads: extraction.reads,
+      "depends-on": extraction.dependsOn,
+      lists: extraction.lists,
+    }[via.kind];
     const glob = globs.find(matches);
     return (
       (glob === undefined ? undefined : annotationLine(source, tag, glob)) ??
@@ -197,6 +204,8 @@ function rootCause(
 
 interface Walk {
   seeds: string[];
+  // The seeds that add or delete a path, which seed `@lists`.
+  layout?: ReadonlySet<string>;
   // Seeds no unknown node depends on (changed ignored files).
   quiet?: string[];
   opaque: ((path: string) => boolean) | undefined;
@@ -212,16 +221,17 @@ function walks(
 ): Walk[] {
   const { plan, graph } = computed;
   if (from !== undefined) return [{ seeds: [from], opaque: undefined, types }];
-  const { quiet } = plan;
+  const { quiet, layout } = plan;
   const narrowings = plan.narrowings.get(name);
   if (!narrowings) {
-    return [{ seeds: plan.seeds, quiet, opaque: undefined, types }];
+    return [{ seeds: plan.seeds, quiet, layout, opaque: undefined, types }];
   }
   const matched = new Set(narrowings.flatMap((narrowing) => narrowing.matched));
   return [
     {
       seeds: plan.seeds.filter((seed) => !matched.has(seed)),
       quiet,
+      layout,
       opaque: undefined,
       types,
     },
@@ -230,6 +240,7 @@ function walks(
         (seed) => graph.has(seed) || computed.changed.includes(seed),
       ),
       opaque: narrowing.narrower.opaque,
+      layout,
       types,
     })),
   ];
@@ -249,6 +260,7 @@ function shortestChain(
       quiet: walk.quiet,
       opaque: walk.opaque,
       types: walk.types,
+      layout: walk.layout,
       parents,
     });
     if (!reached.has(test)) continue;
@@ -274,7 +286,7 @@ function reachers(
   except: string,
 ): string[] {
   const found = new Set<string>();
-  for (const { seeds, quiet = [], opaque, types } of candidates) {
+  for (const { seeds, quiet = [], opaque, types, layout } of candidates) {
     for (const [list, isQuiet] of [
       [seeds, false],
       [quiet, true],
@@ -282,8 +294,13 @@ function reachers(
       for (const seed of list) {
         if (seed === except || found.has(seed)) continue;
         const reached = isQuiet
-          ? affectedBy(computed.graph, [], { quiet: [seed], opaque, types })
-          : affectedBy(computed.graph, [seed], { opaque, types });
+          ? affectedBy(computed.graph, [], {
+              quiet: [seed],
+              opaque,
+              types,
+              layout,
+            })
+          : affectedBy(computed.graph, [seed], { opaque, types, layout });
         if (reached.has(test)) found.add(seed);
       }
     }
@@ -440,6 +457,7 @@ const VERBS: Record<Exclude<Via["kind"], "export">, string> = {
   "depends-on": "depended on by",
   edges: "an input of",
   reads: "read as text by",
+  lists: "listed by",
   unknown: "depends on every change",
 };
 

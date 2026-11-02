@@ -112,8 +112,9 @@ unit tests: 4 files
 
 | Comment | Meaning |
 |:---|:---|
-| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one is unknown, unless it's `hermetic` |
+| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one (or `@reads`, or `@lists`) is unknown, unless it's `hermetic` |
 | `// @reads <glob> [glob…]` | Files read as text. Only a direct change to one counts, not a change to what it imports. The config's `reads` says the same for files that can't hold a comment |
+| `// @lists <glob> [glob…]` | Files whose names it lists, not their contents: a convention test that checks every route has a handler. Only adding, deleting or renaming one counts; an edit doesn't select it, and doesn't run its suite by the orphan rule either |
 | `// @glob-registry` | This file's `import.meta.glob` is a lookup table and adds no edges: whatever loads an entry names it itself |
 
 ## CLI
@@ -127,7 +128,7 @@ unit tests: 4 files
 
 `--config`, `--cwd` and `--no-cache` work with every command, and `why` and `check` take `--base <ref>`. An unknown option, or an unknown `--format`, is an error.
 
-`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's) and `reads`.
+`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's), `reads` and `lists`.
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts
@@ -180,7 +181,7 @@ tests/e2e.test.ts runs on every change
 
 ## Dead globs
 
-A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads` and `import.meta.glob` pattern, every `edges` and `reads` value, and every suite's `setup`, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
+A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads`, `@lists` and `import.meta.glob` pattern, every `edges` and `reads` value, and every suite's `setup`, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
 
 | Problem | Means |
 |:---|:---|

@@ -30,6 +30,9 @@ export interface FileDeps {
   patterns: RegExp[];
   // Globs of files read as text; only a direct change to one counts.
   reads: RegExp[];
+  // Globs of files whose names it lists (`@lists`): only adding or deleting
+  // one counts.
+  lists?: RegExp[];
   // Why this file's dependencies can't be known; non-empty = everything.
   unknown: string[];
   // For a barrel whose names bind precisely: name → files it exports.
@@ -299,6 +302,7 @@ export function graphFrom(
       addPattern(deps, globToRegExp(glob), "depends-on");
     }
     for (const glob of found.reads) deps.reads.push(globToRegExp(glob));
+    if (found.lists.length > 0) deps.lists = found.lists.map(globToRegExp);
     const names = named.get(path);
     if (names) deps.barrel = names;
     graph.set(path, deps);
@@ -426,6 +430,7 @@ interface ReverseIndex {
   runtime?: Map<string, string[]>;
   globbers: Patterns;
   readers: Patterns;
+  listers: Patterns;
   unknown: string[];
 }
 
@@ -483,6 +488,7 @@ function reverseIndex(graph: Graph): ReverseIndex {
   const dependents = new Map<string, string[]>();
   const globbers = patterns();
   const readers = patterns();
+  const listers = patterns();
   const unknown: string[] = [];
   for (const [path, deps] of graph) {
     for (const file of deps.files) {
@@ -493,12 +499,14 @@ function reverseIndex(graph: Graph): ReverseIndex {
       globbers.add(re, path, deps.patternKinds?.get(re) ?? "glob");
     }
     for (const re of deps.reads) readers.add(re, path, "reads");
+    for (const re of deps.lists ?? []) listers.add(re, path, "lists");
     if (deps.unknown.length > 0) unknown.push(path);
   }
   const index: ReverseIndex = {
     dependents,
     globbers: { literal: globbers.literal, wild: globbers.wild },
     readers: { literal: readers.literal, wild: readers.wild },
+    listers: { literal: listers.literal, wild: listers.wild },
     unknown,
   };
   indexes.set(graph, index);
@@ -548,6 +556,7 @@ export interface Via {
     | "depends-on"
     | "edges"
     | "reads"
+    | "lists"
     | "unknown";
 }
 
@@ -569,6 +578,9 @@ interface Walk {
   quiet?: Iterable<string>;
   // Whether to follow type-only edges: `false` for a suite that runs code.
   types?: boolean;
+  // The seeds that add or delete a path: only they seed the files that
+  // list them (`@lists`). Without it, every seed does, as for a reach.
+  layout?: ReadonlySet<string>;
   // Whether `changed` seeds the files that read them as text. An unknown
   // node isn't a change, so what it puts on every change skips its readers.
   readers?: boolean;
@@ -589,13 +601,14 @@ export function affectedBy(
     includeUnknown = true,
     quiet = [],
     types = true,
+    layout,
     readers: seedReaders = true,
     opaque,
     parents,
   }: Walk = {},
 ): Set<string> {
   const index = reverseIndex(graph);
-  const { globbers, readers, unknown } = index;
+  const { globbers, readers, listers, unknown } = index;
   const dependents = types ? index.dependents : runtimeDependents(graph, index);
   const affected = new Set<string>();
   const queue: string[] = [];
@@ -627,6 +640,16 @@ export function affectedBy(
       for (const group of readers.wild) {
         if (group.re.test(path)) visitGroup(group, path);
       }
+    }
+  }
+  // A listing sees a path come or go, not what's in it.
+  for (const path of seedReaders ? changedPaths : []) {
+    if (layout && !layout.has(path)) continue;
+    for (const group of listers.literal.get(path) ?? []) {
+      visitGroup(group, path);
+    }
+    for (const group of listers.wild) {
+      if (group.re.test(path)) visitGroup(group, path);
     }
   }
   if (includeUnknown && first !== undefined) {

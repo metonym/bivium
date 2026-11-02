@@ -997,3 +997,21 @@ per test: the reverse index holds one list per setup file. bivium doesn't
 read the runner's config, which would tie it to one runner's format; the
 user names the files, as with `wiring`.
 
+## 52. `@lists` sees paths come and go
+
+A convention test (every route has a handler, every component a story)
+lists a directory and checks names. `@reads app/(marketing)/**` was the
+only way to say so, and selected it on every edit to a page. `@lists
+<glob>` says the file depends on which paths match, not what's in them.
+
+`readRevision` already has each change's status from `diff --raw`
+(with `--no-renames`, a rename is a delete and an add); the paths added
+or deleted, and untracked files, are the plan's `layout`. A walk seeds a
+lister from a seed in `layout` only, and, like a reader, directly: it's
+not transitive through what imports the listed file. Without a `layout`
+(the orphan rule's reach, `why` for a given file) every seed counts, so
+an edited page that only a lister names is reached and doesn't run the
+suite. `@lists` also counts as naming what a disk-reading file reads,
+as `@depends-on` and `@reads` do. There's no config key for it yet: a
+file that lists can hold a comment.
+

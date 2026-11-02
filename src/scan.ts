@@ -94,6 +94,7 @@ function detach(extraction: Extraction): Extraction {
     gotos: list(extraction.gotos),
     dependsOn: list(extraction.dependsOn),
     reads: list(extraction.reads),
+    lists: list(extraction.lists),
     unknown: extraction.unknown,
   };
   if (fallback !== undefined) detached.fallback = fallback;
@@ -122,6 +123,7 @@ export function finish(
     gotos: gotos ? extraction.gotos : [],
     dependsOn: extraction.dependsOn,
     reads: extraction.reads,
+    lists: extraction.lists,
     unknown: extraction.unknown,
   };
   if (extraction.fallback !== undefined) result.fallback = extraction.fallback;
@@ -150,7 +152,9 @@ function fromLexed(lexed: Lexed): Extraction {
     if (glob.startsWith("!")) continue;
     globs.push(glob.replace(QUERY, ""));
   }
-  if (lexed.readsDisk && lexed.dependsOn.length + lexed.reads.length === 0) {
+  const declared =
+    lexed.dependsOn.length + lexed.reads.length + lexed.lists.length;
+  if (lexed.readsDisk && declared === 0) {
     unknown.push("reads the disk without @depends-on");
   }
   return {
@@ -159,6 +163,7 @@ function fromLexed(lexed: Lexed): Extraction {
     gotos: lexed.gotos,
     dependsOn: lexed.dependsOn,
     reads: lexed.reads,
+    lists: lexed.lists,
     unknown,
   };
 }

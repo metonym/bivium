@@ -3,6 +3,7 @@ import {
   GLOB_REGISTRY,
   type ImportRef,
   LIST_SEPARATOR,
+  LISTS,
   namedBindings,
   READS,
 } from "./syntax.ts";
@@ -32,6 +33,7 @@ export interface Lexed {
   gotos: string[];
   dependsOn: string[];
   reads: string[];
+  lists: string[];
   // A `@glob-registry` annotation: the file's globs add no edges.
   registry: boolean;
   // An `import()`, `require()` or `vi.mock()` path it can't read.
@@ -49,6 +51,7 @@ export function createLexed(): Lexed {
     gotos: [],
     dependsOn: [],
     reads: [],
+    lists: [],
     registry: false,
     nonLiteralImport: false,
     nonLiteralGlob: false,
@@ -713,6 +716,7 @@ function comment(start: number, stop: number, block: boolean) {
     if (
       src.startsWith("@depends-on", nextAt) ||
       src.startsWith("@reads", nextAt) ||
+      src.startsWith("@lists", nextAt) ||
       src.startsWith("@glob-registry", nextAt)
     ) {
       annotations(start, stop);
@@ -750,6 +754,9 @@ function annotations(start: number, stop: number) {
   }
   for (const [, list] of text.matchAll(READS)) {
     out.reads.push(...list.split(LIST_SEPARATOR).filter(Boolean));
+  }
+  for (const [, list] of text.matchAll(LISTS)) {
+    out.lists.push(...list.split(LIST_SEPARATOR).filter(Boolean));
   }
   if (GLOB_REGISTRY.test(text)) out.registry = true;
 }

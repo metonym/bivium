@@ -19,7 +19,7 @@ import type { ImportRef } from "./syntax.ts";
 // Bump on any change to what `extract` returns for some input (lexer,
 // host formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 4;
+export const SCANNER_VERSION = 5;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 
@@ -48,7 +48,7 @@ function isHeader(value: unknown): value is Header {
   );
 }
 // `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback, barrel,
-// types]`, where `types` lists the indexes of the type-only imports.
+// types, lists]`, where `types` lists the indexes of the type-only imports.
 type Row = unknown[];
 
 type CacheOption = boolean | string | undefined;
@@ -233,6 +233,7 @@ function encode(key: string, e: Extraction, table: Strings): Row {
     e.fallback === undefined ? 0 : table.id(e.fallback),
     barrel ?? 0,
     typeIndexes(e.imports),
+    table.ids(e.lists),
   ];
 }
 
@@ -270,6 +271,7 @@ function decode(row: Row, strings: unknown[]): Extraction {
     gotos: list(row[3]),
     dependsOn: list(row[4]),
     reads: list(row[5]),
+    lists: list(row[10]),
     unknown: list(row[6]),
   };
   if (row[7] !== 0) extraction.fallback = str(row[7]);

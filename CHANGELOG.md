@@ -30,6 +30,11 @@
 
 **Features**
 
+- `// @lists <glob>` declares files a test lists without reading them,
+  as a convention test does (every route has a handler). Adding,
+  deleting or renaming a match selects the test; editing one doesn't,
+  and doesn't trip the orphan rule. `check` reports a dead `@lists`
+  glob, and `why` labels the edge `lists` (#25).
 - `suites.<name>.setup` names the files a runner loads before every
   test (`setupFiles`, `--require`, `globalSetup`). Every test of the
   suite depends on them and on what they import, so a change to a

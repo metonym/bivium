@@ -19,6 +19,8 @@ export interface Scan {
   dependsOn: string[];
   // `@reads` globs: only a direct change to a match counts.
   reads: string[];
+  // `@lists` globs: only adding or deleting a match counts.
+  lists: string[];
   // Why this file's dependencies can't be known.
   unknown: string[];
   // Why the lexer failed, when the regex extractor read the file instead.
@@ -40,6 +42,8 @@ export const DEPENDS_ON =
   /^\s*(?:\/\/|\/?\*+)\s*@depends-on\s+(.+?)\s*(?:\*\/)?\s*$/gm;
 
 export const READS = /^\s*(?:\/\/|\/?\*+)\s*@reads\s+(.+?)\s*(?:\*\/)?\s*$/gm;
+
+export const LISTS = /^\s*(?:\/\/|\/?\*+)\s*@lists\s+(.+?)\s*(?:\*\/)?\s*$/gm;
 
 export const GLOB_REGISTRY = /^\s*(?:\/\/|\/?\*+)\s*@glob-registry\b/m;
 

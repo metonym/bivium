@@ -375,6 +375,7 @@ export async function computePlan(
   );
   const planned = planTests(graph, revision.changed, config, {
     barrelNames,
+    layout: revision.layout,
     narrowed,
     packages: packageDiff,
   });
