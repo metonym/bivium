@@ -355,6 +355,31 @@ describe("dependencies", () => {
   });
 
   it.each([
+    ["reads", { reads: { "src/load.ts": "content/**" } }],
+    ["edges", { edges: { "src/load.ts": "content/**" } }],
+  ])(
+    "takes the config's %s for one file as declaring its disk read",
+    (_, extra) => {
+      const source = `import { readFileSync } from "node:fs";\nreadFileSync("x");`;
+      const config = { config: { ...CONFIG, ...extra } };
+      expect(deps("src/load.ts", source, {}, config).unknown).toEqual([]);
+      expect(deps("src/other.ts", source, {}, config).unknown).toEqual([
+        "reads the disk without @depends-on",
+      ]);
+    },
+  );
+
+  it("doesn't take a key with a wildcard as declaring each match's reads", () => {
+    const source = `import { readFileSync } from "node:fs";\nreadFileSync("x");`;
+    const config = {
+      config: { ...CONFIG, reads: { "src/*.ts": "snapshots/$1.snap" } },
+    };
+    expect(deps("src/load.ts", source, {}, config).unknown).toEqual([
+      "reads the disk without @depends-on",
+    ]);
+  });
+
+  it.each([
     ["child_process", `import { spawnSync } from "node:child_process";`],
     ["Bun.Glob", `const files = new Bun.Glob("*.ts").scanSync(".");`],
   ])("treats %s as reading the disk", (_, source) => {

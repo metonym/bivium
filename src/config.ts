@@ -56,6 +56,8 @@ type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
 // depends on or reads, where `$1`… stand for what the key's wildcards matched.
 export interface PathMap {
   key: string;
+  // The key names one file: it has no wildcard.
+  exact: boolean;
   pattern: RegExp;
   values: string[];
   // The values' patterns for `path`, or `undefined` if the key doesn't match.
@@ -117,7 +119,7 @@ function normalizeRoot(root: string) {
 
 function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
   return Object.entries(record).map(([key, globs]) => {
-    const { pattern } = captureGlob(key);
+    const { pattern, wildcards } = captureGlob(key);
     const values = list(globs, []);
     // A value without references is the same for every match.
     const fixed = values.map((value) =>
@@ -125,6 +127,7 @@ function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
     );
     return {
       key,
+      exact: wildcards === 0,
       pattern,
       values,
       targets: (path) => {

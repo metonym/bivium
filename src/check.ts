@@ -83,7 +83,7 @@ export function fixFor(cause: string) {
     return "pass `import.meta.glob` literal patterns";
   }
   if (cause === "reads the disk without @depends-on") {
-    return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text; list the file in `hermetic` if it reads no file of the repository";
+    return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text, or an `edges` or `reads` entry for the file in the config; list the file in `hermetic` if it reads no file of the repository";
   }
   if (cause.startsWith("non-literal goto(")) {
     return "pass `goto()` a literal URL, or a template whose path before `?` or `#` is literal";

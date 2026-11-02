@@ -79,7 +79,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `ignore` | Files no test can observe. A file some test reaches still counts |
 | `alias` | Specifier prefix → path, as the bundler aliases it. Tried before tsconfig `paths` and `package.json` `exports`. A key ending in `/` is the prefix, as Vite reads it: `{ "@/": "src/" }` maps `@/x` to `src/x` |
 | `edges` | Generated file glob → its inputs, which it depends on transitively, as with `@depends-on`: `{ "dist/*.css": "styles/**" }`. In a value, `$1`, `$2`… are what the key's wildcards matched, counted from the left: `{ "examples/*/package.json": "examples/$1/**" }` |
-| `reads` | File glob → the files it reads as text, as with `@reads`: only a direct change to one counts, so their imports and unknowns don't spread to it. Values take `$1`… as in `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }` |
+| `reads` | File glob → the files it reads as text, as with `@reads`: only a direct change to one counts, so their imports and unknowns don't spread to it. An `edges` or `reads` key that names one file (no wildcard) declares what it reads, as its own `@depends-on` or `@reads` would, so its disk reads aren't unknown. Values take `$1`… as in `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }` |
 | `self` | The selector's own files: a change to one runs everything. The config file is always one |
 | `importOnly` | Files only an import reaches: deleting one never orphans a suite |
 | `hermetic` | Files whose disk reads and non-literal imports reach no file of the repository: a library's `fs` calls on its caller's paths, a test that reads only the temporary files it writes. They add no unknown |
