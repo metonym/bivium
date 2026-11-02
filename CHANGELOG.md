@@ -30,6 +30,12 @@
 
 **Features**
 
+- A root `pnpm-lock.yaml` (v6 or v9) is diffed like `bun.lock`: a
+  dependency bump selects the importers of what it changed instead of
+  running everything. Its `settings`, `overrides`, `catalogs`,
+  `patchedDependencies` and pnpm's own version still run everything.
+  It's parsed without a dependency; one bivium can't read runs
+  everything, as before (#34).
 - `knownUnknowns` lists the nodes `check` allows to have unknown
   dependencies, each with a reason. With it set, `check` fails on an
   unknown node some test reaches that it doesn't list, and on an entry

@@ -1015,3 +1015,38 @@ suite. `@lists` also counts as naming what a disk-reading file reads,
 as `@depends-on` and `@reads` do. There's no config key for it yet: a
 file that lists can hold a comment.
 
+## 53. `pnpm-lock.yaml` is read like `bun.lock`
+
+pnpm is the usual package manager for monorepos, and its lockfile was a
+file like any other, so every dependency bot PR ran every suite.
+`parsePnpmLock` feeds the same diff as the other two (decision 42):
+
+- `packages` and, in v9, `snapshots` (keys `name@version`, a peer suffix
+  `(react@18.0.0)` in snapshots, a leading `/` in v6) are the installed
+  entries, compared by their whole text, and their `dependencies`,
+  `optionalDependencies` and `peerDependencies` give the reverse walk.
+  A snapshot records the versions its dependencies resolved to, so a
+  transitive bump also changes its dependents' entries; it selects the
+  same tests.
+- `importers` (or a v6 single project's top-level fields) give each
+  workspace's declared specifiers, for the `package.json` check. Each
+  importer's resolved `version` is part of the package's entry: a
+  workspace can switch to a version some other package already
+  installed, and nothing under `packages` changes.
+- Everything else is settings: `settings`, `overrides`, `catalogs`,
+  `patchedDependencies`, `lockfileVersion`, an importer's
+  `dependenciesMeta`, and the config-dependencies document pnpm 10
+  writes before the main one, which pins pnpm itself. A change to any of
+  them runs everything. An importer added or removed is a change to its
+  dependencies, not a setting.
+
+YAML is parsed by `src/yaml.ts`, the subset pnpm writes: block mappings
+and sequences, plain and quoted scalars, comments, and flow collections
+kept as text (`{integrity: …}`), with `{}` and `[]` read as empty. An
+anchor, a tag, a block scalar or a flow collection over several lines
+throws, so a lockfile outside the subset can't be parsed and runs
+everything. On vite, sveltekit, vue and astro's lockfiles (6,000 to
+27,000 lines) it parses in 8 to 40 ms. Replaying vite's last seven
+lockfile commits, five select through their importers; the other two
+bumped pnpm itself.
+

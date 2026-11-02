@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import type { ResolvedConfig } from "./config.ts";
 import { affectedBy, type Graph } from "./graph.ts";
 import { byCodeUnit, sorted } from "./sorted.ts";
+import { parseYaml } from "./yaml.ts";
 
 // What a change to a lockfile, or to a `package.json`'s dependencies, did to
 // the installed packages, so a dependency bump seeds the `pkg:` nodes of
@@ -183,20 +184,122 @@ function parsePackageLock(text: string): Lockfile | undefined {
   return lockfile;
 }
 
+// A `pnpm-lock.yaml` key's name and version: `name@version`, with a peer
+// suffix (`(react@18.0.0)`) in `snapshots`, and a leading `/` before v9.
+function pnpmKey(key: string): { name: string; version: string } | undefined {
+  const bare = key.startsWith("/") ? key.slice(1) : key;
+  const at = bare.indexOf("@", 1);
+  if (at === -1) return undefined;
+  return { name: bare.slice(0, at), version: withoutPeers(bare.slice(at + 1)) };
+}
+
+// `5.1.0(react@18.0.0)` is 5.1.0, for a peer set.
+function withoutPeers(version: string): string {
+  const paren = version.indexOf("(");
+  return paren === -1 ? version : version.slice(0, paren);
+}
+
+const YAML_DOCUMENT = /^---[ \t]*$/m;
+const PNPM_VERSION = /^[69]\./;
+const PNPM_DEP_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+] as const;
+
+// `pnpm-lock.yaml` v6 and v9. `importers` maps a workspace directory to
+// its dependencies, each `{ specifier, version }`; `packages` (and, in v9,
+// `snapshots`) maps `name@version` to its entry. A single-project v6 file
+// has the root's dependencies at the top. Another document (pnpm's
+// config dependencies) counts as settings.
+function parsePnpmLock(text: string): Lockfile | undefined {
+  const docs = text
+    .split(YAML_DOCUMENT)
+    .filter((doc) => doc.trim() !== "")
+    .map(parseYaml);
+  // pnpm 10 writes its config dependencies' lockfile first.
+  const main = docs.findLast(
+    (doc) => isRecord(doc) && typeof doc.lockfileVersion === "string",
+  );
+  if (!isRecord(main)) return undefined;
+  const { lockfileVersion, packages = {}, snapshots = {} } = main;
+  if (typeof lockfileVersion !== "string") return undefined;
+  if (!PNPM_VERSION.test(lockfileVersion)) return undefined;
+  if (!isRecord(packages) || !isRecord(snapshots)) return undefined;
+  const importers = isRecord(main.importers) ? main.importers : { ".": main };
+  const lockfile: Lockfile = {
+    packages: new Map(),
+    workspaces: new Map(),
+    rest: JSON.stringify([
+      restOf(main, ["importers", "packages", "snapshots", ...PNPM_DEP_FIELDS]),
+      ...docs.filter((doc) => doc !== main),
+    ]),
+  };
+  const restOfImporters: unknown[] = [];
+  for (const [dir, importer] of Object.entries(importers)) {
+    if (!isRecord(importer)) return undefined;
+    const specs: Specs = new Map();
+    for (const field of PNPM_DEP_FIELDS) {
+      const deps = importer[field];
+      if (deps === undefined) continue;
+      if (!isRecord(deps)) return undefined;
+      const declared = new Map<string, string>();
+      for (const [name, dep] of Object.entries(deps)) {
+        if (!isRecord(dep) || typeof dep.specifier !== "string") return;
+        declared.set(name, dep.specifier);
+        // The version a workspace resolves a name to: switching to another
+        // version already installed changes nothing under `packages`.
+        const version = typeof dep.version === "string" ? dep.version : "";
+        install(
+          lockfile.packages,
+          name,
+          [dir, field, version],
+          withoutPeers(version),
+          {},
+        );
+      }
+      specs.set(field, declared);
+    }
+    lockfile.workspaces.set(dir, specs);
+    // `dependenciesMeta`, `publishDirectory`: settings. A workspace added
+    // or removed shows in its dependencies.
+    const settings = Object.keys(importer).filter(
+      (key) => !PNPM_DEP_FIELDS.some((field) => field === key),
+    );
+    if (settings.length > 0) {
+      restOfImporters.push([dir, restOf(importer, PNPM_DEP_FIELDS)]);
+    }
+  }
+  if (isRecord(main.importers)) {
+    lockfile.rest += JSON.stringify(restOfImporters);
+  }
+  for (const section of [packages, snapshots]) {
+    for (const [key, entry] of Object.entries(section)) {
+      const parsed = pnpmKey(key);
+      if (!parsed) return undefined;
+      const info = isRecord(entry) ? entry : undefined;
+      install(
+        lockfile.packages,
+        parsed.name,
+        [key, entry],
+        parsed.version,
+        info,
+      );
+    }
+  }
+  return lockfile;
+}
+
 // The root lockfiles bivium reads, by name.
 const FORMATS = new Map<string, (text: string) => Lockfile | undefined>([
   ["bun.lock", parseBunLock],
   ["package-lock.json", parsePackageLock],
+  ["pnpm-lock.yaml", parsePnpmLock],
 ]);
 
 // Root lockfiles it can't read. With one in the repository, a
 // `package.json` change can't be checked against what's installed.
-const UNREAD = [
-  "bun.lockb",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-];
+const UNREAD = ["bun.lockb", "npm-shrinkwrap.json", "yarn.lock"];
 
 function parse(file: string, text: string | undefined) {
   const format = FORMATS.get(file);
