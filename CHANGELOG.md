@@ -93,6 +93,12 @@
 - `why --format json` is `why --json`. The usage text lists `--json`
   for `check` and `why`, the exit codes, and examples (#40).
 
+**Docs**
+
+- The README has one table for what to do with a changed file no test
+  reaches, recipes for Vitest and Jest, pnpm workspaces, Playwright
+  and generated code, and what a plan costs in CI (#41).
+
 **Fixes**
 
 - A specifier that starts with a dot but not `./` or `../`

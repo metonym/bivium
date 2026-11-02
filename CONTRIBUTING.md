@@ -28,7 +28,7 @@ bun src/cli.ts plan   # the CLI from source
 5. **Narrowers.** Each narrower whose files changed runs (`runNarrowers`), with the graph and both trees.
 6. **Selection.** `planTests` (`src/plan.ts`) classifies the changes (ignored, the selector's own, wiring, a lockfile or dependency change, outside the roots, or seeds), seeds the `pkg:` nodes of changed packages and their dependents (`packageSeeds`), walks the graph backwards from the seeds (`affectedBy`), applies the orphan rule and the narrowers, and picks each suite's tests.
 
-`why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
+`graph` (`src/fanin.ts`) counts each node's test fan-in by walking forward from every test. `why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
 
 ## Rules every change must keep
 
@@ -53,9 +53,11 @@ bun src/cli.ts plan   # the CLI from source
 | `tests/css-narrower.test.ts` | Carbon's CSS narrower (`eval/carbon/css-narrower.ts`) with fake tools |
 | `tests/cache.test.ts` | The cache's format, bounds and corruption handling, which files git vouches for, what `readRevision` reads at the merge base, and the scanner fingerprint |
 | `tests/config.test.ts` | Loading, checking and resolving configs |
-| `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, unreadable lockfiles, `package-lock.json` |
+| `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, `loadedByName`, unreadable lockfiles, `package-lock.json`, `pnpm-lock.yaml` |
 | `tests/main.test.ts` | `plan` and `run`, their outputs and options, and `plan()` from code |
-| `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs included |
+| `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs, hints and `knownUnknowns` included |
+| `tests/fanin.test.ts` | `bivium graph`'s fan-in, against a walk per node |
+| `tests/yaml.test.ts` | The YAML subset `pnpm-lock.yaml` is read with |
 | `scripts/test-package.ts` | `bun run test:package`: the packed tarball installs, imports only builtins, plans a repository from Node and Bun, and type-checks for a consumer |
 
 A behavior fix needs a test that fails before the fix and passes after.
