@@ -875,3 +875,25 @@ map lookup. With 4,000 tests and `{ "tests/*.test.ts": "src/setup.ts" }`,
 a plan went from 0.81 s to 0.08 s. The bench's walks retire 4–6% more
 instructions, for building the groups; they have few patterns to share.
 
+## 47. A cold plan holds extractions, not sources
+
+A plan without the cache needed two to three times the source size in
+heap. Two causes, both measured on a generated 7,000-file repository (23
+MB of TypeScript):
+
+- Every extracted string (a specifier, a name, a glob) was a slice of the
+  file's text, and V8 and JavaScriptCore both keep the whole text alive
+  for a slice. The extractions live until the plan ends, so every file's
+  text did too. `extract` now copies each string through a JSON round
+  trip, which always allocates; `(" " + s).slice(1)` detaches on V8 but
+  not on JavaScriptCore, which slices the rope's fiber. That costs about
+  0.1 µs a string.
+- Every read started at once, so each file's text sat in memory until
+  its turn to be extracted. Reads now run 64 at a time, which keeps the
+  disk busy (no slower at 8, 32 or 256; faster than unbounded on Node).
+
+The cold plan's heap need on Node went from over 64 MB to 20 MB, its peak
+RSS from 285 MB to 124 MB on Node and from 115 MB to 88 MB on Bun, and it
+took 0.32 s against 0.35 s on Node, 0.13 s against 0.14 s on Bun.
+Extractions are unchanged, so the cache is too.
+

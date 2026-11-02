@@ -67,7 +67,43 @@ export function extract(format: Format, source: string): Extraction {
     const barrel = parseReExports(source);
     if (barrel) extraction.barrel = barrel;
   }
-  return extraction;
+  return detach(extraction);
+}
+
+// A copy of `text` that shares no memory with the string it was sliced
+// from. V8 and JavaScriptCore keep a whole source alive for any slice of
+// it, so without this a plan that reads every file holds every file's text
+// until the graph is gone. A parsed string is always new; cheaper tricks
+// (`(" " + text).slice(1)`) still share it on JavaScriptCore.
+function own(text: string): string {
+  return JSON.parse(JSON.stringify(text));
+}
+
+function detach(extraction: Extraction): Extraction {
+  const list = (texts: string[]) => texts.map(own);
+  const { imports, barrel, fallback } = extraction;
+  const detached: Extraction = {
+    imports: imports.map(({ specifier, names }) =>
+      names
+        ? { specifier: own(specifier), names: list(names) }
+        : { specifier: own(specifier) },
+    ),
+    globs: list(extraction.globs),
+    gotos: list(extraction.gotos),
+    dependsOn: list(extraction.dependsOn),
+    reads: list(extraction.reads),
+    unknown: extraction.unknown,
+  };
+  if (fallback !== undefined) detached.fallback = fallback;
+  if (barrel) {
+    detached.barrel = {
+      names: new Map(
+        [...barrel.names].map(([name, from]) => [own(name), own(from)]),
+      ),
+      stars: list(barrel.stars),
+    };
+  }
+  return detached;
 }
 
 // The path-dependent part of a scan: globs are made root-relative.
