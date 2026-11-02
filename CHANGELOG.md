@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Performance**
+
+- The walk tests each distinct `edges`, `@depends-on`, `import.meta.glob`
+  and `reads` pattern once per node it visits, however many files
+  declare it, and looks a pattern without a wildcard up. An `edges`
+  entry that gives every test the same input
+  (`{ "tests/*.test.ts": "src/setup.ts" }`) made a plan quadratic in the
+  tests: with 4,000 tests a plan took 0.81 s, and now 0.08 s (#39).
+
 **Fixes**
 
 - An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite

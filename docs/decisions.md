@@ -858,3 +858,20 @@ it from the key. A doubled slash in a specifier is one slash through
 `alias` and `paths`, as it is for a relative specifier (`posix.join`)
 and for `exports` targets.
 
+## 46. The walk indexes patterns by source
+
+`affectedBy` tested every node that declares a pattern (an
+`import.meta.glob`, `@depends-on`, `edges` input or `reads`) against every
+node it visited. An `edges` key that matches each test gives each test
+its own copy of the same pattern, so a plan was quadratic in the tests:
+85% of a 2.4 s plan on a 1,000-test repository was that loop.
+
+The reverse index now groups the declaring nodes by the pattern's
+source. A walk tests each group's pattern once per visited node, visits
+all its nodes on the first match, and then drops the group, since a
+later match can add nothing. A pattern without a wildcard (a literal
+path, the common case for a setup file or a snapshot with `$1`) is a
+map lookup. With 4,000 tests and `{ "tests/*.test.ts": "src/setup.ts" }`,
+a plan went from 0.81 s to 0.08 s. The bench's walks retire 4–6% more
+instructions, for building the groups; they have few patterns to share.
+
