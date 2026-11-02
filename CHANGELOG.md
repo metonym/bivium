@@ -35,6 +35,10 @@
   `packages/ui/src/Button.ts` through `"./*": "./src/*"` (#28).
 - A doubled slash in a specifier resolves through `alias` and tsconfig
   `paths`, as it already did for a relative one (#33).
+- A file an `edges` or `reads` key names (without a wildcard) no longer
+  counts as reading the disk without saying what, as one with its own
+  `@depends-on` or `@reads` doesn't. A key with a wildcard still
+  doesn't vouch for each file it matches (#22).
 - The lexer reads a JSX element with type arguments in `.tsx`
   (`<List<string> items={[]} />`), which sent the file to the regex
   extractor (#30).

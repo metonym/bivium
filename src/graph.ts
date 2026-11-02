@@ -73,8 +73,10 @@ function addPattern(
 
 // The causes a `hermetic` file vouches for: what it reads or imports this way
 // is never a file of the repository.
+const UNDECLARED_READS = "reads the disk without @depends-on";
+
 const HERMETIC_CAUSES = new Set([
-  "reads the disk without @depends-on",
+  UNDECLARED_READS,
   "non-literal dynamic import",
 ]);
 
@@ -299,14 +301,25 @@ export function graphFrom(
     }
   }
   for (const [path, deps] of graph) {
+    let declared = false;
     for (const edge of config.generated) {
       const inputs = edge.targets(path);
       if (!inputs) continue;
+      declared ||= edge.exact;
       for (const input of inputs) addPattern(deps, input, "edges");
     }
     for (const read of config.reads) {
       const globs = read.targets(path);
-      if (globs) deps.reads.push(...globs);
+      if (!globs) continue;
+      declared ||= read.exact;
+      deps.reads.push(...globs);
+    }
+    // An `edges` or `reads` key that names the file says what it reads, as
+    // its own `@depends-on` or `@reads` would. One with a wildcard gives
+    // many files one input (each test its snapshot) and vouches for none
+    // of their other reads.
+    if (declared && deps.unknown.includes(UNDECLARED_READS)) {
+      deps.unknown = deps.unknown.filter((cause) => cause !== UNDECLARED_READS);
     }
   }
   return graph;
