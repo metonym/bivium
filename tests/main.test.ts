@@ -517,6 +517,32 @@ describe("the command line", () => {
   });
 });
 
+describe("bivium graph", () => {
+  it("prints each node's edges and test fan-in, and ranks files", async () => {
+    const dir = repo();
+    const { status, output } = await run(["graph", "--json", "--cwd", dir]);
+    expect(status).toBe(0);
+    const report = JSON.parse(output);
+    expect(report.suites).toEqual({ unit: { tests: 2, everyChange: [] } });
+    expect(
+      report.nodes.find((node: { id: string }) => node.id === "src/a.js"),
+    ).toEqual({
+      id: "src/a.js",
+      imports: [],
+      importers: ["src/index.js", "src/index.js#a"],
+      tests: { unit: 1 },
+      unknown: false,
+    });
+    const text = await run(["graph", "--cwd", dir, "--top", "1"]);
+    expect(text.output.split("\n").slice(0, 4)).toEqual([
+      "unit: 2 tests",
+      "  tests  file",
+      "      1  src/a.js",
+      "  … 3 more (--top <n> shows more)",
+    ]);
+  });
+});
+
 describe("bivium --version", () => {
   it.each(["--version", "-v"])(
     "%s prints the package version",

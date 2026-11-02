@@ -4,7 +4,10 @@ import { version } from "../package.json" with { type: "json" };
 import { check, failed, formatReport } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
+import { formatGraph, graphReport } from "./fanin.ts";
+import { affectedBy, importersOf } from "./graph.ts";
 import { formatSelection } from "./plan.ts";
+import { sorted } from "./sorted.ts";
 import type { Selection } from "./types.ts";
 import { explain, formatExplanation, isFormat } from "./why.ts";
 
@@ -15,6 +18,8 @@ const USAGE = `Usage:
              [--format <f>] [--all] [--json]
   bivium check [--max-unknown <n>] [--json]
                                            what the graph can't read, and dead globs
+  bivium graph [--suite <name>] [--top <n>] [--json]
+                                           each file's test fan-in, and the graph
   bivium --version                         print the version
   bivium --help                            print this
 
@@ -25,8 +30,9 @@ Options:
   --config <file>   config file (default: bivium.config.{ts,mts,mjs,js,json})
   --cwd <dir>       repository (default: the current directory)
   --no-cache        read every file; don't read or write the extraction cache
-  --suite <name>    for run: the suite (default: the first one)
-  --json            for plan, why and check: print JSON
+  --suite <name>    for run: the suite (default: the first one); for graph:
+                    only this suite (default: every one)
+  --json            for plan, why, check and graph: print JSON
   --github          for plan: also write each suite's selection to
                     $GITHUB_OUTPUT as <output>=all|none|<files>
   --base <ref>      for why and check: the base ref
@@ -36,6 +42,7 @@ Options:
                     shortest
   --max-unknown <n> for check: fail when more unknown nodes than this reach
                     a test
+  --top <n>         for graph: how many files to list per suite (default: 10)
 
 Exit status: 0 done; 1 check found problems, or run's command failed;
 2 a usage or configuration error.
@@ -53,6 +60,7 @@ const VALUED = new Set([
   "--base",
   "--format",
   "--max-unknown",
+  "--top",
 ]);
 const COMMON = ["--config", "--cwd", "--no-cache"];
 const FLAGS: Record<string, readonly string[]> = {
@@ -60,12 +68,14 @@ const FLAGS: Record<string, readonly string[]> = {
   run: [...COMMON, "--suite"],
   why: [...COMMON, "--base", "--json", "--format", "--all"],
   check: [...COMMON, "--base", "--max-unknown", "--json"],
+  graph: [...COMMON, "--base", "--suite", "--top", "--json"],
 };
 const POSITIONAL: Record<string, number> = {
   plan: 1,
   run: 1,
   why: 2,
   check: 0,
+  graph: 0,
 };
 
 interface Args {
@@ -200,6 +210,52 @@ async function inspect(
   return 0;
 }
 
+async function graphCommand({ flags }: Args): Promise<number> {
+  const top = Number(flags.get("--top") ?? "10");
+  if (!Number.isInteger(top) || top < 0) {
+    throw new Error("bivium graph: --top takes a whole number");
+  }
+  const { root, base, config } = await prepare({
+    cwd: flags.get("--cwd"),
+    // The graph doesn't depend on the base.
+    base: flags.get("--base") ?? "HEAD",
+    configFile: flags.get("--config"),
+  });
+  const name = flags.get("--suite");
+  const suites =
+    name === undefined
+      ? config.suites
+      : config.suites.filter((suite) => suite.name === name);
+  if (suites.length === 0) throw new Error(`bivium: no suite "${name}"`);
+  const { graph } = await computePlan(root, base, config, {
+    ...(flags.has("--no-cache") && { cache: false }),
+  });
+  const unknown = [...graph]
+    .filter(([, deps]) => deps.unknown.length > 0)
+    .map(([node]) => node);
+  const report = graphReport(
+    graph,
+    suites,
+    (node) => importersOf(graph, node),
+    (suite) =>
+      sorted(
+        [
+          ...affectedBy(graph, unknown, {
+            includeUnknown: false,
+            readers: false,
+            types: suite.types,
+          }),
+        ].filter(suite.isTest),
+      ),
+  );
+  console.log(
+    flags.has("--json")
+      ? JSON.stringify(report, null, 2)
+      : formatGraph(report, top),
+  );
+  return 0;
+}
+
 async function runCommand(
   command: string,
   { flags, positional }: Args,
@@ -315,6 +371,7 @@ export async function main(argv: string[]): Promise<number> {
     const args = parseArgs(command, rest);
     if (command === "why" || command === "check")
       return await inspect(command, args);
+    if (command === "graph") return await graphCommand(args);
     return await runCommand(command, args);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
