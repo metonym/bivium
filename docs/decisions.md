@@ -1237,7 +1237,10 @@ the working directory up and through a worktree's `commondir`. A
 from 230 to 249 ms; run alongside the listing, it still cost the small
 repositories about 4 ms, a process start. A config the file read
 misses, such as one set through an `include`, only leaves each read to
-fetch its own blob. Each path is read once, however many ask: the package diff
+fetch its own blob. A batch closes in a microtask, not on
+`setImmediate`: during a cold plan, lexing keeps the event loop busy,
+and reads held to its next turn waited on that, about 10 ms on
+carbon-preprocess-svelte's plan of a `bun.lock` change. Each path is read once, however many ask: the package diff
 and the setting files both read a changed `package.json`.
 
 A read of a file unchanged since the merge base, as a narrower makes,
