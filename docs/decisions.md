@@ -1101,3 +1101,29 @@ a test or a page (either means the file isn't an orphan). On the bench's
 21.7 ms to 8.1 ms with the same selections. A file no test reaches still
 costs a full walk: that's the case that runs the suite.
 
+## 56. `check` lists the files the orphan rule would run a suite for
+
+The orphan rule runs a suite for a changed file under its `root` that no
+test reaches. That's right for a file wired some other way, but many
+such files are gaps (a snapshot no test declares it reads, a loader a
+test passes by path, a type-check input), and users met them as slow CI
+runs. Replaying history to find them misleads, too: commits from before
+an annotation was added show gaps the code no longer has.
+
+`check` now asks the orphan rule's own question of every file under a
+root, with no change needed: `orphanOf` in `src/plan.ts` is the rule,
+and `plan` and `check` both call it. A suite's forward walk from its
+tests (`fanIn`) first rules out every file a test reaches, so only the
+rest pay for a walk of their own. Files the config exempts or decides
+about (`ignore`, `nonInputs`, `wiring`, `self`) aren't listed.
+
+The fix is a guess by the file's name, which is all bivium can see
+without reading a runner's config: a file named after a test plus an
+extension (`a.test.ts.snap`) is that test's to `reads`; a name like a
+config, setup or harness file goes in `wiring`, which keeps the full
+run but makes it deliberate; anything else is `reads` or `@depends-on`
+from whatever loads it, or `nonInputs`. It's reported and not a
+failure, as the unknown nodes no test reaches are. On sveld,
+carbon-preprocess-svelte and carbon-components-svelte at 0.3.0 it found
+2, 1 and 10 such files, each one of those three kinds.
+

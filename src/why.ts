@@ -1,4 +1,4 @@
-import { fixFor, plural } from "./check.ts";
+import { fixFor } from "./check.ts";
 import type { Computed } from "./compute.ts";
 import type { PathMap, ResolvedConfig, ResolvedSuite } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
@@ -23,6 +23,7 @@ import {
 import { createResolver, type Resolver } from "./resolve.ts";
 import { extract, finish, formatOf, SCANNED } from "./scan.ts";
 import { sorted } from "./sorted.ts";
+import { plural } from "./text.ts";
 
 // One edge of a chain: `node` depends on the next link's node.
 interface Link {

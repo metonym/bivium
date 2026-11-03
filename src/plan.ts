@@ -2,6 +2,7 @@ import {
   inRoot,
   type ResolvedConfig,
   type ResolvedNarrower,
+  type ResolvedSuite,
 } from "./config.ts";
 import {
   affectedBy,
@@ -170,6 +171,45 @@ function narrowedWalk(
   return new Set([...fine].filter((node) => coarse.has(node)));
 }
 
+// Whether the orphan rule runs `suite` for a change to `file`, which isn't
+// ignored: a changed config or helper file under its `root` that no test
+// imports is wired in some other way (an undeclared setup file,
+// webServer, …). `typed` when only type-only edges reach a test of a suite
+// that runs code. `check` asks the same of every file under a root.
+export function orphanOf(
+  graph: Graph,
+  config: ResolvedConfig,
+  suite: ResolvedSuite,
+  file: string,
+): { typed: boolean } | undefined {
+  if (!suite.roots.some((root) => inRoot(file, root))) return undefined;
+  // The walk stops at the first test or page it reaches. A page is opened
+  // by a test's goto(), which the graph reads, so a page no test reaches,
+  // and the files only such pages load, are wired to no test at all. A
+  // suite that runs code is reached only at runtime: a file a test just
+  // type-imports may still be one the runner loads. A declaration file
+  // never is.
+  const wired = (path: string) => suite.isTest(path) || suite.isPage(path);
+  if (
+    reaches(graph, [file], wired, {
+      includeUnknown: false,
+      types: suite.types || DECLARATION.test(file),
+    })
+  ) {
+    return undefined;
+  }
+  const deleted = !graph.has(file);
+  if (deleted && suite.isTest(file)) return undefined;
+  // An importer left pointing at a deleted import-only file can't resolve
+  // it, so it runs as unknown anyway.
+  if (deleted && config.isImportOnly(file)) return undefined;
+  if (suite.isNonInput(file)) return undefined;
+  const typed =
+    !suite.types &&
+    reaches(graph, [file], suite.isTest, { includeUnknown: false });
+  return { typed };
+}
+
 // Picks the tests of each suite that `changed` can affect. `graph` is the
 // head revision.
 export function planTests(
@@ -209,35 +249,11 @@ export function planTests(
     config.suites.map((suite) => [suite.name, nodes.filter(suite.isTest)]),
   );
 
-  // A changed config or helper file that no test imports is wired in some
-  // other way (an undeclared setup file, webServer, …): run its whole suite.
-  // Each walk stops at the first test or page it reaches. A page is opened
-  // by a test's goto(), which the graph reads, so a page no test reaches,
-  // and the files only such pages load, are wired to no test at all.
   for (const suite of config.suites) {
-    const wired = (path: string) => suite.isTest(path) || suite.isPage(path);
     for (const file of relevant) {
-      if (!suite.roots.some((root) => inRoot(file, root))) continue;
-      // A suite that runs code is reached only at runtime: a file a test
-      // just type-imports may still be one the runner loads. A declaration
-      // file never is.
-      if (
-        reaches(graph, [file], wired, {
-          includeUnknown: false,
-          types: suite.types || DECLARATION.test(file),
-        })
-      ) {
-        continue;
-      }
-      const deleted = !graph.has(file);
-      if (deleted && suite.isTest(file)) continue;
-      // An importer left pointing at a deleted import-only file can't
-      // resolve it, so it runs as unknown anyway.
-      if (deleted && config.isImportOnly(file)) continue;
-      if (suite.isNonInput(file)) continue;
-      const typed =
-        !suite.types &&
-        reaches(graph, [file], suite.isTest, { includeUnknown: false });
+      const orphan = orphanOf(graph, config, suite, file);
+      if (!orphan) continue;
+      const { typed } = orphan;
       causes.push({
         kind: "orphan",
         suites: [suite.name],

@@ -601,6 +601,59 @@ describe("bivium check", () => {
     ]);
   });
 
+  it("lists the files under a suite's root that no test reaches, with a fix for each", async () => {
+    const dir = repo({
+      "bivium.config.json": JSON.stringify({
+        suites: {
+          unit: {
+            tests: "test/**/*.test.js",
+            root: "test",
+            wiring: "test/runner.config.js",
+            nonInputs: "test/types/**",
+          },
+        },
+        roots: ["src", "test"],
+        ignore: "test/notes/**",
+      }),
+      "test/__snapshots__/a.test.js.snap": "exports[`a`] = 1;",
+      "test/vitest.config.js": "export default {};",
+      "test/runner.config.js": "export default {};",
+      "test/dead.js": "export {};",
+      "test/types/check.svelte": "<script></script>",
+      "test/notes/todo.txt": "x",
+    });
+    const json = await run(["check", "--json", "--cwd", dir]);
+    const report: Report = JSON.parse(json.output);
+    expect(
+      report.unreached.map(({ suite, file, fix }) => [
+        suite,
+        file,
+        fix.split(",")[0],
+      ]),
+    ).toEqual([
+      [
+        "unit",
+        "test/__snapshots__/a.test.js.snap",
+        "if test/a.test.js reads it",
+      ],
+      ["unit", "test/dead.js", "if a test reads or runs it"],
+      ["unit", "test/vitest.config.js", "if the runner loads it"],
+    ]);
+    // Reported, not a failure.
+    const text = await run(["check", "--cwd", dir]);
+    expect(text.status).toBe(0);
+    expect(text.output).toContain(
+      'Files under a suite\'s root that no test reaches: a change to one runs the whole suite:\n  unit (3)\n    test/__snapshots__/a.test.js.snap\n      fix: if test/a.test.js reads it, add `reads: { "test/a.test.js": "test/__snapshots__/a.test.js.snap" }`',
+    );
+    // Each one is what the orphan rule runs the suite for.
+    write(dir, { "test/dead.js": "export const x = 1;" });
+    git(dir, "add", "-A");
+    const plan = await run(["plan", "HEAD", "--json", "--cwd", dir]);
+    expect(JSON.parse(plan.output).causes).toMatchObject([
+      { kind: "orphan", file: "test/dead.js" },
+    ]);
+  });
+
   it("lists unknown nodes no test reaches apart, and doesn't count them", async () => {
     const dir = repo();
     write(dir, {
