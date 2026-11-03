@@ -1228,9 +1228,12 @@ Reads asked for in the same turn now share a batch: in a partial clone,
 `rev-list --missing=print` lists which of their blobs aren't here
 without fetching them, and one `fetch` with no negotiation brings them
 all, after which each `git show` is local. A failed fetch leaves each
-read to fetch its own blob, as before. Outside a partial clone, the
-only cost is one `git config` call, made the first time a plan reads a
-base file.
+read to fetch its own blob, as before. Whether the clone is partial is
+one `git config` call, made alongside the listing and the diffs: asked
+on the first base read instead, it held that read back by about 30 ms,
+which the release replay caught as carbon's median plan going from 230
+to 249 ms. Each path is read once, however many ask: the package diff
+and the setting files both read a changed `package.json`.
 
 A read of a file unchanged since the merge base, as a narrower makes,
 reads the working tree: the file is the same there, and that needs no

@@ -313,6 +313,7 @@ describe("computePlan with the cache", () => {
 
 // A `git fetch` starting, in a GIT_TRACE2 log.
 const FETCH_START = / start .*\bfetch\b/;
+const SHOW_START = / start .*\bshow\b/;
 
 describe("readRevision", () => {
   const ORIGINAL = "export const x = 0;";
@@ -410,6 +411,27 @@ describe("readRevision", () => {
     expect(await read(kept)).toEqual(kept.map(() => ORIGINAL));
     const absent = ["g", "h", "n", "x", "nowhere"];
     expect(await read(absent)).toEqual(absent.map(() => undefined));
+  });
+
+  it("reads a path once, however many ask", async () => {
+    const { dir } = repo();
+    const revision = await readRevision(dir, "base", ["src"]);
+    const trace = join(dir, ".git", "trace");
+    process.env.GIT_TRACE2 = trace;
+    try {
+      const texts = await Promise.all([
+        revision.readBase("src/a.js"),
+        revision.readBase("src/a.js"),
+      ]);
+      expect(texts).toEqual([ORIGINAL, ORIGINAL]);
+      expect(await revision.readBase("src/a.js")).toBe(ORIGINAL);
+    } finally {
+      delete process.env.GIT_TRACE2;
+    }
+    const shows = readFileSync(trace, "utf-8")
+      .split("\n")
+      .filter((line) => SHOW_START.test(line));
+    expect(shows).toHaveLength(1);
   });
 
   it("fetches a partial clone's missing base files in one round trip", async () => {
