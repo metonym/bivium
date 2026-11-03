@@ -130,10 +130,11 @@ A lexer change runs `scan-diff.ts` and `corpus.ts`, and `bench-scan.ts` if it cl
 
 ## Releasing
 
-1. Move the `## Unreleased` entries in `CHANGELOG.md` under the new version.
-2. Bump `version` in `package.json`, commit as `vX.Y.Z`, and push it to `master`.
-3. Tag the commit with a signed tag (`git tag -s vX.Y.Z`, which needs a GPG key git and GitHub know) and push the tag. `release.yml` tests the packed package and publishes `dist/` to npm with provenance.
-4. Create the GitHub release for the tag with the version's `CHANGELOG.md` section as its notes (`gh release create vX.Y.Z --notes-file <section>`); `release.yml` doesn't.
+1. Replay the repositories that use bivium (sveld, carbon-preprocess-svelte, carbon-components-svelte) against the newest tag (the default `--old`), with `--commits 100 --config-at origin/HEAD`. carbon's CSS narrower needs `--node-modules` from an install of carbon at `origin/HEAD`: with a stale one it can't load, and every CSS change runs e2e in full on both sides, as `narrower` full runs. Every commit where the release selects more or fewer tests matches a `CHANGELOG.md` entry, no commit fails to plan on the release, and the median plan time holds. One that doesn't is a regression, and blocks the release.
+2. Move the `## Unreleased` entries in `CHANGELOG.md` under the new version.
+3. Bump `version` in `package.json`, commit as `vX.Y.Z`, and push it to `master`.
+4. Tag the commit with a signed tag (`git tag -s vX.Y.Z`, which needs a GPG key git and GitHub know) and push the tag. `release.yml` tests the packed package and publishes `dist/` to npm with provenance.
+5. Create the GitHub release for the tag with the version's `CHANGELOG.md` section as its notes (`gh release create vX.Y.Z --notes-file <section>`); `release.yml` doesn't.
 
 ## Before you finish
 
