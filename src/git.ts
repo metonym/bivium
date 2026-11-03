@@ -74,6 +74,35 @@ const INDEX_ENTRY = /^(\S) (\d{6}) ([0-9a-f]+) (\d)\t(.*)$/;
 // base's side first.
 const RAW_ENTRY = /^:(\d{6}) \d{6} ([0-9a-f]+) [0-9a-f]+ ([A-Z])\d*\t(.*)$/;
 
+// Why the diffs against `base` failed, when the clone lacks what they need:
+// the base itself, or the history back to where HEAD forked from it. A
+// CI checkout fetches one commit by default.
+async function missingHistory(
+  cwd: string,
+  base: string,
+): Promise<Error | undefined> {
+  const [known, forked, shallow] = await Promise.all([
+    git(cwd, "rev-parse", "--verify", "--quiet", `${base}^{commit}`),
+    git(cwd, "merge-base", base, "HEAD"),
+    git(cwd, "rev-parse", "--is-shallow-repository"),
+  ]);
+  const fix =
+    shallow.stdout.trim() === "true"
+      ? " The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`)."
+      : "";
+  if (known.status !== 0) {
+    return new Error(
+      `bivium: no commit ${base} here to diff against: fetch it.${fix}`,
+    );
+  }
+  if (forked.status !== 0) {
+    return new Error(
+      `bivium: ${base} and HEAD share no commit here, so there's no merge base to diff against.${fix}`,
+    );
+  }
+  return undefined;
+}
+
 // One `git merge-base` per revision, started on the first call. Any base
 // `diff --merge-base` accepts has one merge base, so this can't fail where
 // the diff passed; a failed call nobody awaits is still handled.
@@ -118,7 +147,9 @@ export async function readRevision(
     gitOrThrow(cwd, "ls-files", "-s", "-v", "-o", "--exclude-standard"),
     gitOrThrow(cwd, "diff", "--raw", "--no-abbrev", ...diffArgs),
     gitOrThrow(cwd, "diff", "--cached", "--name-only", ...diffArgs),
-  ]);
+  ]).catch(async (error: unknown) => {
+    throw (await missingHistory(cwd, base)) ?? error;
+  });
   const entries = lines(listing);
   const untracked: string[] = [];
   for (const line of entries) {
