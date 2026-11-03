@@ -194,7 +194,13 @@ describe("bivium plan", () => {
   it("selects through type-only edges only for a suite that observes types", async () => {
     const dir = repo();
     const suites = (types?: boolean) => ({
-      unit: { tests: "test/**/*.test.ts", root: "src", types },
+      unit: {
+        tests: "test/**/*.test.ts",
+        root: "src",
+        types,
+        // Types only: nothing loads it at runtime.
+        nonInputs: "src/types.ts",
+      },
     });
     write(dir, {
       "bivium.config.json": JSON.stringify({ suites: suites(false) }),
@@ -326,6 +332,81 @@ describe("bivium plan", () => {
         "unit tests: all (full run)",
       ].join("\n"),
     );
+  });
+
+  it("doesn't let a type import stand in for a runtime edge in a suite that runs code", async () => {
+    const dir = repo();
+    write(dir, {
+      ".gitignore": "src/parser.js\n",
+      "bivium.config.json": JSON.stringify({
+        suites: {
+          unit: {
+            tests: "test/**/*.test.ts",
+            root: ".",
+            setup: "test/setup.ts",
+            types: false,
+          },
+        },
+      }),
+      "src/helper.ts": "export const help = 1;",
+      "src/global-setup.ts": "export default () => {};",
+      "src/shape.d.ts": "export type Shape = 1;",
+      "src/parser.d.ts": "export declare const parse: () => void;",
+      "src/parser.js": "export const parse = () => {};",
+      "test/setup.ts": `import { help } from "../src/helper.ts";\nexport type Ctx = typeof help;`,
+      "test/a.test.ts": [
+        `import type { Ctx } from "./setup.ts";`,
+        `import type Setup from "../src/global-setup.ts";`,
+        `import type { Shape } from "../src/shape.d.ts";`,
+      ].join("\n"),
+      "test/b.test.ts": "export {};",
+      "test/p.test.ts": `import { parse } from "../src/parser.js";`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "types");
+    git(dir, "branch", "-f", "base");
+    // The setup file runs before every test, type import or not.
+    write(dir, { "src/helper.ts": "export const help = 2;" });
+    // Every test is reached (a full run would have a reason).
+    expect(await planJson(dir)).toMatchObject({
+      suites: { unit: { mode: "all" } },
+      reasons: [],
+    });
+    const why = await run([
+      "why",
+      "test/a.test.ts",
+      "src/helper.ts",
+      "--format",
+      "chain",
+      "--cwd",
+      dir,
+      "--base",
+      "base",
+    ]);
+    expect(why.output).toContain("a setup file of  test/a.test.ts");
+    git(dir, "checkout", "-q", ".");
+    // Only a type import reaches it, and it has runtime code: the runner
+    // may load it, so the orphan rule runs the suite.
+    write(dir, { "src/global-setup.ts": "export default () => 1;" });
+    expect((await planJson(dir)).reasons).toEqual([
+      "src/global-setup.ts: no unit test imports it (only type imports reach it: list it in the suite's `nonInputs` if nothing loads it at runtime)",
+    ]);
+    git(dir, "checkout", "-q", ".");
+    // A declaration file never runs.
+    write(dir, { "src/shape.d.ts": "export type Shape = 2;" });
+    expect(await planJson(dir)).toMatchObject({
+      suites: { unit: { mode: "some", files: ["test/p.test.ts"] } },
+      reasons: [],
+    });
+    // The parser's runtime file isn't in the graph: its importer is unknown.
+    const check = JSON.parse(
+      (await run(["check", "--json", "--cwd", dir])).output,
+    );
+    expect(
+      check.unknown
+        .find(({ node }: { node: string }) => node === "test/p.test.ts")
+        ?.causes.map(({ cause }: { cause: string }) => cause),
+    ).toEqual([`only declarations for "../src/parser.js"`]);
   });
 
   it("runs everything for a change outside the roots or to its config", async () => {

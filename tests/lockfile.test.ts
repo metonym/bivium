@@ -326,6 +326,26 @@ describe("a lockfile change", () => {
     ).toEqual(["bun.lock: test-env 5.0.0 → 5.1.0, imported by no test"]);
   });
 
+  it("doesn't count a type import as a test importing a package, in a suite that runs code", async () => {
+    const dir = repo();
+    write(dir, { "test/env.test.js": `import type { Env } from "test-env";` });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "env");
+    write(dir, { "bun.lock": bunLock(bump("test-env", "5.1.0")) });
+    const runtime: Config = {
+      ...CONFIG,
+      suites: { unit: { ...CONFIG.suites.unit, types: false } },
+    };
+    expect((await planOf(dir, runtime)).reasons).toEqual([
+      "bun.lock: test-env 5.0.0 → 5.1.0, and no test imports it",
+    ]);
+    // A suite that reads types does import it.
+    expect((await planOf(dir)).unit).toEqual({
+      mode: "some",
+      files: ["test/env.test.js"],
+    });
+  });
+
   it("still runs the tests that depend on every change", async () => {
     const dir = repo();
     write(dir, {

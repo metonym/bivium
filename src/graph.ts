@@ -70,7 +70,8 @@ const leaf = (): FileDeps => ({
 const LEADING_DOT_SLASH = /^\.\//;
 // A declaration file: `x.d.ts`, `x.d.mts`, `x.d.cts`, and `x.d.css.ts`
 // for an arbitrary extension. Nothing that runs loads one.
-const DECLARATION = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
+const JS_SPECIFIER = /\.[cm]?jsx?$/;
+export const DECLARATION = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
 
 function addPattern(
   deps: FileDeps,
@@ -251,6 +252,17 @@ export function graphFrom(
         add(`pkg:${resolved.pkg}`);
         external.add(`pkg:${resolved.pkg}`);
       } else {
+        // `./x.js` with only `x.d.ts` there: what runs is a file the graph
+        // doesn't have, such as a build's ignored output.
+        if (
+          type !== true &&
+          !declaration &&
+          JS_SPECIFIER.test(specifier.replace(QUERY, "")) &&
+          resolved.files.every((file) => DECLARATION.test(file))
+        ) {
+          const cause = `only declarations for "${specifier}"`;
+          if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
+        }
         for (const file of resolved.files) {
           const barrel = names && named.get(file);
           if (!barrel || !names) {
@@ -328,7 +340,9 @@ export function graphFrom(
       const deps = suite.isTest(path) ? graph.get(path) : undefined;
       if (!deps) continue;
       for (const file of setup) {
-        if (file === path || deps.files.has(file)) continue;
+        if (file === path) continue;
+        // The runner loads it, whatever else the test imports it as.
+        deps.types?.delete(file);
         deps.files.add(file);
         deps.setup ??= new Set();
         deps.setup.add(file);

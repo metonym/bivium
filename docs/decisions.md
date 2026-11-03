@@ -976,8 +976,23 @@ A node a file imports both ways is a value edge.
 
 A suite with `types: false` walks without the type-only edges (the
 reverse index builds a second dependents map the first time one asks).
-The orphan rule still walks with them: a file only type imports reach is
-reached, so it doesn't run the suite, it selects nothing. `check` counts
+Every backstop walks the same way, since each one exists for a use the
+graph can't see:
+
+- The orphan rule: a file only a type import reaches may still be one
+  the runner loads by name (a Playwright `globalSetup` a test imports a
+  type from), so it runs the suite, with a reason that says to list the
+  file in `nonInputs` if it's types only. A declaration file counts as
+  reached, since nothing loads one.
+- A changed package that tests only type-import (`import type { Mock }
+  from "vitest"`) counts as imported by no test, so it runs everything
+  unless it's `inert`.
+- A setup file stays a runtime edge of every test even when a test also
+  type-imports it.
+- A value import of `./x.js` that resolves only to `x.d.ts` (the
+  rewrite above) is unknown: what runs is a file the graph doesn't have,
+  such as a build's ignored output. Before the rewrite it was unresolved,
+  which was unknown too. `check` counts
 a test as running on any change by its own suite's walk. `why` labels
 the edges `type` in every suite, and walks as the suite does.
 

@@ -65,8 +65,11 @@
 - `suites.<name>.types: false` says a suite runs code and can't observe
   types: a change that reaches its tests only through `import type`,
   `export type … from`, JSDoc types or declaration files selects none
-  of them, and still counts as reaching them for the orphan rule. The
-  default, `true`, keeps today's selection, which a type-checking suite
+  of them. The orphan rule counts a type-only reach only for a
+  declaration file (a types-only module goes in `nonInputs`), a type
+  import of a package doesn't count as a test importing it, and a value
+  import of `x.js` with only `x.d.ts` there is unknown. The default,
+  `true`, keeps today's selection, which a type-checking suite
   needs. `why` labels these edges `type` (`type-imported by`) whatever
   the setting, and a type import from `fs` no longer counts as reading
   the disk (#38).
