@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Performance**
+
+- In a partial clone (`filter: blob:none`), the merge-base versions a
+  plan reads (a changed lockfile, `package.json` or barrel) are fetched
+  in one round trip, where git fetched each on its own: on a CI runner,
+  each took seconds. A file unchanged since the merge base is read from
+  the working tree, with no git call (#55).
+
 **Fixes**
 
 - A change to a `tsconfig.json` (or a file one `extends`) or a

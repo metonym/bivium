@@ -1214,3 +1214,28 @@ carbon-preprocess-svelte's last 100 commits, that was the one commit
 whose selection the change would otherwise widen. A dependency change the lockfile records stays with the
 package diff, which seeds the packages that changed.
 
+## 60. A partial clone's base reads fetch together
+
+A plan reads a file as the merge base had it for a changed lockfile,
+`package.json`, `tsconfig.json` or barrel, and for a narrower. Each read
+was a `git show`, and in a partial clone (`filter: blob:none`, as the
+README's CI example clones) each missing blob was a fetch of its own.
+On sveast's first bivium PR, which changed `bun.lock` and
+`package.json`, the plan step took 11 to 14 s on GitHub's runners and
+under 1 s with a full clone.
+
+Reads asked for in the same turn now share a batch: in a partial clone,
+`rev-list --missing=print` lists which of their blobs aren't here
+without fetching them, and one `fetch` with no negotiation brings them
+all, after which each `git show` is local. A failed fetch leaves each
+read to fetch its own blob, as before. Outside a partial clone, the
+only cost is one `git config` call, made the first time a plan reads a
+base file.
+
+A read of a file unchanged since the merge base, as a narrower makes,
+reads the working tree: the file is the same there, and that needs no
+git at all. On a partial clone of sveast at that PR, the plan fetches
+once instead of twice; its wall time, 0.5 to 0.9 s, against 0.5 to
+7.7 s, is mostly GitHub's response time, which varies too much on one
+machine to say more.
+

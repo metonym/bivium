@@ -272,8 +272,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # History for the merge base, without old file contents: git
-          # fetches the few a plan reads (a changed barrel or lockfile).
+          # History for the merge base, without old file contents: bivium
+          # fetches the few a plan reads (a changed barrel or lockfile) in
+          # one round trip.
           fetch-depth: 0
           filter: blob:none
       - uses: oven-sh/setup-bun@v2
