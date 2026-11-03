@@ -2,20 +2,6 @@
 
 ## Unreleased
 
-**Performance**
-
-- The walk tests each distinct `edges`, `@depends-on`, `import.meta.glob`
-  and `reads` pattern once per node it visits, however many files
-  declare it, and looks a pattern without a wildcard up. An `edges`
-  entry that gives every test the same input
-  (`{ "tests/*.test.ts": "src/setup.ts" }`) made a plan quadratic in the
-  tests: with 4,000 tests a plan took 0.81 s, and now 0.08 s (#39).
-- A plan that reads files (no cache, or a cache miss) holds only what
-  it extracted from each, not the file's text, and reads 64 files at a
-  time. On 7,000 files (23 MB) a cold plan needs a 20 MB heap on Node
-  instead of over 64 MB, and peaks at 124 MB of RSS instead of 285 MB
-  (Bun: 88 MB instead of 115 MB), and is no slower (#42).
-
 **Breaking changes**
 
 - A changed `ignore`d file the graph reads selects only the tests that
@@ -25,108 +11,94 @@
   docs-only change selects `none` (#31, #32).
 - A suite's `root`, and `roots`, with a wildcard is an error. Both take
   paths, so `root: "components/**"` matched nothing and the orphan rule
-  quietly stopped for it: a change no test reached selected nothing
-  instead of the suite (#21).
+  quietly stopped for it (#21).
+- A usage or configuration error (no command, an unknown command,
+  option or suite) exits 2. It exited 1, as `check` does when it finds
+  problems (#40).
+- `plan`'s and `check`'s text output changed (see CLI).
 
 **Features**
 
-- `bivium graph` shows which files make plans wide: for each suite, the
-  files a change to which selects the most tests, and how files spread
-  from none to every test. `--json` exports every node with its
-  imports, importers, fan-in per suite, and whether it's unknown (#36).
-- `loadedByName` (globs over package names) lists the packages a test
-  may load other than by an import: a test environment, a plugin a
-  config names by string. Setting it says every other package without
-  a `bin` in the lockfile is loaded only by imports, so a lockfile bump
-  that reaches one no test imports selects only its importers instead
-  of running everything (#23).
-- A root `pnpm-lock.yaml` (v6 or v9) is diffed like `bun.lock`: a
-  dependency bump selects the importers of what it changed instead of
-  running everything. Its `settings`, `overrides`, `catalogs`,
-  `patchedDependencies` and pnpm's own version still run everything.
-  It's parsed without a dependency; one bivium can't read runs
-  everything, as before (#34).
-- `knownUnknowns` lists the nodes `check` allows to have unknown
-  dependencies, each with a reason. With it set, `check` fails on an
-  unknown node some test reaches that it doesn't list, and on an entry
-  that's no longer unknown: `--max-unknown` passed when one unknown
-  went away and another appeared (#24).
-- `// @lists <glob>` declares files a test lists without reading them,
-  as a convention test does (every route has a handler). Adding,
-  deleting or renaming a match selects the test; editing one doesn't,
-  and doesn't trip the orphan rule. `check` reports a dead `@lists`
-  glob, and `why` labels the edge `lists` (#25).
+- `suites.<name>.types: false` says a suite runs code: a change that
+  reaches its tests only through `import type`, `export type … from`,
+  JSDoc types or declaration files selects none of them. The default
+  keeps today's selection, which a type-checking suite needs. `why`
+  labels these edges `type` (#38).
 - `suites.<name>.setup` names the files a runner loads before every
-  test (`setupFiles`, `--require`, `globalSetup`). Every test of the
-  suite depends on them and on what they import, so a change to a
-  module only the setup file imports selects the suite's tests instead
-  of only those that import it too. `why` labels the hop `setup`, and
-  `check` reports a `setup` glob that matches nothing (#35).
-- `suites.<name>.types: false` says a suite runs code and can't observe
-  types: a change that reaches its tests only through `import type`,
-  `export type … from`, JSDoc types or declaration files selects none
-  of them. The orphan rule counts a type-only reach only for a
-  declaration file (a types-only module goes in `nonInputs`), a type
-  import of a package doesn't count as a test importing it, and a value
-  import of `x.js` with only `x.d.ts` there is unknown. The default,
-  `true`, keeps today's selection, which a type-checking suite
-  needs. `why` labels these edges `type` (`type-imported by`) whatever
-  the setting, and a type import from `fs` no longer counts as reading
-  the disk (#38).
-- An `edges` key can name generated files git doesn't list: an import
-  of `.velite`, `../.contentlayer/generated` or a `paths` alias for
-  one resolves to the file the key matches, with an extension or as an
-  index, instead of being unresolved, and depends on the key's inputs
-  (#20).
+  test (`setupFiles`, `--require`, `globalSetup`): every test of the
+  suite depends on them and on what they import (#35).
+- `// @lists <glob>` selects a test when a match is added, deleted or
+  renamed, not when one is edited, for a test that lists files without
+  reading them (#25).
+- An `edges` key can name generated files git doesn't list, such as
+  `.velite/*`: an import that resolves under it, with an extension or
+  as an index, lands there instead of being unresolved (#20).
+- A root `pnpm-lock.yaml` (v6 or v9) is diffed like `bun.lock`. Its
+  settings, overrides, catalogs, patches and pnpm's own version still
+  run everything, as does one bivium can't read (#34).
+- `loadedByName` lists the packages a test may load other than by an
+  import (`jsdom`, `ts-jest`). Set, any other package without a `bin`
+  is import-only, so a lockfile bump that reaches one no test imports
+  selects only its importers (#23).
+- `knownUnknowns` lists the unknown nodes `check` allows, each with a
+  reason, and `check` fails on one it doesn't list or an entry that's
+  no longer unknown (#24).
+- `bivium graph` ranks each suite's files by how many tests a change to
+  one selects; `--json` exports the graph with each node's fan-in
+  (#36).
 
 **CLI**
 
-- Options can come before the command (`bivium --no-cache plan`), and
-  `--help` or `-h` anywhere prints usage and exits 0. A usage error
-  (no command, an unknown command or option) exits 2; it exited 1, as
-  `check` does when it finds problems.
-- `plan` prints each selection's scale (`unit tests: 3 of 822 files`),
+- Options can come before the command, and `--help` or `-h` anywhere
+  prints usage and exits 0.
+- `plan` prints each selection's scale (`unit tests: 3 of 822 files`)
   and tells a full run (`all (full run)`) from every test reaching a
-  change (`all 822 files (each reaches a change)`). `plan --json` and
-  `plan()` add `totals` and `causes`, each reason as data
-  (`{ kind, suites, file?, package?, narrower?, message }`).
+  change. `plan --json` and `plan()` add `totals`, and `causes`, each
+  reason as data.
 - `check` leads with counts by cause, and a fix for an unresolved
   specifier names the file that's there: a sibling with another
   extension, a file outside `roots`, or one git ignores.
-- `why --format json` is `why --json`. The usage text lists `--json`
-  for `check` and `why`, the exit codes, and examples (#40).
+- `why --format json` is `why --json` (#40).
+
+**Performance**
+
+- The walk tests each distinct pattern (`edges`, `@depends-on`,
+  `import.meta.glob`, `reads`) once per node it visits, however many
+  files declare it. With 4,000 tests and
+  `{ "tests/*.test.ts": "src/setup.ts" }`, a plan took 0.81 s, and now
+  0.08 s (#39).
+- A plan that reads files holds only what it extracted from each, not
+  the file's text, and reads 64 at a time. A cold plan of 7,000 files
+  needs a 20 MB heap on Node instead of over 64 MB, and peaks at 124 MB
+  of RSS instead of 285 MB (Bun: 88 MB instead of 115 MB) (#42).
+
+**Fixes**
+
+- An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite
+  configs spell it) matches the specifiers that start with it. It
+  matched none (#29).
+- A missing `x.js` resolves to `x.tsx` and `x.d.ts` as well as `x.ts`
+  (and the `.mjs` and `.cjs` variants), through `exports` and `imports`
+  targets too, so `@acme/ui/Button.js` reaches
+  `packages/ui/src/Button.ts`. A value import that finds only `x.d.ts`
+  is unknown: what runs isn't in the graph (#28).
+- A doubled slash in a specifier resolves through `alias` and tsconfig
+  `paths` (#33).
+- A specifier that starts with a dot but not `./` or `../` (`.velite`)
+  is bare, as TypeScript reads it (#20).
+- An `edges` or `reads` key that names one file declares what it reads
+  from disk, as `@depends-on` and `@reads` do (#22).
+- The lexer reads a JSX element with type arguments in `.tsx`
+  (`<List<string> />`) instead of falling back to the regex extractor
+  (#30).
+- A type import from `fs` doesn't count as reading the disk, and
+  `check` lists an unresolved specifier once per file.
 
 **Docs**
 
 - The README has one table for what to do with a changed file no test
   reaches, recipes for Vitest and Jest, pnpm workspaces, Playwright
   and generated code, and what a plan costs in CI (#41).
-
-**Fixes**
-
-- A specifier that starts with a dot but not `./` or `../`
-  (`.velite`) is bare, as TypeScript and Node read it, so tsconfig
-  `paths` and `alias` apply to it. An HTML `src=".well-known/x.js"`
-  is still relative (#20).
-- An `alias` key that ends in `/` (`{ "@/": "src/" }`, as Vite
-  configs spell it) matches the specifiers that start with it. It
-  matched none, so each was unresolved (#29).
-- A missing `x.js` resolves to `x.tsx` and `x.d.ts` as well as
-  `x.ts` (`x.cjs` to `x.cts` and `x.d.cts`, `x.mjs` to `x.mts` and
-  `x.d.mts`), and the rewrite applies to `exports` and `imports`
-  targets too, so `@acme/ui/Button.js` reaches
-  `packages/ui/src/Button.ts` through `"./*": "./src/*"` (#28).
-- A doubled slash in a specifier resolves through `alias` and tsconfig
-  `paths`, as it already did for a relative one (#33).
-- A file an `edges` or `reads` key names (without a wildcard) no longer
-  counts as reading the disk without saying what, as one with its own
-  `@depends-on` or `@reads` doesn't. A key with a wildcard still
-  doesn't vouch for each file it matches (#22).
-- The lexer reads a JSX element with type arguments in `.tsx`
-  (`<List<string> items={[]} />`), which sent the file to the regex
-  extractor (#30).
-- `check` lists an unresolved specifier once per file, not once per
-  import of it (an `import` and a `vi.mock()`).
 
 ## 0.2.1 — 2026-10-28
 

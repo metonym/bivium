@@ -849,7 +849,8 @@ The rewrite now follows TypeScript's list for each extension (`.js` →
 (decision 3), and applies to `exports` and `imports` targets as well. It
 still applies only when the `.js` file is missing: a `.js` that exists
 is what Vite and Node load, and TypeScript loads its declarations from
-the same place.
+the same place. A value import that finds only `x.d.ts` this way is
+unknown (decision 50): what runs is a file the graph doesn't have.
 
 An `alias` key ending in `/` matched nothing: `{ "@al/": "al/" }` asked
 for `@al//x`. Vite strips the slash from a key and target that both end
@@ -992,9 +993,11 @@ graph can't see:
 - A value import of `./x.js` that resolves only to `x.d.ts` (the
   rewrite above) is unknown: what runs is a file the graph doesn't have,
   such as a build's ignored output. Before the rewrite it was unresolved,
-  which was unknown too. `check` counts
-a test as running on any change by its own suite's walk. `why` labels
-the edges `type` in every suite, and walks as the suite does.
+  which was unknown too.
+
+`check` counts a test as running on any change by its own suite's walk.
+`why` labels the edges `type` in every suite, and walks as the suite
+does.
 
 ## 51. A suite names its setup files
 

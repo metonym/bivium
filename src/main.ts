@@ -42,8 +42,8 @@ Options:
                     a test
   --top <n>         for graph: how many files to list per suite (default: 10)
 
-Exit status: 0 done; 1 check found problems, or run's command failed;
-2 a usage or configuration error.
+Exit status: 0 done; 1 check found problems; 2 a usage or configuration
+error. run exits with its command's status.
 
 Examples:
   bivium plan origin/main --json
@@ -252,8 +252,7 @@ async function runCommand(
       ? config.suites[0]
       : config.suites.find((candidate) => candidate.name === suiteName);
   if (!suite) {
-    console.error(`bivium: no suite "${suiteName}"`);
-    return 1;
+    throw new Error(`bivium: no suite "${suiteName}"`);
   }
   const computed = await computePlan(root, base, config, {
     ...(flags.has("--no-cache") && { cache: false }),
@@ -295,8 +294,7 @@ async function runCommand(
 
   logPlan(computed);
   if (!suite.run) {
-    console.error(`bivium: suite "${suite.name}" has no run command`);
-    return 1;
+    throw new Error(`bivium: suite "${suite.name}" has no run command`);
   }
   const selection = computed.plan.suites[suite.name];
   if (selection.mode === "none") {
