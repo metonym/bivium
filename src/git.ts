@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { resolve as absolute, dirname, join } from "node:path";
 import { inRoot } from "./config.ts";
 import { sorted } from "./sorted.ts";
 
@@ -205,18 +205,62 @@ export async function readRevision(
   };
 }
 
-// The remote a partial clone fetches missing objects from, if it is one.
+// A `.git/config` section header, and a `key = value` line in one.
+const SECTION = /^\s*\[\s*([^\s\]"]+)(?:\s+"([^"]*)")?\s*\]/;
+const ENTRY = /^\s*([\w.-]+)\s*=\s*(.*?)\s*$/;
+
+// The repository's common git directory, found from `cwd` up: a `.git`
+// directory, or a `.git` file naming a worktree's, whose `commondir` file
+// names the shared one.
+async function gitDir(cwd: string): Promise<string | undefined> {
+  for (let dir = absolute(cwd); ; dir = dirname(dir)) {
+    const dotGit = join(dir, ".git");
+    // biome-ignore lint/performance/noAwaitInLoops: each directory up is looked at only if the last had no .git
+    const found = await stat(dotGit).catch(() => undefined);
+    if (found?.isDirectory()) return dotGit;
+    if (found?.isFile()) {
+      const text = await readFile(dotGit, "utf-8").catch(() => "");
+      const named = GITDIR.exec(text)?.[1];
+      if (named === undefined) return undefined;
+      const worktree = absolute(dir, named);
+      return readFile(join(worktree, "commondir"), "utf-8")
+        .then((common) => absolute(worktree, common.trim()))
+        .catch(() => worktree);
+    }
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
+const GITDIR = /^gitdir:\s*(.+?)\s*$/m;
+
+// The remote a partial clone fetches missing objects from, if it is one,
+// from the repository's config file: `git clone --filter` sets
+// `extensions.partialClone` and the remote's `promisor`. A config this
+// can't read counts as a full clone, whose reads fetch as git does.
 async function promisorRemote(cwd: string): Promise<string | undefined> {
-  const result = await git(
-    cwd,
-    "config",
-    "--get-regexp",
-    "^remote\\..*\\.promisor$",
+  const dir = await gitDir(cwd);
+  if (dir === undefined) return undefined;
+  const text = await readFile(join(dir, "config"), "utf-8").catch(
+    () => undefined,
   );
-  for (const line of lines(result.stdout)) {
-    const [key, value] = line.split(" ");
-    if (value === "true")
-      return key.slice("remote.".length, -".promisor".length);
+  if (text === undefined) return undefined;
+  let section = "";
+  let name = "";
+  for (const line of text.split("\n")) {
+    const header = SECTION.exec(line);
+    if (header) {
+      section = header[1].toLowerCase();
+      name = header[2] ?? "";
+      continue;
+    }
+    const entry = ENTRY.exec(line);
+    if (!entry) continue;
+    const key = entry[1].toLowerCase();
+    const value = entry[2];
+    if (section === "extensions" && key === "partialclone") return value;
+    if (section === "remote" && key === "promisor" && value === "true") {
+      return name;
+    }
   }
   return undefined;
 }
