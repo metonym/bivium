@@ -95,17 +95,19 @@ Two traps when reading where the time goes:
 
 ## Replay a repository's history
 
-`eval/replay.ts` plans a repository's last N merged commits, each against its parent, with two bivium builds, and compares the selections. Each commit is planned with the config it had, and a commit from before the repository adopted bivium is skipped: today's config over older code reports gaps its annotations have since closed.
+`eval/replay.ts` plans a repository's last N merged commits, each against its parent, with two bivium builds, and compares the selections. Each commit is planned with the config it had, and a commit from before the repository adopted bivium is skipped: today's config over older code reports gaps its annotations have since closed. To compare builds, `--config-at origin/HEAD` plans every commit with today's config instead: both builds get the same one, so every difference is the build's, and the history from before adoption counts too.
 
 ```sh
 # The newest v* tag against this working tree, over carbon's last 60 merges.
 bun eval/replay.ts <carbon checkout> --commits 60 --node-modules <carbon checkout>/node_modules
 # Try a config change on the same history.
 bun eval/replay.ts <sveld checkout> --old HEAD --new HEAD --config my.config.ts
+# Two builds over history from before the repository adopted bivium.
+bun eval/replay.ts <sveld checkout> --commits 100 --config-at origin/HEAD
 bun eval/replay.ts --summary <rows.jsonl>
 ```
 
-The report gives each build's share of test files selected, its full runs by cause, its median plan time, and every commit where the new build selects a test the old one doesn't: a miss the old one had, or a regression, so read each one. A selector change cites its replay in its pull request. `--node-modules` links an install into each checkout for a config whose narrower imports dependencies; without a matching install, the narrower can't run and its suites run in full on both sides.
+The report gives each build's share of test files selected, its full runs by cause, its median plan time, every commit where the new build selects a test the old one doesn't (a miss the old one had, or a regression), every commit where it drops one (a narrowing a change meant, or a new miss), and every commit a build failed to plan. Read each one. A selector change cites its replay in its pull request. `--node-modules` links an install into each checkout for a config whose narrower imports dependencies; without a matching install, the narrower can't run and its suites run in full on both sides.
 
 ## Differential checks
 
