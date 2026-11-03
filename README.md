@@ -272,9 +272,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # History for the merge base, without old file contents: bivium
-          # fetches the few a plan reads (a changed barrel or lockfile) in
-          # one round trip.
+          # History back to the merge base; see "The checkout" below.
           fetch-depth: 0
           filter: blob:none
       - uses: oven-sh/setup-bun@v2
@@ -297,9 +295,32 @@ jobs:
       - run: bunx vitest run ${{ needs.plan.outputs.unit != 'all' && needs.plan.outputs.unit || '' }}
 ```
 
+### The checkout
+
+A plan compares the branch with its merge base: the commit where it forked from the base branch. So the job needs the history back to that commit, not just the commit under test. `actions/checkout` fetches one commit by default (`fetch-depth: 1`), with no base branch, and the plan stops with what's missing:
+
+```
+bivium: origin/main and HEAD share no commit here, so there's no merge base to diff against. The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`).
+```
+
+`fetch-depth: 0` fetches every commit. Only a job that plans needs it; one that runs every test anyway, such as a push to the default branch, can keep the default: `fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}`.
+
+The history git fetches is three kinds of object: commits, trees (each directory's file names, each with the ID of its content) and blobs (the contents). A plan needs the commits, to find the merge base, and the trees, to list what changed. Of the blobs it needs the working tree's, which the checkout has, and the merge base's version of a few changed files only: a lockfile, a `package.json`, a `tsconfig.json`, a barrel, and what a narrower reads. So pick the clone by how big the history is:
+
+| History | Checkout | What a plan pays |
+| :--- | :--- | :--- |
+| Small: a full clone takes a second or two | `fetch-depth: 0` | Nothing more: every old version is already on disk |
+| Large: years of commits, big files | `fetch-depth: 0` and `filter: blob:none` | One fetch for the old versions it reads, when a change needs any |
+
+`filter: blob:none` makes a partial clone: every commit and tree, and only the blobs the checkout needs. Git fetches any other blob when something reads it, and bivium asks for the ones a plan reads together, in one fetch. Without the filter, a large history's old contents are most of the download; with it, a small repository pays a fetch for contents it could have had for free.
+
+### The cache
+
 The cache holds what bivium extracted from each file, keyed by git blob, so a warm plan reads only the files a branch changed. Key it on the merge base: a pull request can restore caches from the default branch, whose run at that commit is the one to hit. Without `node_modules`, the cache lives in `.bivium/cache`; it writes a `.gitignore` so it never shows up as a change.
 
-What a plan costs, measured on an Apple M-series laptop under load (median of five, wall time):
+### What a plan costs
+
+Measured on an Apple M-series laptop under load (median of five, wall time):
 
 | Repository | Files | Bun, no cache | Bun, warm | Node 24, no cache | Node 24, warm | Cache |
 |:---|---:|---:|---:|---:|---:|---:|
