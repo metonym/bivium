@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import type { ResolvedConfig } from "./config.ts";
-import { affectedBy, type Graph } from "./graph.ts";
+import { type Graph, walksByTypes } from "./graph.ts";
 import { byCodeUnit, sorted } from "./sorted.ts";
 import { parseYaml } from "./yaml.ts";
 
@@ -236,6 +236,7 @@ function parsePnpmLock(text: string): Lockfile | undefined {
   if (typeof lockfileVersion !== "string") return undefined;
   if (!PNPM_VERSION.test(lockfileVersion)) return undefined;
   if (!isRecord(packages) || !isRecord(snapshots)) return undefined;
+  const workspaces = isRecord(main.importers);
   const importers = isRecord(main.importers) ? main.importers : { ".": main };
   const lockfile: Lockfile = {
     packages: new Map(),
@@ -255,7 +256,9 @@ function parsePnpmLock(text: string): Lockfile | undefined {
       if (!isRecord(deps)) return undefined;
       const declared = new Map<string, string>();
       for (const [name, dep] of Object.entries(deps)) {
-        if (!isRecord(dep) || typeof dep.specifier !== "string") return;
+        if (!isRecord(dep) || typeof dep.specifier !== "string") {
+          return undefined;
+        }
         declared.set(name, dep.specifier);
         // The version a workspace resolves a name to: switching to another
         // version already installed changes nothing under `packages`.
@@ -272,17 +275,14 @@ function parsePnpmLock(text: string): Lockfile | undefined {
     }
     lockfile.workspaces.set(dir, specs);
     // `dependenciesMeta`, `publishDirectory`: settings. A workspace added
-    // or removed shows in its dependencies.
-    const settings = Object.keys(importer).filter(
-      (key) => !PNPM_DEP_FIELDS.some((field) => field === key),
-    );
-    if (settings.length > 0) {
-      restOfImporters.push([dir, restOf(importer, PNPM_DEP_FIELDS)]);
+    // or removed shows in its dependencies. A single project's are the
+    // file's own, already in `rest`.
+    if (workspaces) {
+      const settings = restOf(importer, PNPM_DEP_FIELDS);
+      if (settings !== "[]") restOfImporters.push([dir, settings]);
     }
   }
-  if (isRecord(main.importers)) {
-    lockfile.rest += JSON.stringify(restOfImporters);
-  }
+  lockfile.rest += JSON.stringify(restOfImporters);
   for (const section of [packages, snapshots]) {
     for (const [key, entry] of Object.entries(section)) {
       const parsed = pnpmKey(key);
@@ -569,15 +569,11 @@ export function packageSeeds(
       const node = `pkg:${name}`;
       // By a suite's own walk: a type import reaches no test of a suite
       // that runs code.
+      const reach = walksByTypes(graph, [node], { includeUnknown: false });
       found =
         graph.has(node) &&
         config.suites.some((suite) =>
-          [
-            ...affectedBy(graph, [node], {
-              includeUnknown: false,
-              types: suite.types,
-            }),
-          ].some(suite.isTest),
+          [...reach(suite.types)].some(suite.isTest),
         );
       reaches.set(name, found);
     }

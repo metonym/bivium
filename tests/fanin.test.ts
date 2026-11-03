@@ -1,6 +1,6 @@
 import { resolveConfig } from "../src/config.ts";
 import { fanIn, formatGraph, graphReport } from "../src/fanin.ts";
-import { affectedBy, type Graph, importersOf } from "../src/graph.ts";
+import { affectedBy, type Graph } from "../src/graph.ts";
 import type { Config } from "../src/types.ts";
 import { CONFIG, config, graphOf, REPO } from "./fixture.ts";
 
@@ -64,8 +64,6 @@ describe("formatGraph", () => {
     const report = graphReport(
       graph,
       config.suites.filter((suite) => suite.name === "unit"),
-      (node) => importersOf(graph, node),
-      () => ["tests/css/unknown.test.ts"],
     );
     const text = formatGraph(report, 2);
     expect(text.split("\n").slice(0, 5)).toEqual([

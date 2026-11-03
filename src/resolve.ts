@@ -203,10 +203,16 @@ export function owner(
   );
 }
 
-// `rest` is the specifier after an alias key and its `/`.
-function aliased(target: string, rest: string): string {
-  if (target === ".") return rest || ".";
-  return rest ? `${target}/${rest}` : target;
+// The path an alias maps `specifier` to, or `undefined` if its key doesn't
+// match. A doubled slash is one, as bundlers and TypeScript read it.
+export function aliasPath(
+  [key, target]: readonly [string, string],
+  specifier: string,
+): string | undefined {
+  if (specifier !== key && !specifier.startsWith(`${key}/`)) return undefined;
+  const rest = specifier.slice(key.length + 1);
+  if (target === ".") return posix.normalize(rest || ".");
+  return posix.normalize(rest ? `${target}/${rest}` : target);
 }
 
 export function createResolver({
@@ -431,12 +437,10 @@ export function createResolver({
 
   // Any other specifier, the same from every file in `scope`.
   const resolveBare = (scope: Scope, bare: string): Resolution => {
-    for (const [key, target] of config.alias) {
-      if (bare !== key && !bare.startsWith(`${key}/`)) continue;
-      // A doubled slash is one, as bundlers and TypeScript read it.
-      const found = probe(
-        posix.normalize(aliased(target, bare.slice(key.length + 1))),
-      );
+    for (const alias of config.alias) {
+      const path = aliasPath(alias, bare);
+      if (path === undefined) continue;
+      const found = probe(path);
       if (found.length > 0) return { files: found };
     }
     const { ts } = scope;

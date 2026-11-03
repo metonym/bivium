@@ -5,9 +5,7 @@ import { check, failed, formatReport } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { formatGraph, graphReport } from "./fanin.ts";
-import { affectedBy, importersOf } from "./graph.ts";
 import { formatSelection } from "./plan.ts";
-import { sorted } from "./sorted.ts";
 import type { Selection } from "./types.ts";
 import { explain, formatExplanation, isFormat } from "./why.ts";
 
@@ -68,7 +66,7 @@ const FLAGS: Record<string, readonly string[]> = {
   run: [...COMMON, "--suite"],
   why: [...COMMON, "--base", "--json", "--format", "--all"],
   check: [...COMMON, "--base", "--max-unknown", "--json"],
-  graph: [...COMMON, "--base", "--suite", "--top", "--json"],
+  graph: [...COMMON, "--suite", "--top", "--json"],
 };
 const POSITIONAL: Record<string, number> = {
   plan: 1,
@@ -218,7 +216,7 @@ async function graphCommand({ flags }: Args): Promise<number> {
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
     // The graph doesn't depend on the base.
-    base: flags.get("--base") ?? "HEAD",
+    base: "HEAD",
     configFile: flags.get("--config"),
   });
   const name = flags.get("--suite");
@@ -230,24 +228,7 @@ async function graphCommand({ flags }: Args): Promise<number> {
   const { graph } = await computePlan(root, base, config, {
     ...(flags.has("--no-cache") && { cache: false }),
   });
-  const unknown = [...graph]
-    .filter(([, deps]) => deps.unknown.length > 0)
-    .map(([node]) => node);
-  const report = graphReport(
-    graph,
-    suites,
-    (node) => importersOf(graph, node),
-    (suite) =>
-      sorted(
-        [
-          ...affectedBy(graph, unknown, {
-            includeUnknown: false,
-            readers: false,
-            types: suite.types,
-          }),
-        ].filter(suite.isTest),
-      ),
-  );
+  const report = graphReport(graph, suites);
   console.log(
     flags.has("--json")
       ? JSON.stringify(report, null, 2)

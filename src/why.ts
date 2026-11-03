@@ -1,8 +1,14 @@
-import { fixFor } from "./check.ts";
+import { fixFor, plural } from "./check.ts";
 import type { Computed } from "./compute.ts";
 import type { PathMap, ResolvedConfig, ResolvedSuite } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
-import { affectedBy, gotoPage, type Via } from "./graph.ts";
+import {
+  affectedBy,
+  gotoPage,
+  type Via,
+  type WalkOptions,
+  walksByTypes,
+} from "./graph.ts";
 import {
   annotationLine,
   callLine,
@@ -202,16 +208,10 @@ function rootCause(
   return "changed";
 }
 
-interface Walk {
-  seeds: string[];
-  // The seeds that add or delete a path, which seed `@lists`.
-  layout?: ReadonlySet<string>;
-  // Seeds no unknown node depends on (changed ignored files).
-  quiet?: string[];
-  opaque: ((path: string) => boolean) | undefined;
-  // Whether the suite follows type-only edges.
-  types?: boolean;
-}
+type Walk = { seeds: string[]; quiet?: string[] } & Pick<
+  WalkOptions,
+  "layout" | "opaque" | "types"
+>;
 
 // The walks that selected the suite's tests, as planTests ran them.
 function walks(
@@ -254,15 +254,9 @@ function shortestChain(
   candidates: Walk[],
   test: string,
 ): { edges: [string, Via][]; root: string } | undefined {
-  for (const walk of candidates) {
+  for (const { seeds, ...options } of candidates) {
     const parents = new Map<string, Via>();
-    const reached = affectedBy(computed.graph, walk.seeds, {
-      quiet: walk.quiet,
-      opaque: walk.opaque,
-      types: walk.types,
-      layout: walk.layout,
-      parents,
-    });
+    const reached = affectedBy(computed.graph, seeds, { ...options, parents });
     if (!reached.has(test)) continue;
     const edges: [string, Via][] = [];
     let node = test;
@@ -286,23 +280,19 @@ function reachers(
   except: string,
 ): string[] {
   const found = new Set<string>();
-  for (const { seeds, quiet = [], opaque, types, layout } of candidates) {
-    for (const [list, isQuiet] of [
-      [seeds, false],
-      [quiet, true],
-    ] as const) {
-      for (const seed of list) {
-        if (seed === except || found.has(seed)) continue;
-        const reached = isQuiet
-          ? affectedBy(computed.graph, [], {
-              quiet: [seed],
-              opaque,
-              types,
-              layout,
-            })
-          : affectedBy(computed.graph, [seed], { opaque, types, layout });
-        if (reached.has(test)) found.add(seed);
+  const unseen = (seed: string) => seed !== except && !found.has(seed);
+  for (const { seeds, quiet = [], ...options } of candidates) {
+    for (const seed of seeds.filter(unseen)) {
+      if (affectedBy(computed.graph, [seed], options).has(test)) {
+        found.add(seed);
       }
+    }
+    for (const seed of quiet.filter(unseen)) {
+      const reached = affectedBy(computed.graph, [], {
+        ...options,
+        quiet: [seed],
+      });
+      if (reached.has(test)) found.add(seed);
     }
   }
   return sorted(found);
@@ -346,21 +336,13 @@ function unselected(
   if (from === undefined) return { kind: "unselected", suite, changed };
   // What the file's own chains reach: a test that runs on every change
   // would be selected by any file, so it says nothing about this one.
-  const walked = new Map<boolean, string[]>();
-  const reachedBy = (types: boolean) => {
-    let reached = walked.get(types);
-    if (!reached) {
-      reached = sorted(
-        affectedBy(computed.graph, [from], { includeUnknown: false, types }),
-      );
-      walked.set(types, reached);
-    }
-    return reached;
-  };
+  const reachedBy = walksByTypes(computed.graph, [from], {
+    includeUnknown: false,
+  });
   const reaches: Record<string, number> = {};
   let example: string | undefined;
   for (const { name, isTest, types } of config.suites) {
-    const tests = reachedBy(types).filter((node) => isTest(node));
+    const tests = sorted(reachedBy(types)).filter((node) => isTest(node));
     if (tests.length === 0) continue;
     reaches[name] = tests.length;
     if (name === suite || example === undefined) example = tests[0];
@@ -462,10 +444,6 @@ const VERBS: Record<Exclude<Via["kind"], "export">, string> = {
 };
 
 const LIST = 3;
-
-function plural(count: number, one: string, many: string) {
-  return `${count} ${count === 1 ? one : many}`;
-}
 
 function nameOf(node: string) {
   return node.slice(node.indexOf("#") + 1);

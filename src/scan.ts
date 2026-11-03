@@ -13,7 +13,12 @@ import {
   TSX,
 } from "./lex.ts";
 import { extractRegex } from "./scan-regex.ts";
-import { type ImportRef, QUERY, type Scan } from "./syntax.ts";
+import {
+  type ImportRef,
+  QUERY,
+  type Scan,
+  UNDECLARED_READS,
+} from "./syntax.ts";
 
 // Raw dependency extraction from source text, before resolution: a one-pass
 // lexer (`lex.ts`, with `host.ts` for files that embed scripts), which
@@ -155,7 +160,7 @@ function fromLexed(lexed: Lexed): Extraction {
   const declared =
     lexed.dependsOn.length + lexed.reads.length + lexed.lists.length;
   if (lexed.readsDisk && declared === 0) {
-    unknown.push("reads the disk without @depends-on");
+    unknown.push(UNDECLARED_READS);
   }
   return {
     imports: lexed.imports,

@@ -29,6 +29,8 @@ export interface Scan {
 
 export const QUERY = /[?#].*$/;
 
+export const UNDECLARED_READS = "reads the disk without @depends-on";
+
 // A relative specifier, as Node and TypeScript read one: `.`, `..`, or one
 // that starts with `./` or `../`. `.velite` is bare.
 export const RELATIVE = /^\.\.?(?:\/|$)/;

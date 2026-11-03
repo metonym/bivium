@@ -9,6 +9,7 @@ import {
   READS,
   RELATIVE,
   type Scan,
+  UNDECLARED_READS,
   URL_REF,
 } from "./syntax.ts";
 
@@ -133,7 +134,7 @@ export function extractRegex(source: string, html: boolean): Scan {
     READS_DISK.test(source) &&
     result.dependsOn.length + result.reads.length + result.lists.length === 0
   ) {
-    result.unknown.push("reads the disk without @depends-on");
+    result.unknown.push(UNDECLARED_READS);
   }
 
   return result;

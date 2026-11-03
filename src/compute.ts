@@ -118,13 +118,11 @@ interface ComputeOptions {
 // once, a cold plan of 7,000 files needed three times the heap.
 const READS_IN_FLIGHT = 64;
 
-// Runs `tasks` with at most `limit` in flight.
 async function inParallel(
   tasks: readonly (() => Promise<void>)[],
   limit: number,
 ): Promise<void> {
   let next = 0;
-  // Each worker starts the next task when its last one ends.
   const worker = (): Promise<void> =>
     next < tasks.length ? tasks[next++]().then(worker) : Promise.resolve();
   await Promise.all(

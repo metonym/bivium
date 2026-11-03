@@ -604,14 +604,14 @@ describe("bivium graph", () => {
     const { status, output } = await run(["graph", "--json", "--cwd", dir]);
     expect(status).toBe(0);
     const report = JSON.parse(output);
-    expect(report.suites).toEqual({ unit: { tests: 2, everyChange: [] } });
+    expect(report.suites).toEqual({ unit: { total: 2, everyChange: [] } });
     expect(
-      report.nodes.find((node: { id: string }) => node.id === "src/a.js"),
+      report.nodes.find(({ node }: { node: string }) => node === "src/a.js"),
     ).toEqual({
-      id: "src/a.js",
+      node: "src/a.js",
       imports: [],
       importers: ["src/index.js", "src/index.js#a"],
-      tests: { unit: 1 },
+      fanIn: { unit: 1 },
       unknown: false,
     });
     const text = await run(["graph", "--cwd", dir, "--top", "1"]);
