@@ -15,7 +15,7 @@ import {
   gotoUrl,
   SCANNED,
 } from "./scan.ts";
-import { QUERY, type Scan } from "./syntax.ts";
+import { QUERY, type Scan, UNDECLARED_READS } from "./syntax.ts";
 import type { TsConfigs } from "./tsconfig.ts";
 
 // Static file-level dependency graph. A node is a repo-relative file, a
@@ -68,9 +68,9 @@ const leaf = (): FileDeps => ({
 });
 
 const LEADING_DOT_SLASH = /^\.\//;
+const JS_SPECIFIER = /\.[cm]?jsx?$/;
 // A declaration file: `x.d.ts`, `x.d.mts`, `x.d.cts`, and `x.d.css.ts`
 // for an arbitrary extension. Nothing that runs loads one.
-const JS_SPECIFIER = /\.[cm]?jsx?$/;
 export const DECLARATION = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
 
 function addPattern(
@@ -86,8 +86,6 @@ function addPattern(
 
 // The causes a `hermetic` file vouches for: what it reads or imports this way
 // is never a file of the repository.
-const UNDECLARED_READS = "reads the disk without @depends-on";
-
 const HERMETIC_CAUSES = new Set([
   UNDECLARED_READS,
   "non-literal dynamic import",
@@ -518,9 +516,9 @@ function reverseIndex(graph: Graph): ReverseIndex {
   }
   const index: ReverseIndex = {
     dependents,
-    globbers: { literal: globbers.literal, wild: globbers.wild },
-    readers: { literal: readers.literal, wild: readers.wild },
-    listers: { literal: listers.literal, wild: listers.wild },
+    globbers,
+    readers,
+    listers,
     unknown,
   };
   indexes.set(graph, index);
@@ -542,6 +540,25 @@ function runtimeDependents(
   }
   index.runtime = runtime;
   return runtime;
+}
+
+// Walks from `changed` as a suite with each `types` setting would, each
+// at most once.
+export function walksByTypes(
+  graph: Graph,
+  changed: Iterable<string>,
+  options: Omit<WalkOptions, "types"> = {},
+): (types: boolean) => Set<string> {
+  const seeds = [...changed];
+  const walks = new Map<boolean, Set<string>>();
+  return (types) => {
+    let walk = walks.get(types);
+    if (!walk) {
+      walk = affectedBy(graph, seeds, { ...options, types });
+      walks.set(types, walk);
+    }
+    return walk;
+  };
 }
 
 export function importersOf(graph: Graph, node: string): readonly string[] {
@@ -585,7 +602,7 @@ function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
   return dependent.endsWith(".html") ? "html" : "import";
 }
 
-interface Walk {
+export interface WalkOptions {
   includeUnknown?: boolean;
   // Seeds no unknown node depends on: ignored files, which no test can
   // observe except through an edge the graph has.
@@ -619,7 +636,7 @@ export function affectedBy(
     readers: seedReaders = true,
     opaque,
     parents,
-  }: Walk = {},
+  }: WalkOptions = {},
 ): Set<string> {
   const index = reverseIndex(graph);
   const { globbers, readers, listers, unknown } = index;
@@ -639,31 +656,29 @@ export function affectedBy(
     }
   };
 
-  const loud = [...changed];
-  for (const path of loud) visit(path);
-  // A file unknown nodes depend on: the first seed that isn't quiet.
-  const first = queue[0];
-  const changedPaths = [...loud, ...quiet];
-  for (const path of changedPaths) visit(path);
-  // Text reads only see the files themselves, not what they import.
-  if (seedReaders) {
-    for (const path of changedPaths) {
-      for (const group of readers.literal.get(path) ?? []) {
-        visitGroup(group, path);
-      }
-      for (const group of readers.wild) {
-        if (group.re.test(path)) visitGroup(group, path);
-      }
-    }
-  }
-  // A listing sees a path come or go, not what's in it.
-  for (const path of seedReaders ? changedPaths : []) {
-    if (layout && !layout.has(path)) continue;
-    for (const group of listers.literal.get(path) ?? []) {
+  const visitMatches = (groups: Patterns, path: string) => {
+    for (const group of groups.literal.get(path) ?? []) {
       visitGroup(group, path);
     }
-    for (const group of listers.wild) {
+    for (const group of groups.wild) {
       if (group.re.test(path)) visitGroup(group, path);
+    }
+  };
+
+  const changedPaths = [...changed];
+  for (const path of changedPaths) visit(path);
+  // A file unknown nodes depend on: the first seed that isn't quiet.
+  const first = queue[0];
+  for (const path of quiet) {
+    visit(path);
+    changedPaths.push(path);
+  }
+  // Text reads only see the files themselves, not what they import, and a
+  // listing sees a path come or go, not what's in it.
+  if (seedReaders) {
+    for (const path of changedPaths) visitMatches(readers, path);
+    for (const path of changedPaths) {
+      if (!layout || layout.has(path)) visitMatches(listers, path);
     }
   }
   if (includeUnknown && first !== undefined) {

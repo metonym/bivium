@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Computed } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { globToRegExp } from "./glob.ts";
-import { affectedBy } from "./graph.ts";
+import { walksByTypes } from "./graph.ts";
 import {
   annotationLine,
   causesOf,
@@ -11,9 +11,10 @@ import {
   sourceOf,
   specifierLine,
 } from "./locate.ts";
+import { aliasPath } from "./resolve.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { QUERY, RELATIVE } from "./syntax.ts";
+import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
 
 interface Unknown {
   node: string;
@@ -102,7 +103,7 @@ export function fixFor(cause: string) {
   if (cause === "non-literal glob import") {
     return "pass `import.meta.glob` literal patterns";
   }
-  if (cause === "reads the disk without @depends-on") {
+  if (cause === UNDECLARED_READS) {
     return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text, or an `edges` or `reads` entry for the file in the config; list the file in `hermetic` if it reads no file of the repository";
   }
   if (cause.startsWith("non-literal goto(")) {
@@ -115,6 +116,10 @@ export function fixFor(cause: string) {
     return "map the URL to a file with the suite's `urls`";
   }
   return "see the cause";
+}
+
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
 // The name a path's file has before its first dot: `u.d.ts` and `u.js`
@@ -154,19 +159,11 @@ function nearMisses(
   return (node: string, cause: string): string | undefined => {
     if (!cause.startsWith("unresolved ")) return undefined;
     const specifier = (QUOTED.exec(cause)?.[1] ?? "").replace(QUERY, "");
-    let base: string | undefined;
-    if (RELATIVE.test(specifier)) {
-      base = posix.join(posix.dirname(fileOf(node)), specifier);
-    } else {
-      for (const [key, target] of config.alias) {
-        if (specifier !== key && !specifier.startsWith(`${key}/`)) continue;
-        const rest = specifier.slice(key.length + 1);
-        base = posix.normalize(
-          target === "." ? rest || "." : `${target}/${rest}`,
-        );
-        break;
-      }
-    }
+    const base = RELATIVE.test(specifier)
+      ? posix.join(posix.dirname(fileOf(node)), specifier)
+      : config.alias
+          .map((alias) => aliasPath(alias, specifier))
+          .find((path) => path !== undefined);
     if (base === undefined || base.startsWith("../")) return undefined;
     const tried = candidates(base);
     const outside = tried.find(
@@ -175,7 +172,7 @@ function nearMisses(
     if (outside !== undefined) {
       return `${outside} exists, but outside \`roots\`: add it to \`roots\``;
     }
-    const unlisted = tried.find((path) => existsSync(join(root, path)));
+    const unlisted = tried.find((path) => isFile(join(root, path)));
     if (unlisted !== undefined && !listedSet.has(unlisted)) {
       return `${unlisted} exists, but git doesn't list it (ignored?): if a build writes it, name it in \`edges\` with its inputs`;
     }
@@ -380,43 +377,36 @@ export async function check(
   // A suite that can't observe types reaches its tests without the
   // type-only edges, as `plan` walks for it.
   const testsOf = (node: string) => {
-    const reach = new Map<boolean, Set<string>>();
+    const reach = walksByTypes(computed.graph, [node], {
+      includeUnknown: false,
+      readers: false,
+    });
     const found = new Set<string>();
     for (const suite of config.suites) {
-      let reached = reach.get(suite.types);
-      if (!reached) {
-        reached = affectedBy(computed.graph, [node], {
-          includeUnknown: false,
-          readers: false,
-          types: suite.types,
-        });
-        reach.set(suite.types, reached);
+      for (const test of reach(suite.types)) {
+        if (suite.isTest(test)) found.add(test);
       }
-      for (const test of reached) if (suite.isTest(test)) found.add(test);
     }
     return sorted(found);
   };
   const nearMiss = nearMisses(root, config, computed);
-  const unknown = await Promise.all(
-    nodes.map(
-      async (node): Promise<Unknown> => ({
-        node,
-        causes: (await causesOf(root, computed, node)).map(({ cause, at }) => {
-          const fix = nearMiss(node, cause) ?? fixFor(cause);
-          return at === undefined ? { cause, fix } : { cause, at, fix };
-        }),
-        tests: testsOf(node),
-      }),
-    ),
-  );
   const known = new Map(
     (config.knownUnknowns ?? []).map((entry) => [entry.file, entry.reason]),
   );
-  for (const entry of unknown) {
-    const reason = known.get(entry.node);
-    if (reason !== undefined) entry.known = reason;
-  }
-  const listed = config.knownUnknowns !== undefined;
+  const unknown = await Promise.all(
+    nodes.map(async (node): Promise<Unknown> => {
+      const causes = (await causesOf(root, computed, node)).map(
+        ({ cause, at }) => {
+          const fix = nearMiss(node, cause) ?? fixFor(cause);
+          return at === undefined ? { cause, fix } : { cause, at, fix };
+        },
+      );
+      const reason = known.get(node);
+      const entry: Unknown = { node, causes, tests: testsOf(node) };
+      if (reason !== undefined) entry.known = reason;
+      return entry;
+    }),
+  );
   const fallbacks = [...computed.fallbacks].map(([file, reason]) => ({
     file,
     reason,
@@ -431,7 +421,7 @@ export async function check(
     deadGlobs: dead.filter(
       (found) => !config.deadGlobs.some((entry) => allows(entry, found)),
     ),
-    unlistedUnknowns: listed
+    unlistedUnknowns: config.knownUnknowns
       ? unknown
           .filter(
             (entry) => entry.tests.length > 0 && entry.known === undefined,
@@ -439,7 +429,7 @@ export async function check(
           .map((entry) => entry.node)
       : [],
     staleKnownUnknowns: (config.knownUnknowns ?? [])
-      .filter((entry) => !unknown.some(({ node }) => node === entry.file))
+      .filter((entry) => !nodes.includes(entry.file))
       .map((entry) => ({
         ...entry,
         fix: "remove the entry: its dependencies are known now",
@@ -573,15 +563,15 @@ function summaryLines(report: Report): string[] {
     ],
   ] as const;
   for (const [count, one, many] of problems) {
-    if (count > 0) lines.push(`${count} ${count === 1 ? one : many}`);
+    if (count > 0) lines.push(plural(count, one, many));
   }
   return lines.length === 0
     ? []
     : ["Summary:", ...lines.map((line) => `  ${line}`), ""];
 }
 
-function plural(count: number, one: string): string {
-  return `${count} ${count === 1 ? one : `${one}s`}`;
+export function plural(count: number, one: string, many = `${one}s`) {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 export function formatReport(report: Report, max: number | undefined): string {
@@ -659,19 +649,17 @@ export function formatReport(report: Report, max: number | undefined): string {
   const staleKnown = report.staleKnownUnknowns.length;
   if (staleKnown > 0) {
     lines.push(
-      `${staleKnown} stale \`knownUnknowns\` ${staleKnown === 1 ? "entry" : "entries"}.`,
+      `${plural(staleKnown, "stale `knownUnknowns` entry", "stale `knownUnknowns` entries")}.`,
     );
   }
   const dead = report.deadGlobs.length;
   const stale = report.staleDeadGlobs.length;
   if (dead > 0) {
-    lines.push(
-      `${dead} dead ${dead === 1 ? "glob" : "globs"} not in \`deadGlobs\`.`,
-    );
+    lines.push(`${plural(dead, "dead glob")} not in \`deadGlobs\`.`);
   }
   if (stale > 0) {
     lines.push(
-      `${stale} stale \`deadGlobs\` ${stale === 1 ? "entry" : "entries"}.`,
+      `${plural(stale, "stale `deadGlobs` entry", "stale `deadGlobs` entries")}.`,
     );
   }
   // Sections each open with a blank line, and the summary ends with one.

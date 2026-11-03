@@ -1,5 +1,6 @@
+import { plural } from "./check.ts";
 import type { ResolvedSuite } from "./config.ts";
-import type { Graph } from "./graph.ts";
+import { type Graph, importersOf, walksByTypes } from "./graph.ts";
 import { sorted } from "./sorted.ts";
 
 // How many of a suite's tests a change to each node selects through the
@@ -79,13 +80,15 @@ export function fanIn(graph: Graph, suite: ResolvedSuite): Map<string, number> {
 export interface GraphReport {
   // Each suite's test count, and the tests that run on any change because
   // they reach a node whose dependencies are unknown.
-  suites: Record<string, { tests: number; everyChange: string[] }>;
+  suites: Record<string, { total: number; everyChange: string[] }>;
   nodes: {
-    id: string;
+    node: string;
+    // The nodes it imports, and that import it: file edges, not globs or
+    // declared inputs, which `fanIn` follows too.
     imports: string[];
     importers: string[];
     // How many of each suite's tests a change to it selects.
-    tests: Record<string, number>;
+    fanIn: Record<string, number>;
     unknown: boolean;
   }[];
 }
@@ -93,32 +96,36 @@ export interface GraphReport {
 export function graphReport(
   graph: Graph,
   suites: readonly ResolvedSuite[],
-  importers: (node: string) => readonly string[],
-  everyChange: (suite: ResolvedSuite) => string[],
 ): GraphReport {
   const counts = suites.map(
     (suite) => [suite.name, fanIn(graph, suite)] as const,
   );
-  const nodes = [...graph].map(([id, deps]) => ({
-    id,
-    imports: sorted(deps.files),
-    importers: sorted(importers(id)),
-    tests: Object.fromEntries(
-      counts.map(([name, count]) => [name, count.get(id) ?? 0]),
-    ),
-    unknown: deps.unknown.length > 0,
-  }));
+  const unknown = [...graph]
+    .filter(([, deps]) => deps.unknown.length > 0)
+    .map(([node]) => node);
+  const everyChange = walksByTypes(graph, unknown, {
+    includeUnknown: false,
+    readers: false,
+  });
   return {
     suites: Object.fromEntries(
       suites.map((suite) => [
         suite.name,
         {
-          tests: [...graph.keys()].filter(suite.isTest).length,
-          everyChange: everyChange(suite),
+          total: [...graph.keys()].filter(suite.isTest).length,
+          everyChange: sorted(everyChange(suite.types)).filter(suite.isTest),
         },
       ]),
     ),
-    nodes,
+    nodes: [...graph].map(([node, deps]) => ({
+      node,
+      imports: sorted(deps.files),
+      importers: sorted(importersOf(graph, node)),
+      fanIn: Object.fromEntries(
+        counts.map(([name, count]) => [name, count.get(node) ?? 0]),
+      ),
+      unknown: deps.unknown.length > 0,
+    })),
   };
 }
 
@@ -139,22 +146,24 @@ function buckets(total: number): [number, number][] {
 export function formatGraph(report: GraphReport, top: number): string {
   const lines: string[] = [];
   const files = report.nodes.filter(
-    ({ id }) => !id.startsWith("pkg:") && !id.includes("#"),
+    ({ node }) => !node.startsWith("pkg:") && !node.includes("#"),
   );
-  for (const [name, { tests, everyChange }] of Object.entries(report.suites)) {
+  for (const [name, { total: tests, everyChange }] of Object.entries(
+    report.suites,
+  )) {
     const any = everyChange.length;
     lines.push(
-      `${name}: ${tests} ${tests === 1 ? "test" : "tests"}${any > 0 ? `; ${any} run on any change (\`bivium check\` says why)` : ""}`,
+      `${name}: ${plural(tests, "test")}${any > 0 ? `; ${any} run on any change (\`bivium check\` says why)` : ""}`,
     );
     const ranked = files
-      .map(({ id, tests: count }) => [id, count[name] ?? 0] as const)
+      .map(({ node, fanIn: reach }) => [node, reach[name] ?? 0] as const)
       .filter(([, count]) => count > 0)
       .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1));
-    const width = String(tests).length;
+    const width = Math.max(String(tests).length, 5);
     if (ranked.length > 0) {
       lines.push(`  ${"tests".padStart(width)}  file`);
       for (const [id, count] of ranked.slice(0, top)) {
-        lines.push(`  ${String(count).padStart(Math.max(width, 5))}  ${id}`);
+        lines.push(`  ${String(count).padStart(width)}  ${id}`);
       }
       if (ranked.length > top) {
         lines.push(`  … ${ranked.length - top} more (--top <n> shows more)`);
@@ -163,8 +172,8 @@ export function formatGraph(report: GraphReport, top: number): string {
     lines.push(`  files by how many ${name} tests a change to one selects:`);
     const rows = buckets(tests).map(([low, high]) => {
       const label = low === high ? String(low) : `${low}–${high}`;
-      const count = files.filter(({ tests: reached }) => {
-        const n = reached[name] ?? 0;
+      const count = files.filter(({ fanIn: reach }) => {
+        const n = reach[name] ?? 0;
         return n >= low && n <= high;
       }).length;
       return [label, count] as const;

@@ -8,6 +8,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { Computed } from "./compute.ts";
+import { UNDECLARED_READS } from "./syntax.ts";
 
 const DISK_READ =
   /\bfrom\s*["'](?:node:)?(?:fs|fs\/promises|child_process)["']|\brequire\s*\(\s*["'](?:node:)?(?:fs|fs\/promises|child_process)["']|\bBun\.(?:file|Glob|spawn)/;
@@ -151,7 +152,7 @@ function causeLine(source: string, cause: string): number | undefined {
   if (cause === "non-literal dynamic import")
     return lineOf(source, NON_LITERAL_IMPORT);
   if (cause === "non-literal glob import") return lineOf(source, GLOB_CALL);
-  if (cause === "reads the disk without @depends-on") {
+  if (cause === UNDECLARED_READS) {
     return lineOf(source, DISK_READ);
   }
   if (cause.startsWith("non-literal goto(")) {
