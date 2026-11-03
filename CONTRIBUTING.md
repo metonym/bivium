@@ -100,28 +100,20 @@ bun eval/replay.ts <sveld checkout> --old HEAD --new HEAD --config my.config.ts
 bun eval/replay.ts --summary <rows.jsonl>
 ```
 
-The report gives each build's share of test files selected, its full runs by cause, its median plan time, and every commit where the new build selects a test the old one doesn't: a miss the old one had, or a regression, so read each one. A selector change cites its replay as it would the golden check below. `--node-modules` links an install into each checkout for a config whose narrower imports dependencies; without a matching install, the narrower can't run and its suites run in full on both sides.
+The report gives each build's share of test files selected, its full runs by cause, its median plan time, and every commit where the new build selects a test the old one doesn't: a miss the old one had, or a regression, so read each one. A selector change cites its replay in its pull request. `--node-modules` links an install into each checkout for a config whose narrower imports dependencies; without a matching install, the narrower can't run and its suites run in full on both sides.
 
-## Golden check on carbon-components-svelte
+## Differential checks
 
-`eval/` holds the harnesses that check bivium against carbon's own selector. They aren't packaged. They need a carbon checkout with `.context/test-graph-package/phase0` (the PR groups and recorded plans from Phase 0) and a scratch clone to check out commits in:
+These compare one part of bivium against an independent one on a carbon-components-svelte checkout (any clone works; `eval/carbon/bivium.config.ts` is carbon's selector as a config, which gives them their roots):
 
 ```sh
-git clone <carbon checkout> /tmp/bivium-carbon
-
-# Re-plan the 40 newest PR groups and 20 older ones; compare with carbon's
-# selector and the recorded plans, with the cache cold, partly warm and warm.
-bun eval/carbon/replay.ts --carbon <checkout> /tmp/bivium-carbon /tmp/replay.jsonl --subset --cache /tmp/bivium-cache
-bun eval/carbon/summarize.ts /tmp/replay.jsonl --drop tests/scripts/test-graph.test.ts
-
-# Cached graphs equal cold ones, node by node, on a few bases.
-bun eval/carbon/cache-equal.ts /tmp/bivium-carbon /tmp/bivium-cache <base>…
-
-bun eval/carbon/scan-diff.ts /tmp/bivium-carbon   # the lexer against the regex
-bun eval/corpus.ts <checkout>                     # the lexer against TypeScript
+bun eval/carbon/cache-equal.ts <clone> <cache dir> <base>…  # cached graphs and plans equal cold ones, node by node
+bun eval/carbon/scan-diff.ts <clone>                        # the lexer against the regex extractor
+bun eval/corpus.ts <checkout>                               # the lexer against TypeScript
+bun eval/carbon/bench-scan.ts <clone>                       # extraction alone: the lexer, the regex extractor, a bare loop
 ```
 
-`eval/carbon/bivium.config.ts` is carbon's selector as a config, without the CSS narrowing (`narrowed.config.ts` adds it; it needs an installed checkout). A change that alters a replayed plan needs a reason in `docs/decisions.md`.
+A lexer change runs `scan-diff.ts` and `corpus.ts`, and `bench-scan.ts` if it claims speed; a change to the cache or to what it stores runs `cache-equal.ts`.
 
 ## Releasing
 
@@ -132,5 +124,5 @@ bun eval/corpus.ts <checkout>                     # the lexer against TypeScript
 ## Before you finish
 
 - [ ] `bun run lint`, `bun run typecheck`, `bun run knip`, `bun run test` and `bun run test:package` pass.
-- [ ] Scanner, resolver or selection changes: `eval/replay.ts` (or the golden replay) finds no unexplained difference.
+- [ ] Scanner, resolver or selection changes: `eval/replay.ts` finds no unexplained difference.
 - [ ] The README and this guide still describe what the code does.
