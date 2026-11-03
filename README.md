@@ -45,7 +45,7 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 
 | It follows | As |
 |:---|:---|
-| Static, side-effect and dynamic imports, `export … from`, `require()` | Edges to every file the specifier can load: each extension that exists, each `exports` condition. A missing `x.js` (`.jsx`, `.mjs`, `.cjs`) is its TypeScript source, as TypeScript reads it: `x.ts`, `x.tsx` or `x.d.ts`, through any path, alias or `exports` target |
+| Static, side-effect and dynamic imports, `export … from`, `require()` | Edges to every file the specifier can load: each extension that exists, each `exports` condition. A missing `x.js` (`.jsx`, `.mjs`, `.cjs`) is its TypeScript source, as TypeScript reads it: `x.ts`, `x.tsx` or `x.d.ts`, through any path, alias or `exports` target. A value import that finds only `x.d.ts` is unknown: what runs isn't in the graph |
 | `vi.mock()`, `vi.importActual()` and the rest of the family | Edges |
 | `import.meta.glob()` | Every matching file, now and later |
 | JSDoc `@type {import("x")}` and `@import` | Edges (TypeScript reads them) |
@@ -75,7 +75,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.setup` | Files the runner loads before every test (Vitest and Jest `setupFiles`, Mocha `--require`, Playwright `globalSetup`): every test of the suite depends on them and what they import. bivium doesn't read the runner's config, so name them here |
 | `suites.<name>.wiring` | Files whose change runs the whole suite: another harness, a runner config |
 | `suites.<name>.nonInputs` | Files under `root` the runner never reads, such as type-check inputs |
-| `suites.<name>.types` | `false` when the suite runs code and can't observe types (Vitest, Jest, Playwright, `bun test`): a change that reaches its tests only through `import type`, `export type … from`, JSDoc types or a declaration file selects none of them. For the orphan rule a type-only reach counts only for a declaration file: any other file may be one the runner loads by name, so list a types-only module in `nonInputs`. A value import of `x.js` with only `x.d.ts` there is unknown. Default: `true`, which a type-checking suite (`tsc`, `vitest --typecheck`) needs. An inline `import { type A }` is always an edge: under `verbatimModuleSyntax` it still loads the module |
+| `suites.<name>.types` | `false` when the suite runs code and can't observe types (Vitest, Jest, Playwright, `bun test`): a change that reaches its tests only through `import type`, `export type … from`, JSDoc types or a declaration file selects none of them. For the orphan rule a type-only reach counts only for a declaration file, since the runner may load any other file by name: list a types-only module under `root` in `nonInputs`. Default: `true`, which a type-checking suite (`tsc`, `vitest --typecheck`) needs. An inline `import { type A }` is always an edge: under `verbatimModuleSyntax` it still loads the module |
 | `suites.<name>.output` | The step output `plan --github` writes. Default: `<name>-tests` |
 | `roots` | Paths (not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository |
 | `ignore` | Files no test can observe except through an edge (docs, stories). A change to one selects only the tests that reach it, never runs a suite by the orphan rule, and doesn't select the tests whose dependencies are unknown |
@@ -87,11 +87,11 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `hermetic` | Files whose disk reads and non-literal imports reach no file of the repository: a library's `fs` calls on its caller's paths, a test that reads only the temporary files it writes. They add no unknown |
 | `barrels` | Modules that may bind named imports. Default: every module made only of re-exports |
 | `external` | Packages a dependency installs that your code imports without declaring |
-| `inert` | Packages no test uses except by importing them: linters, formatters, type packages (`["@biomejs/biome", "knip", "@types/*"]`). A [lockfile change](#lockfiles) that only they reach selects nothing |
-| `loadedByName` | Packages a test may load other than by an import: a test environment or a plugin a config names by string (`["jsdom", "ts-jest"]`). Setting it says every other package without a `bin` is loaded only by imports, so a [lockfile change](#lockfiles) that reaches one no test imports selects only its importers. A package with a `bin` always counts as one a test may run |
+| `inert` | Packages no test uses except by importing them: linters, formatters, type packages (`["@biomejs/biome", "knip", "@types/*"]`). A [lockfile change](#lockfiles) that only they reach selects nothing. With `loadedByName` set, only packages with a `bin` need listing |
+| `loadedByName` | Packages a test may load other than by an import: a test environment or a plugin a config names by string (`["jsdom", "ts-jest"]`). Setting it, even to `[]`, says every other package without a `bin` is loaded only by imports, so a [lockfile change](#lockfiles) that reaches one no test imports selects only its importers. A package with a `bin` always counts as one a test may run |
 | `extensions` | Suffixes tried after a specifier |
 | `deadGlobs` | Dead globs `check` allows, each `{ file, glob, reason }`, the glob as `file` spells it |
-| `knownUnknowns` | Nodes `check` allows to have unknown dependencies, each `{ file, reason }`. With it set, `check` fails on an unknown node some test reaches that it doesn't list, and on an entry that's no longer unknown, so a new unknown can't replace one that went away unnoticed, as it can under `--max-unknown` |
+| `knownUnknowns` | Nodes `check` allows to have unknown dependencies, each `{ file, reason }`. With it set, even to `[]` (which is `--max-unknown 0`), `check` fails on an unknown node some test reaches that it doesn't list, and on an entry that's no longer unknown, so a new unknown can't replace one that went away |
 | `narrowers` | See [Narrowers](#narrowers) |
 | `base` | The default base ref. Otherwise the upstream default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`) |
 | `cache` | The cache's directory, or `false`. Default: `node_modules/.cache/bivium`, or `.bivium/cache` |
@@ -107,10 +107,10 @@ A changed file under a suite's `root` that no test of the suite reaches is wired
 | a runner config or a second harness | the whole suite | the suite's `wiring` |
 | a setup file the runner loads before every test, or what it imports | every test of the suite | the suite's `setup` |
 | the selector's config, or its own code | everything | `self` (the config file always is) |
-| a type only `import type` reaches, in a suite that runs code | nothing | the suite's `types: false` |
+| a declaration file, in a suite that runs code | nothing | the suite's `types: false` |
+| a types-only module only `import type` reaches, in a suite that runs code | nothing | the suite's `types: false`, and the module in its `nonInputs` |
 | a file a test lists but doesn't read (a route, a story) | the test, when one is added or deleted | `// @lists <glob>` in the test |
 | a file a build turns into what tests load | the tests that load the output | `edges` from the output to its inputs |
-| a file a library reads only from paths its caller passes | no unknown | `hermetic` |
 
 A file outside `roots` that isn't ignored runs everything: it's the backstop for wiring the graph can't see, such as a CI workflow.
 
@@ -127,10 +127,11 @@ suites: {
     setup: ["src/setupTests.ts"], // vitest.config.ts `setupFiles`
     wiring: ["vitest.config.ts"],
     types: false,
+    nonInputs: ["src/**/types.ts"], // types only: nothing loads them at runtime
   },
 },
 alias: { "@/": "src/" },
-reads: { "src/**/*.test.ts": "src/$1__snapshots__/$2.test.ts.snap" },
+reads: { "src/**/*.test.{ts,tsx}": "src/$1__snapshots__/$2.test.$3.snap" },
 ```
 
 tsconfig `paths` (what `vite-tsconfig-paths` reads) are read without an `alias`. An extensionless `vi.mock("@/x")` resolves as an import does. A test environment the runner loads by name (`jsdom`, `happy-dom`) goes in `loadedByName` if you set it.
@@ -177,14 +178,13 @@ unit tests: 4 of 12 files
 
 | Command | Does |
 |:---|:---|
-| `bivium plan [base] [--json] [--github]` | Prints each suite's selection (`none`, the files out of how many, `all` files when each reaches a change, or `all (full run)`) and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results, changed packages, each suite's test count (`totals`), and the reasons as data (`causes`: `{ kind, suites, file?, package?, narrower?, message }`, `kind` one of `self`, `wiring`, `outside`, `lockfile`, `package`, `orphan`, `narrower`). `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
+| `bivium plan [base] [--json] [--github]` | Prints each suite's selection (`none`, the files out of how many, `all` files when each reaches a change, or `all (full run)`) and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results, changed packages, each suite's test count (`totals`), and the reasons as data (`causes`, each a `FullRunCause`: `{ kind, suites, file?, package?, narrower?, message }`). `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
 | `bivium why <test> [file] [--format tree\|chain\|source\|json] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source; `json` (or `--json`) prints the chain as data. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
-| `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. A fix for an unresolved specifier names the file that's there when it can: a sibling with another extension, one outside `roots`, or one git ignores. `--json` prints the report as data |
+| `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. `--json` prints the report as data |
+| `bivium graph [--suite <name>] [--top <n>] [--json]` | How many of each suite's tests a change to each file selects through the graph (leaving out the tests that run on any change, which it counts apart): the `n` files that reach the most, and how files spread from none to every test. A few hub files that reach most tests are what make plans wide. `--json` prints each suite's `total` and `everyChange` tests, and every node with its `imports` and `importers` (file edges), `fanIn` per suite and whether it's `unknown` |
 
-| `bivium graph [--suite <name>] [--top <n>] [--json]` | How many of each suite's tests a change to each file selects through the graph (leaving out the tests that run on any change, which it counts apart): the `n` files that reach the most, and how files spread from none to every test. A few hub files that reach most tests are what make plans wide. `--json` prints every node with its imports, importers, fan-in per suite and whether it's unknown |
-
-`--config`, `--cwd` and `--no-cache` work with every command, before or after it, and `why` and `check` take `--base <ref>`. `--help` (or `-h`) prints usage. An unknown command, option or `--format` is an error. Exit status: 0 when done, 1 when `check` finds problems or `run`'s command fails, 2 for a usage or configuration error.
+`--config`, `--cwd` and `--no-cache` work with every command, before or after it, and `why` and `check` take `--base <ref>`. `--help` (or `-h`) prints usage. An unknown command, option or `--format` is an error. Exit status: 0 when done, 1 when `check` finds problems, 2 for a usage or configuration error; `run` exits with its command's status.
 
 `why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's), `reads` and `lists`.
 

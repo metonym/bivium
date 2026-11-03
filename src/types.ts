@@ -97,13 +97,14 @@ export interface Config<Suite extends string = string> {
    * the importers of each package it changes, and of each package that
    * depends on one; a changed package that reaches a declared or imported
    * package no test imports runs everything, unless that package is here.
+   * With `loadedByName` set, only packages with a `bin` need listing.
    */
   inert?: Globs;
   /**
    * Packages a test may load other than by an import bivium sees: a test
    * environment, a plugin a config names by string (`jsdom`, `happy-dom`,
-   * `ts-jest`). Globs over package names. Setting it says every other
-   * package without an executable is loaded only by imports, so a lockfile
+   * `ts-jest`). Globs over package names. Setting it, even to `[]`, says
+   * every other package without an executable is loaded only by imports, so a lockfile
    * change that reaches one no test imports selects nothing beyond its
    * importers. A package with a `bin` in the lockfile is always taken to
    * be one a test may run. Default: unset, and any package may be.
@@ -112,9 +113,9 @@ export interface Config<Suite extends string = string> {
   /** Suffixes tried after a specifier, in order. */
   extensions?: readonly string[];
   /**
-   * Globs `bivium check` allows to be dead: an `@depends-on`, `@reads` or
-   * `import.meta.glob` pattern in `file`, or an `edges` or `reads` key or
-   * value when `file` is the config's, as written there, that matches no
+   * Globs `bivium check` allows to be dead: an `@depends-on`, `@reads`,
+   * `@lists` or `import.meta.glob` pattern in `file`, or an `edges` or
+   * `reads` key or value or a suite's `setup` when `file` is the config's, as written there, that matches no
    * file or matches files a change to which selects nothing (ignored, and
    * not in the graph). Each needs a reason, and an entry that matches no
    * dead glob fails the check, so the list stays current.
@@ -122,7 +123,7 @@ export interface Config<Suite extends string = string> {
   deadGlobs?: readonly { file: string; glob: string; reason: string }[];
   /**
    * Nodes `bivium check` allows to have unknown dependencies, each with a
-   * reason. With this set, `check` fails on an unknown node some test
+   * reason. With this set, even to `[]`, `check` fails on an unknown node some test
    * reaches that isn't listed, and on a listed node that's no longer
    * unknown, so a new unknown can't hide behind one that went away.
    */
@@ -140,11 +141,12 @@ export type Selection =
   | { mode: "some"; files: string[] };
 
 /** Why some suites run in full, for a program to act on. */
-export interface FullRunCause {
+export interface FullRunCause<Suite extends string = string> {
   /**
    * `self`: the selector's own file changed. `wiring`: a suite's `wiring`
    * file. `outside`: a file outside the roots. `lockfile`: a lockfile
-   * bivium can't diff. `package`: a changed package no test imports.
+   * added, deleted, unreadable, or with changed settings. `package`: a
+   * changed package no test imports.
    * `orphan`: a file under a suite's `root` no test of it reaches.
    * `narrower`: a narrower that couldn't decide.
    */
@@ -157,7 +159,7 @@ export interface FullRunCause {
     | "orphan"
     | "narrower";
   /** The suites it runs in full. */
-  suites: string[];
+  suites: Suite[];
   /** The changed file, when one is the cause. */
   file?: string;
   /** For `package`: the package no test imports. */
@@ -187,7 +189,7 @@ export interface PlanResult<Suite extends string = string> {
   /** Why a suite runs in full. */
   reasons: string[];
   /** The same, as data: one per reason, in order. */
-  causes: FullRunCause[];
+  causes: FullRunCause<Suite>[];
   /** How many test files each suite has. */
   totals: Record<Suite, number>;
   /** A line per package a lockfile or `package.json` change changed, and that selects through its importers or nothing: `bun.lock: svelte 5.1.0 → 5.2.0`. */
