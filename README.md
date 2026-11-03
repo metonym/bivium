@@ -59,6 +59,8 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 
 A root `bun.lock`, `package-lock.json` or `pnpm-lock.yaml` isn't a source file: a change to one seeds the packages it changed (see [Lockfiles](#lockfiles)).
 
+Nor is a `tsconfig.json` (or a file one `extends`) or a `package.json` under `roots`: their options, `paths`, `type` or `exports` change how the files under them resolve or run, which no import says. A change to one seeds the files it governs, those it's the nearest of its kind to. A change the parsed file doesn't show (formatting, comments), or to a `package.json`'s metadata alone (`version`, `description`, `repository` and the like), seeds nothing, and a dependency change is the lockfile's.
+
 A file it can't lex cleanly is read by a regex extractor instead, which over-approximates. CSS isn't scanned: generated stylesheets reach their inputs through `edges`, and a [narrower](#narrowers) can do better.
 
 ## Config

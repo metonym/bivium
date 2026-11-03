@@ -12,6 +12,7 @@ import {
   walksByTypes,
 } from "./graph.ts";
 import { type PackageDiff, packageSeeds } from "./lockfile.ts";
+import type { SettingChange } from "./settings.ts";
 import type { FullRunCause, NarrowResult, Selection } from "./types.ts";
 
 export interface Plan {
@@ -24,6 +25,10 @@ export interface Plan {
   // What a lockfile or `package.json` change seeded or left out, a line per
   // changed package.
   packages: string[];
+  // What each changed `tsconfig.json` or `package.json` governs, a line per
+  // file, and the files it seeds → the file, for `why`.
+  settings: string[];
+  settingCauses: Map<string, string>;
   // What the walk started from, and each narrowed suite's narrowers: enough
   // to walk again and explain a selection.
   seeds: string[];
@@ -46,6 +51,9 @@ export interface PlanOptions {
   narrowed?: Narrowed[];
   // What the changed lockfiles and `package.json` files changed.
   packages?: PackageDiff;
+  // What each changed `tsconfig.json` or `package.json` the package diff
+  // doesn't account for can affect.
+  settings?: ReadonlyMap<string, SettingChange>;
 }
 
 // `all`, `none`, or the space-separated files, as CI step outputs.
@@ -77,6 +85,10 @@ interface Changes {
   // for them. Each seeds the walk, for the files that read it, but isn't
   // subject to the orphan rule: the packages it changed are how it's wired.
   packageFiles: string[];
+  // Changed `tsconfig.json` and `package.json` files whose effect is the
+  // files they govern: they seed those, and aren't subject to the orphan
+  // rule either.
+  settingFiles: string[];
   // Why suites run in full.
   causes: FullRunCause[];
 }
@@ -86,6 +98,7 @@ export function classify(
   changed: string[],
   config: ResolvedConfig,
   packages?: PackageDiff,
+  settings?: ReadonlyMap<string, SettingChange>,
 ): Changes {
   const causes: FullRunCause[] = [];
   const all = config.suites.map((suite) => suite.name);
@@ -94,6 +107,7 @@ export function classify(
   const relevant: string[] = [];
   const quiet: string[] = [];
   const packageFiles: string[] = [];
+  const settingFiles: string[] = [];
   for (const file of changed) {
     // `ignore` means "no test observes it", never "not a node": a file some
     // test reaches still selects that test.
@@ -128,7 +142,8 @@ export function classify(
         runAll({ kind: "lockfile", file, message: `${file}: ${reason}` });
       }
     } else if (read || config.roots.some((root) => inRoot(file, root))) {
-      (ignored ? quiet : relevant).push(file);
+      if (ignored) quiet.push(file);
+      else (settings?.has(file) ? settingFiles : relevant).push(file);
     } else {
       runAll({
         kind: "outside",
@@ -137,7 +152,7 @@ export function classify(
       });
     }
   }
-  return { relevant, quiet, packageFiles, causes };
+  return { relevant, quiet, packageFiles, settingFiles, causes };
 }
 
 // What a suite's narrowers select: the walk from the matched files stops at
@@ -221,14 +236,28 @@ export function planTests(
     layout = new Set<string>(),
     narrowed = [],
     packages,
+    settings,
   }: PlanOptions = {},
 ): Plan {
-  const { relevant, quiet, packageFiles, causes } = classify(
+  const { relevant, quiet, packageFiles, settingFiles, causes } = classify(
     graph,
     changed,
     config,
     packages,
+    settings,
   );
+  const settingCauses = new Map<string, string>();
+  const settingNotes: string[] = [];
+  for (const file of settingFiles) {
+    const change = settings?.get(file);
+    if (!change) continue;
+    settingNotes.push(change.note);
+    for (const seed of change.seeds) {
+      if (!settingCauses.has(seed)) {
+        settingCauses.set(seed, `governed by ${file}, which changed`);
+      }
+    }
+  }
   const bumped =
     packages && packageFiles.length > 0
       ? packageSeeds(graph, config, packages, packageFiles)
@@ -239,6 +268,8 @@ export function planTests(
   }
   const seeds = [
     ...relevant,
+    ...settingFiles,
+    ...settingCauses.keys(),
     ...barrelNames,
     ...packageFiles,
     ...bumped.seeds.keys(),
@@ -317,6 +348,8 @@ export function planTests(
     ),
     full: [...full],
     packages: bumped.notes,
+    settings: settingNotes,
+    settingCauses,
     seeds,
     quiet,
     layout,

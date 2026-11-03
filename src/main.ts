@@ -144,6 +144,7 @@ function logSelection(
 function logPlan({ plan, narrowed }: Computed) {
   for (const reason of plan.reasons) console.log(`Full run: ${reason}`);
   for (const line of plan.packages) console.log(line);
+  for (const line of plan.settings) console.log(line);
   for (const { narrower, result } of narrowed) {
     if ("note" in result && result.note) {
       console.log(`${narrower.name}: ${result.note}`);

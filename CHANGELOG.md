@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**
+
+- A change to a `tsconfig.json` (or a file one `extends`) or a
+  `package.json` under `roots` selected no test, though it can change
+  how every file under it resolves or runs: a `paths` mapping, `type`,
+  `exports`. It now selects the tests of the files it governs, the ones
+  it's the nearest of its kind to. A change that leaves the parsed file
+  the same, or only changes `package.json` metadata such as `version`,
+  still selects nothing (#54).
+
 ## 0.3.1 — 2026-11-03
 
 **Features**

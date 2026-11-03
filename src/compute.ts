@@ -20,6 +20,7 @@ import { type PackageDiff, readPackageDiff } from "./lockfile.ts";
 import { classify, type Narrowed, type Plan, planTests } from "./plan.ts";
 import { type PackageJson, type Packages, toPackageJson } from "./resolve.ts";
 import { type Extraction, extract, formatOf, SCANNED } from "./scan.ts";
+import { type SettingChange, settingChanges } from "./settings.ts";
 import { readTsconfigs, type TsConfigs } from "./tsconfig.ts";
 import type { Config, GraphView, PlanOptions, PlanResult } from "./types.ts";
 
@@ -238,8 +239,15 @@ async function runNarrowers(
   config: ResolvedConfig,
   suites: readonly string[] | undefined,
   packages: PackageDiff | undefined,
+  settings: ReadonlyMap<string, SettingChange>,
 ): Promise<Narrowed[]> {
-  const { relevant } = classify(graph, revision.changed, config, packages);
+  const { relevant } = classify(
+    graph,
+    revision.changed,
+    config,
+    packages,
+    settings,
+  );
   const wanted = config.narrowers.filter(
     (narrower) =>
       relevant.some(narrower.match) &&
@@ -344,6 +352,15 @@ export async function computePlan(
     tsconfigs,
   });
   const saved = cache.save();
+  const settings = await settingChanges({
+    changed: revision.changed,
+    files,
+    tsconfigs: ts.sources,
+    packages: packages.keys(),
+    accounted: new Set(packageDiff?.files.keys()),
+    base: revision.readBase,
+    head: (path) => readIfFile(join(root, path)),
+  });
 
   const moved = await Promise.all(
     [...basePending].map(async ([file, pending]) => {
@@ -370,12 +387,14 @@ export async function computePlan(
     config,
     suites,
     packageDiff,
+    settings,
   );
   const planned = planTests(graph, revision.changed, config, {
     barrelNames,
     layout: revision.layout,
     narrowed,
     packages: packageDiff,
+    settings,
   });
   await saved;
   return {
