@@ -4,6 +4,12 @@ Choices made while building Phase 1 where the plan
 (carbon-components-svelte `.context/test-graph-package/plan.md`) was silent,
 or turned out wrong in practice.
 
+The Phase 0 harnesses some entries cite (`eval/carbon/replay.ts`,
+`oracle.ts`, `summarize.ts`, `bench.ts`, `profile.ts` and their configs)
+needed Phase 0's recorded plans, which were never in the repository; they
+were removed after fcd3de2, which still has them. `eval/replay.ts` replaces
+the replay on any repository.
+
 ## 1. A suite's orphan-rule root defaults to the whole repo
 
 Carbon's orphan rule runs a suite in full when a changed file under the
