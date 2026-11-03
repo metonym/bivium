@@ -201,6 +201,7 @@ describe("computePlan with the cache", () => {
     git(dir, "init", "-q", "-b", "main");
     git(dir, "config", "user.email", "t@example.com");
     git(dir, "config", "user.name", "t");
+    git(dir, "config", "commit.gpgsign", "false");
     write(dir, {
       "package.json": JSON.stringify({ name: "lib" }),
       "src/a.js": "export const a = 1;",
@@ -329,6 +330,7 @@ describe("readRevision", () => {
     git(dir, "init", "-q", "-b", "main");
     git(dir, "config", "user.email", "t@example.com");
     git(dir, "config", "user.name", "t");
+    git(dir, "config", "commit.gpgsign", "false");
     write(
       dir,
       Object.fromEntries(names.map((name) => [`src/${name}.js`, ORIGINAL])),
@@ -439,6 +441,7 @@ describe("readRevision", () => {
     git(origin, "init", "-q", "-b", "main");
     git(origin, "config", "user.email", "t@example.com");
     git(origin, "config", "user.name", "t");
+    git(origin, "config", "commit.gpgsign", "false");
     git(origin, "config", "uploadpack.allowFilter", "true");
     git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
     const changed = ["a", "b", "c"];

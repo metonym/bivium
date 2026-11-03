@@ -30,6 +30,7 @@ function repo(extra: Record<string, string> = {}) {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.com");
   git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
   write(dir, {
     "package.json": JSON.stringify({
       name: "lib",
@@ -61,6 +62,7 @@ function e2eRepo() {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.com");
   git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
   write(dir, {
     "bivium.config.json": JSON.stringify({
       suites: {
@@ -449,6 +451,7 @@ describe("bivium why", () => {
     git(dir, "init", "-q", "-b", "main");
     git(dir, "config", "user.email", "t@example.com");
     git(dir, "config", "user.name", "t");
+    git(dir, "config", "commit.gpgsign", "false");
     write(dir, {
       "bivium.config.json": JSON.stringify({
         suites: {
@@ -733,6 +736,7 @@ function globRepo(test: string, config: object = {}) {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.com");
   git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
   write(dir, {
     "bivium.config.json": JSON.stringify({
       suites: { unit: { tests: "test/**/*.test.js", root: "test" } },

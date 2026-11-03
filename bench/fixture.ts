@@ -238,6 +238,8 @@ export function checkout(
     "user.email=b@example.com",
     "-c",
     "user.name=b",
+    "-c",
+    "commit.gpgsign=false",
     "commit",
     "-q",
     "-m",
