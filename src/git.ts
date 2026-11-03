@@ -306,8 +306,10 @@ function blobReader(
   };
   return (oid) => {
     queue.push(oid);
-    // Reads asked for in the same turn share one batch.
-    batch ??= new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
+    // Reads asked for in the same turn share one batch. A microtask, not
+    // setImmediate: a cold plan's lexing keeps the event loop busy, and a
+    // read held to the next turn of it waited on that.
+    batch ??= Promise.resolve().then(() => {
       const oids = queue;
       queue = [];
       batch = undefined;
