@@ -4,6 +4,7 @@ import { group, task } from "ostia";
 import { check } from "../src/check.ts";
 import { type Computed, computePlan } from "../src/compute.ts";
 import { resolveConfig } from "../src/config.ts";
+import { graphReport } from "../src/fanin.ts";
 import { readRevision } from "../src/git.ts";
 import { affectedBy, buildGraph, graphFrom } from "../src/graph.ts";
 import { readPackageDiff } from "../src/lockfile.ts";
@@ -88,6 +89,35 @@ group("walk", () => {
   task("reverse index, then a walk", () =>
     affectedBy(new Map(graph), ["src/utils/util0.ts"]),
   );
+  // A suite that runs code: the first walk builds the reverse index
+  // without type-only edges.
+  task("a util most components reach, types: false", () =>
+    affectedBy(graph, ["src/utils/util0.ts"], { types: false }),
+  );
+});
+
+// Every test given the same inputs by one `edges` key, a literal and a
+// glob: each is one pattern the walk tests once per node, not once per
+// test (#39).
+const shared = graphFrom(files.keys(), extractions, {
+  config: resolveConfig({
+    ...config,
+    edges: { "tests/*.test.ts": ["tests/render.ts", "src/utils/util1*.ts"] },
+  }),
+  packages,
+});
+group("walk: an edges input every test shares", () => {
+  task("a util most components reach", () =>
+    affectedBy(shared, ["src/utils/util0.ts"]),
+  );
+  task("the shared input changed", () =>
+    affectedBy(shared, ["tests/render.ts"]),
+  );
+});
+
+// `bivium graph`: every unit and e2e test's forward walk.
+group("graph: fan-in", () => {
+  task("every suite", () => graphReport(graph, resolved.suites));
 });
 
 // git is most of a warm plan on a real repository (carbon: ~45 of
@@ -145,6 +175,21 @@ group("lockfile: bun.lock bump", () => {
       ["bun.lock"],
       async (path) => (path === "bun.lock" ? lockBase : undefined),
       async (path) => (path === "bun.lock" ? lockHead : undefined),
+    ),
+  );
+});
+
+// The same bump in a v9 `pnpm-lock.yaml`, parsed by `src/yaml.ts`.
+const PNPM = "pnpm-lock.yaml";
+const pnpmBase = lockfile(800, [], PNPM);
+const pnpmHead = lockfile(800, ["pkg-3", "pkg-400"], PNPM);
+group("lockfile: pnpm-lock.yaml bump", () => {
+  task("parse and diff", () =>
+    readPackageDiff(
+      [PNPM],
+      [PNPM],
+      async (path) => (path === PNPM ? pnpmBase : undefined),
+      async (path) => (path === PNPM ? pnpmHead : undefined),
     ),
   );
 });

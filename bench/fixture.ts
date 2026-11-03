@@ -122,29 +122,89 @@ export function annotated(files: Map<string, string>): Map<string, string> {
   return out;
 }
 
-// A `bun.lock` with `count` packages, each depending on up to three
-// earlier ones, so a bump reaches dependents transitively. `bumped`
+interface Locked {
+  name: string;
+  version: string;
+  // Name → the version it resolved to.
+  dependencies: Record<string, string>;
+}
+
+// `count` packages, each depending on up to three earlier ones, so a bump
+// reaches dependents transitively, and the last 40 declared. `bumped`
 // raises those packages' versions.
-export function lockfile(count = 800, bumped: string[] = []): string {
+function locked(count: number, bumped: string[]) {
   const next = random(7);
   const names = Array.from({ length: count }, (_, i) => `pkg-${i}`);
-  const entries = names.map((name, i) => {
-    const deps: Record<string, string> = {};
-    for (let d = 0; d < 3 && i > 0; d++)
-      deps[names[Math.floor(next() * i)]] = "^1.0.0";
-    const version = bumped.includes(name) ? "1.0.1" : "1.0.0";
-    const info = JSON.stringify(i > 0 ? { dependencies: deps } : {});
+  const version = (name: string) => (bumped.includes(name) ? "1.0.1" : "1.0.0");
+  const packages = names.map((name, i): Locked => {
+    const dependencies: Record<string, string> = {};
+    for (let d = 0; d < 3 && i > 0; d++) {
+      const dep = names[Math.floor(next() * i)];
+      dependencies[dep] = version(dep);
+    }
+    return { name, version: version(name), dependencies };
+  });
+  return { packages, declared: packages.slice(-40) };
+}
+
+// A `bun.lock` (the default) or a v9 `pnpm-lock.yaml` of `locked`'s
+// packages.
+export function lockfile(
+  count = 800,
+  bumped: string[] = [],
+  format: "bun.lock" | "pnpm-lock.yaml" = "bun.lock",
+): string {
+  const { packages, declared } = locked(count, bumped);
+  if (format === "pnpm-lock.yaml") {
+    const importer = declared.map(
+      ({ name, version }) =>
+        `      ${name}:\n        specifier: ^1.0.0\n        version: ${version}`,
+    );
+    const metadata = packages.map(
+      ({ name, version }) =>
+        `  ${name}@${version}:\n    resolution: {integrity: sha512-${name}${version}}\n`,
+    );
+    const snapshots = packages.map(({ name, version, dependencies }) => {
+      const deps = Object.entries(dependencies);
+      if (deps.length === 0) return `  ${name}@${version}: {}\n`;
+      const lines = deps.map(([dep, v]) => `      ${dep}: ${v}`);
+      return `  ${name}@${version}:\n    dependencies:\n${lines.join("\n")}\n`;
+    });
+    return `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+${importer.join("\n")}
+
+packages:
+
+${metadata.join("\n")}
+snapshots:
+
+${snapshots.join("\n")}`;
+  }
+  const entries = packages.map(({ name, version, dependencies }, i) => {
+    const ranges = Object.fromEntries(
+      Object.keys(dependencies).map((dep) => [dep, "^1.0.0"]),
+    );
+    const info = JSON.stringify(i > 0 ? { dependencies: ranges } : {});
     return `    "${name}": ["${name}@${version}", "", ${info}, "sha512-${name}${version}"],`;
   });
-  const declared = Object.fromEntries(
-    names.slice(-40).map((name) => [name, "^1.0.0"]),
+  const devDependencies = Object.fromEntries(
+    declared.map(({ name }) => [name, "^1.0.0"]),
   );
   return `{
   "lockfileVersion": 1,
   "workspaces": {
     "": {
       "name": "fixture",
-      "devDependencies": ${JSON.stringify(declared)},
+      "devDependencies": ${JSON.stringify(devDependencies)},
     },
   },
   "packages": {
