@@ -77,10 +77,12 @@ The fixture is a generated, carbon-shaped repository with a fixed seed, so runs 
 | --- | --- |
 | `scan` | The lexer and the regex extractor over every file |
 | `graph` | Extraction and resolution, and resolution alone |
-| `walk` | `affectedBy` from a narrow and a wide seed, and with the reverse index rebuilt |
+| `walk` | `affectedBy` from a narrow and a wide seed, with the reverse index rebuilt, and for a suite with `types: false` |
+| `walk: an edges input every test shares` | The walk when one `edges` key gives every test the same inputs, a literal and a glob |
+| `graph` | `bivium graph`'s fan-in for every suite |
 | `git` | `readRevision` on a checkout, with and without blob OIDs |
 | `plan` | Cold and warm plans for one changed component, and a warm one for a change that reaches most tests through a util and the barrel |
-| `lockfile` | Parsing and diffing an 800-package `bun.lock` bump |
+| `lockfile` | Parsing and diffing an 800-package bump, as `bun.lock` and as `pnpm-lock.yaml` |
 | `inspect` | `check`, and `why --all` across four changes |
 
 On a real repository git is most of a warm plan (carbon-components-svelte: about 45 of 70 ms), which the fixture's small history understates, so check a change that touches git or resolution with `bench/phases.ts` too. On a shared machine, report the load average with any number, compare `Instr/call` (it holds steady under load where times don't), and prefer `ostia ab` to compare a change with `HEAD`.
