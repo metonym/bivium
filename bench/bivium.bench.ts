@@ -164,6 +164,50 @@ group(
   },
 );
 
+// A large pull request in a larger repository: 350 of about 5,900 files
+// changed, under a unit `root` that covers the sources, so the orphan
+// rule asks of each change whether a test reaches it. Cold, a plan reads
+// every file; `--peak-mem` shows what it holds.
+const largeConfig = resolveConfig({
+  ...config,
+  suites: {
+    ...config.suites,
+    unit: { ...config.suites.unit, root: ["src", "tests"] },
+  },
+});
+const largeEdits = [
+  ...Array.from({ length: 300 }, (_, i) => {
+    const c = i * 8;
+    return `src/components/Component${c}/Component${c}.svelte`;
+  }),
+  ...Array.from({ length: 50 }, (_, u) => `src/utils/util${u * 7}.ts`),
+];
+let largeDir = "";
+group(
+  "plan at scale (5,883 files, 350 changed)",
+  () => {
+    task("cold: no cache", () =>
+      computePlan(largeDir, "HEAD", largeConfig, { cache: false }),
+    );
+    task("warm", () =>
+      computePlan(largeDir, "HEAD", largeConfig, {
+        cache: join(largeDir, "node_modules/.cache/bivium"),
+      }),
+    );
+  },
+  {
+    // Built here, not at module scope, so `--peak-mem` doesn't reuse what
+    // building it freed.
+    before: async () => {
+      largeDir = checkout(repository(1, 6), largeEdits);
+      await computePlan(largeDir, "HEAD", largeConfig, {
+        cache: join(largeDir, "node_modules/.cache/bivium"),
+      });
+    },
+    after: () => rmSync(largeDir, { recursive: true, force: true }),
+  },
+);
+
 // A dependency bump in an 800-package lockfile: parse both sides, diff,
 // and walk the dependency tree back to the packages that declare them.
 const lockBase = lockfile();
