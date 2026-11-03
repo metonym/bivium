@@ -109,6 +109,9 @@ export async function readRevision(
   const mergeBase = mergeBaseOf(cwd, base);
   if (eager) mergeBase();
   const diffArgs = ["--no-renames", "--merge-base", base];
+  // Whether this is a partial clone, asked alongside the listing so a base
+  // read doesn't wait for it.
+  const promisor = promisorRemote(cwd).catch(() => undefined);
   // One listing of the whole repo: the index, and untracked files, which
   // count as changed anywhere (outside the roots, they run everything).
   const [listing, diff, staged] = await Promise.all([
@@ -137,8 +140,19 @@ export async function readRevision(
       before.set(path, oid);
     }
   }
-  const blob = blobReader(cwd);
+  const blob = blobReader(cwd, promisor);
+  // Each path is read once, whoever asks: the package diff and the
+  // setting files can both want a changed `package.json`.
+  const reads = new Map<string, Promise<string | undefined>>();
   const readBase = (path: string) => {
+    let read = reads.get(path);
+    if (read === undefined) {
+      read = readBaseOnce(path);
+      reads.set(path, read);
+    }
+    return read;
+  };
+  const readBaseOnce = (path: string) => {
     if (!before.has(path)) {
       // Unchanged since the merge base, here as there: no git, and no
       // fetch in a partial clone.
@@ -210,12 +224,13 @@ async function promisorRemote(cwd: string): Promise<string | undefined> {
 // Reads blobs by OID. In a partial clone each missing blob a read finds is
 // a fetch of its own, a round trip that took seconds on a CI runner, so the
 // reads asked for together are fetched together first: one round trip.
-function blobReader(cwd: string): (oid: string) => Promise<string | undefined> {
-  let remote: Promise<string | undefined> | undefined;
+function blobReader(
+  cwd: string,
+  remote: Promise<string | undefined>,
+): (oid: string) => Promise<string | undefined> {
   let queue: string[] = [];
   let batch: Promise<void> | undefined;
   const prefetch = async (oids: string[]) => {
-    remote ??= promisorRemote(cwd);
     const name = await remote;
     if (name === undefined) return;
     // `--missing=print` lists what isn't here without fetching it.
