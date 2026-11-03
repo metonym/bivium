@@ -52,6 +52,7 @@ function repo() {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.com");
   git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
   write(dir, {
     "package.json": json({ name: "app", version: "1.0.0", type: "module" }),
     "tsconfig.json": json({

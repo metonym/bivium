@@ -105,6 +105,8 @@ export default defineConfig({
       "user.email=t@example.com",
       "-c",
       "user.name=t",
+      "-c",
+      "commit.gpgsign=false",
       "commit",
       "-q",
       "-m",

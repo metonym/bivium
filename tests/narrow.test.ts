@@ -38,6 +38,7 @@ function repo(extra: Record<string, string> = {}) {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.com");
   git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
   write(dir, {
     "package.json": JSON.stringify({ name: "app" }),
     "styles/a.css": ".a { color: red }",
