@@ -1127,3 +1127,26 @@ failure, as the unknown nodes no test reaches are. On sveld,
 carbon-preprocess-svelte and carbon-components-svelte at 0.3.0 it found
 2, 1 and 10 such files, each one of those three kinds.
 
+## 57. A `goto()` bivium can't read is declared, not inferred
+
+#27 asked bivium to resolve `goto(route)` when `route` loops over a
+constant array of URLs. Doing that soundly needs to know that `route` is
+that loop's variable where the call is, not a parameter or another
+binding with the same name, and that the array never changes: scope
+analysis the one-pass lexer doesn't do, and a wrong guess drops a test.
+So the user declares it instead: a file's `@depends-on` (or an `edges`
+key that names it) now vouches for its non-literal `goto()` calls, as it
+already does for its disk reads, by naming the pages they can open.
+`@reads` and a `reads` key don't, since a page a test opens runs, and a
+file read as text doesn't.
+
+#26 asked for router adapters, starting with Next.js. An adapter would
+make the core framework-specific, so a `urls` value can be a list
+instead: the page first, then what else it loads that no import says,
+such as a file-based router's layouts, which is most of what an adapter
+would add. The page must exist, or the `goto()` is a missing fixture, as
+before; the others are edges where they exist. A list where any existing
+file would do would let a typo in the page's path hide behind its
+layouts. Route groups and dynamic segments are literal paths in the
+value (`/docs/*` → `app/docs/[...slug]/page.tsx`).
+

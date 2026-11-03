@@ -113,7 +113,7 @@ export function fixFor(cause: string) {
     return "name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for files read as text, or an `edges` or `reads` entry for the file in the config; list the file in `hermetic` if it reads no file of the repository";
   }
   if (cause.startsWith("non-literal goto(")) {
-    return "pass `goto()` a literal URL, or a template whose path before `?` or `#` is literal";
+    return "pass `goto()` a literal URL, or a template whose path before `?` or `#` is literal; or name the pages it can open with `// @depends-on <glob>`";
   }
   if (cause.startsWith("missing fixture ")) {
     return "no page at that URL: fix the URL, or the suite's `urls`";

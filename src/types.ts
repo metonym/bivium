@@ -17,8 +17,13 @@ export interface SuiteConfig {
    * calls are read. Paths, not globs. Default: the whole repository.
    */
   root?: string | readonly string[];
-  /** URL pattern → file pattern for `page.goto()`: `{ "/*": "e2e/fixtures/*" }`. */
-  urls?: Readonly<Record<string, string>>;
+  /**
+   * URL pattern → the page a `page.goto()` of it opens: `{ "/*":
+   * "e2e/fixtures/*" }`. A list names the page first, then what else it
+   * loads that no import says, such as a router's layouts; the page must
+   * exist, and the rest are edges where they do.
+   */
+  urls?: Readonly<Record<string, string | readonly string[]>>;
   /** Pages only a `goto()` opens. A changed file that only such pages load, and that no test opens, is wired to no test. */
   pages?: Globs;
   /** Files whose change runs the whole suite: a second harness, a runner config. */

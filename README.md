@@ -70,7 +70,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `suites.<name>.tests` | The suite's test files |
 | `suites.<name>.run` | The command `bivium run` runs. `{files}` is replaced by the selection (nothing for `all`); without it, the files are appended |
 | `suites.<name>.root` | Where the orphan rule applies: a changed file here that no test of the suite reaches is wired some other way (a setup file, a runner config), so the whole suite runs. Paths, not globs (`e2e`, not `e2e/**`): a glob is an error. Default: the whole repository |
-| `suites.<name>.urls` | URL pattern → file pattern, for `page.goto()` calls under `root` |
+| `suites.<name>.urls` | URL pattern → file pattern, for `page.goto()` calls under `root`. A list names the page first, then what else it loads that no import says, such as a router's layouts: `{ "/*": ["app/(site)/*/page.tsx", "app/(site)/layout.tsx", "app/layout.tsx"] }`. The page must exist; the rest are edges where they do |
 | `suites.<name>.pages` | Pages only a `goto()` opens; files only they load are wired to no test |
 | `suites.<name>.setup` | Files the runner loads before every test (Vitest and Jest `setupFiles`, Mocha `--require`, Playwright `globalSetup`): every test of the suite depends on them and what they import. bivium doesn't read the runner's config, so name them here |
 | `suites.<name>.wiring` | Files whose change runs the whole suite: another harness, a runner config |
@@ -171,7 +171,7 @@ unit tests: 4 of 12 files
 
 | Comment | Meaning |
 |:---|:---|
-| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns. Transitive. A file that reads the disk without one (or `@reads`, or `@lists`) is unknown, unless it's `hermetic` |
+| `// @depends-on <glob> [glob…]` | Inputs that aren't imports: files a script reads, a tool it spawns, the pages a `goto()` the graph can't read opens (a loop over a list of URLs). Transitive. A file that reads the disk without one (or `@reads`, or `@lists`), or calls `goto()` with a URL it can't read, is unknown, unless it's `hermetic` |
 | `// @reads <glob> [glob…]` | Files read as text. Only a direct change to one counts, not a change to what it imports. The config's `reads` says the same for files that can't hold a comment |
 | `// @lists <glob> [glob…]` | Files whose names it lists, not their contents: a convention test that checks every route has a handler. Only adding, deleting or renaming one counts; an edit doesn't select it, and doesn't run its suite by the orphan rule either |
 | `// @glob-registry` | This file's `import.meta.glob` is a lookup table and adds no edges: whatever loads an entry names it itself |

@@ -158,8 +158,8 @@ function edgeLine(
   }
   const target = fileOf(via.from);
   if (via.kind === "goto") {
-    const argument = extraction.gotos.find(
-      (candidate) => gotoPage(config, file, candidate) === target,
+    const argument = extraction.gotos.find((candidate) =>
+      gotoPage(config, file, candidate)?.includes(target),
     );
     return gotoLine(source, argument, target);
   }

@@ -84,6 +84,8 @@ function addPattern(
   deps.patternKinds.set(pattern, kind);
 }
 
+const NON_LITERAL_GOTO = "non-literal goto(";
+
 // The causes a `hermetic` file vouches for: what it reads or imports this way
 // is never a file of the repository.
 const HERMETIC_CAUSES = new Set([
@@ -119,29 +121,31 @@ function gotoSuite(
   );
 }
 
-function mapUrl(suite: ResolvedSuite, url: string): string | undefined {
-  for (const { key, target } of suite.urls) {
+// The files a URL loads by the first pattern that matches it, `*` in each
+// replaced by what the key's `*` matched.
+function mapUrl(suite: ResolvedSuite, url: string): string[] | undefined {
+  for (const { key, targets } of suite.urls) {
     const star = key.indexOf("*");
     if (star === -1) {
-      if (url === key) return target;
+      if (url === key) return targets;
       continue;
     }
     const prefix = key.slice(0, star);
     const suffix = key.slice(star + 1);
     if (url.startsWith(prefix) && url.endsWith(suffix)) {
       const match = url.slice(prefix.length, url.length - suffix.length);
-      return target.replaceAll("*", match);
+      return targets.map((target) => target.replaceAll("*", match));
     }
   }
   return undefined;
 }
 
-// The page a `goto()` argument in `path` opens, when its suite maps the URL.
+// The files a `goto()` argument in `path` loads, when its suite maps the URL.
 export function gotoPage(
   config: ResolvedConfig,
   path: string,
   argument: string,
-): string | undefined {
+): string[] | undefined {
   const suite = gotoSuite(config, path);
   const url = gotoUrl(argument);
   return suite === undefined || url === undefined
@@ -293,16 +297,24 @@ export function graphFrom(
       for (const argument of found.gotos) {
         const url = gotoUrl(argument);
         if (url === undefined) {
-          deps.unknown.push(`non-literal goto(${argument})`);
+          // Its `@depends-on` names what the file needs that the graph
+          // can't read, the pages it opens included.
+          if (found.dependsOn.length === 0) {
+            deps.unknown.push(`${NON_LITERAL_GOTO}${argument})`);
+          }
         } else if (url !== "about:blank") {
-          const page = mapUrl(suite, url.replace(QUERY, ""));
-          if (page === undefined) deps.unknown.push(`goto("${url}")`);
-          else if (exists.has(page)) {
-            if (!deps.files.has(page)) {
-              deps.pages ??= new Set();
-              deps.pages.add(page);
+          const mapped = mapUrl(suite, url.replace(QUERY, ""));
+          // The page must exist; what else it loads (layouts) counts when
+          // it does.
+          if (mapped === undefined) deps.unknown.push(`goto("${url}")`);
+          else if (exists.has(mapped[0] ?? "")) {
+            for (const page of mapped.filter((file) => exists.has(file))) {
+              if (!deps.files.has(page)) {
+                deps.pages ??= new Set();
+                deps.pages.add(page);
+              }
+              deps.files.add(page);
             }
-            deps.files.add(page);
           } else deps.unknown.push(`missing fixture "${url}"`);
         }
       }
@@ -356,11 +368,16 @@ export function graphFrom(
     }
   }
   for (const [path, deps] of graph) {
+    // An `edges` or `reads` key that names the file says what it reads, as
+    // its own `@depends-on` or `@reads` would, and an `edges` key also what
+    // pages it opens. One with a wildcard gives many files one input (each
+    // test its snapshot) and vouches for none of their other reads.
+    let depends = false;
     let declared = false;
     for (const edge of config.generated) {
       const inputs = edge.targets(path);
       if (!inputs) continue;
-      declared ||= edge.exact;
+      depends ||= edge.exact;
       for (const input of inputs) addPattern(deps, input, "edges");
     }
     for (const read of config.reads) {
@@ -369,12 +386,12 @@ export function graphFrom(
       declared ||= read.exact;
       deps.reads.push(...globs);
     }
-    // An `edges` or `reads` key that names the file says what it reads, as
-    // its own `@depends-on` or `@reads` would. One with a wildcard gives
-    // many files one input (each test its snapshot) and vouches for none
-    // of their other reads.
-    if (declared && deps.unknown.includes(UNDECLARED_READS)) {
-      deps.unknown = deps.unknown.filter((cause) => cause !== UNDECLARED_READS);
+    if (depends || declared) {
+      deps.unknown = deps.unknown.filter(
+        (cause) =>
+          cause !== UNDECLARED_READS &&
+          !(depends && cause.startsWith(NON_LITERAL_GOTO)),
+      );
     }
   }
   return graph;
