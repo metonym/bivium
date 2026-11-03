@@ -120,8 +120,8 @@ group("graph: fan-in", () => {
   task("every suite", () => graphReport(graph, resolved.suites));
 });
 
-// git is most of a warm plan on a real repository (carbon: ~45 of
-// ~70 ms), so its cost is tracked apart from what bivium computes.
+// git is most of a warm plan on a real repository (carbon: ~50 of
+// ~90 ms), so its cost is tracked apart from what bivium computes.
 let gitDir = "";
 group(
   "git: list and diff the checkout",

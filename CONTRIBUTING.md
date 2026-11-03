@@ -28,7 +28,7 @@ bun src/cli.ts plan   # the CLI from source
 5. **Narrowers.** Each narrower whose files changed runs (`runNarrowers`), with the graph and both trees.
 6. **Selection.** `planTests` (`src/plan.ts`) classifies the changes (ignored, the selector's own, wiring, a lockfile or dependency change, outside the roots, or seeds), seeds the `pkg:` nodes of changed packages and their dependents (`packageSeeds`), walks the graph backwards from the seeds (`affectedBy`), applies the orphan rule and the narrowers, and picks each suite's tests.
 
-`graph` (`src/fanin.ts`) counts each node's test fan-in by walking forward from every test. `why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
+`graph` (`src/fanin.ts`) counts each node's test fan-in by walking forward from every test. `why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes (against `knownUnknowns`), the files under a suite's `root` no test reaches (by `orphanOf`, the orphan rule `plan` applies), and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
 
 ## Rules every change must keep
 
@@ -79,14 +79,19 @@ The fixture is a generated, carbon-shaped repository with a fixed seed, so runs 
 | `graph` | Extraction and resolution, and resolution alone |
 | `walk` | `affectedBy` from a narrow and a wide seed, with the reverse index rebuilt, and for a suite with `types: false` |
 | `walk: an edges input every test shares` | The walk when one `edges` key gives every test the same inputs, a literal and a glob |
-| `graph` | `bivium graph`'s fan-in for every suite |
+| `graph: fan-in` | `bivium graph`'s fan-in for every suite |
 | `git` | `readRevision` on a checkout, with and without blob OIDs |
 | `plan` | Cold and warm plans for one changed component, and a warm one for a change that reaches most tests through a util and the barrel |
 | `plan at scale` | Cold and warm plans of 350 changes in a 5,900-file repository, under a `root` the orphan rule checks each change in; `--peak-mem` shows what a cold plan holds |
 | `lockfile` | Parsing and diffing an 800-package bump, as `bun.lock` and as `pnpm-lock.yaml` |
 | `inspect` | `check`, and `why --all` across four changes |
 
-On a real repository git is most of a warm plan (carbon-components-svelte: about 45 of 70 ms), which the fixture's small history understates, so check a change that touches git or resolution with `bench/phases.ts` too. On a shared machine, report the load average with any number, compare `Instr/call` (it holds steady under load where times don't), and prefer `ostia ab` to compare a change with `HEAD`.
+On a real repository git is most of a warm plan (carbon-components-svelte: about 50 of 90 ms), which the fixture's small history understates, so check a change that touches git or resolution with `bench/phases.ts` too. On a shared machine, report the load average with any number, compare `Instr/call` (it holds steady under load where times don't), and prefer `ostia ab` to compare a change with `HEAD`.
+
+Two traps when reading where the time goes:
+
+- On macOS, `/usr/bin/git` is a shim that finds Xcode's git on every call, about 10 ms each; a git stage measured there is mostly process start. Linux CI doesn't pay it. `GIT_TRACE2_PERF=1` gives git's own time per call.
+- A CPU profile (`bun --cpu-prof`) charges the time spent waiting on git to whatever runs next: it showed 15 ms in parsing a 61 KB `bun.lock` that takes 0.3 ms. Time a stage with `bench/phases.ts`, or the function alone, before optimizing it.
 
 ## Replay a repository's history
 
@@ -115,14 +120,23 @@ bun eval/carbon/bench-scan.ts <clone>                       # extraction alone: 
 
 A lexer change runs `scan-diff.ts` and `corpus.ts`, and `bench-scan.ts` if it claims speed; a change to the cache or to what it stores runs `cache-equal.ts`.
 
+## Commits and pull requests
+
+- One logical change per commit, with a subject in the repository's form: `type(scope): what it does`, imperative, lower case (`feat(check): list the files under a suite's root that no test reaches`). The body says why, and what was measured if it's a performance or precision change.
+- A pull request lists, per change, what it does, how it was verified, and before/after numbers where they apply, and closes its issues (`Closes #N`). Pull requests are rebase-merged, so every commit lands on `master` as written.
+- A user-visible change adds an entry under `## Unreleased` in `CHANGELOG.md`. A design choice the code alone doesn't explain, especially one settled by a measurement, adds an entry to `docs/decisions.md`.
+
 ## Releasing
 
 1. Move the `## Unreleased` entries in `CHANGELOG.md` under the new version.
-2. Bump `version` in `package.json` and commit as `vX.Y.Z`.
-3. Tag the commit (`git tag -s vX.Y.Z`) and push the tag. `release.yml` tests the packed package and publishes `dist/` to npm with provenance.
+2. Bump `version` in `package.json`, commit as `vX.Y.Z`, and push it to `master`.
+3. Tag the commit with a signed tag (`git tag -s vX.Y.Z`, which needs a GPG key git and GitHub know) and push the tag. `release.yml` tests the packed package and publishes `dist/` to npm with provenance.
+4. Create the GitHub release for the tag with the version's `CHANGELOG.md` section as its notes (`gh release create vX.Y.Z --notes-file <section>`); `release.yml` doesn't.
 
 ## Before you finish
 
 - [ ] `bun run lint`, `bun run typecheck`, `bun run knip`, `bun run test` and `bun run test:package` pass.
 - [ ] Scanner, resolver or selection changes: `eval/replay.ts` finds no unexplained difference.
+- [ ] Scanner changes: `SCANNER_VERSION` bumped and the fingerprint in `tests/cache.test.ts` updated, or the fingerprint alone when no extraction can change.
+- [ ] User-visible changes: an entry under `## Unreleased` in `CHANGELOG.md`. Design choices: an entry in `docs/decisions.md`.
 - [ ] The README and this guide still describe what the code does.
