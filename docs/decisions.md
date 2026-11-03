@@ -1181,3 +1181,36 @@ commit tells which. Replaying carbon's last 60 merges, v0.2.1 and 0.3.1
 select the same 11,473 of 56,345 test files; the one commit 0.2.1
 can't plan is the one that uses 0.3.0's `setup` key.
 
+## 59. A setting file seeds the files it governs
+
+A `tsconfig.json` or `package.json` under `roots` was an ordinary file
+no one imports, so a change to one selected nothing, while it can
+change what every file under it resolves to (`paths`, `exports`,
+`imports`, `name`) or how it runs (`type`, a compiler option the runner
+honors). On sveast, pointing the `paths` mapping every test imports
+through at another file planned no test. Outside `roots` the same files
+run everything, so only a config that lists them, as sveld's and
+sveast's do, had the gap.
+
+A changed one now seeds the files it governs: those whose nearest
+`tsconfig.json`, or `package.json`, it is, and for a file a
+`tsconfig.json` extends, those of each config that extends it. That's
+the scope the resolver already reads them by, and seeding files rather
+than running everything keeps a monorepo's change to one package's
+settings to that package and what imports it. It isn't subject to the
+orphan rule: the files it governs are how it's wired.
+
+Two changes seed nothing, because they can't change how a file
+resolves or runs: one the parsed JSON doesn't show (formatting,
+comments), and one to `package.json` fields that are metadata
+(`version`, `description`, `engines`, `keywords`, `author`,
+`contributors`, `maintainers`, `license`, `homepage`, `bugs`, `repository`, `funding`,
+`files`, `private`, `publishConfig`). The list names what doesn't count
+rather than what does, so a field it doesn't know, such as a runner's
+own key, counts. A release commit that bumps `version` still selects
+nothing, and so does one that declares `engines`, which package
+managers check at install and no runtime reads: replaying
+carbon-preprocess-svelte's last 100 commits, that was the one commit
+whose selection the change would otherwise widen. A dependency change the lockfile records stays with the
+package diff, which seeds the packages that changed.
+

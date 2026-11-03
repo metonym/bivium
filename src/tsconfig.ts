@@ -87,6 +87,10 @@ function extendsPath(file: string, target: string): string | undefined {
 
 interface ReadTsconfigs {
   tsconfigs: TsConfigs;
+  // Each config's directory → the files it reads: itself and every file
+  // its relative `extends` name, read or not, so a change to one, or its
+  // deletion, is a change to the config.
+  sources: Map<string, string[]>;
   // Files that don't parse, whose configs then have no `paths`.
   unparsed: { file: string; reason: string }[];
 }
@@ -153,9 +157,26 @@ export async function readTsconfigs(
     return merged;
   };
 
+  // `file` and what its `extends` name, transitively, with the `.json`
+  // fallback TypeScript tries for a missing one.
+  const chain = (file: string, into: Set<string>) => {
+    if (into.has(file)) return;
+    into.add(file);
+    const at = found(file);
+    if (at === undefined && !file.endsWith(".json")) into.add(`${file}.json`);
+    if (at === undefined || !("read" in at)) return;
+    for (const target of at.read.extends) {
+      const path = extendsPath(file, target);
+      if (path !== undefined) chain(path, into);
+    }
+  };
   const tsconfigs: TsConfigs = new Map();
+  const sources = new Map<string, string[]>();
   for (const file of files) {
     if (parsed.get(file) === undefined) continue;
+    const chained = new Set<string>();
+    chain(file, chained);
+    sources.set(posix.dirname(file), [...chained]);
     const options = effective(file, new Set());
     const resolved: TsPaths = { paths: {} };
     if (options?.baseUrl !== undefined) resolved.baseUrl = options.baseUrl;
@@ -173,5 +194,5 @@ export async function readTsconfigs(
     const at = parsed.get(file);
     if (at && "error" in at) unparsed.push({ file, reason: at.error });
   }
-  return { tsconfigs, unparsed };
+  return { tsconfigs, sources, unparsed };
 }

@@ -24,7 +24,7 @@ bun src/cli.ts plan   # the CLI from source
 1. **Git.** `readRevision` (`src/git.ts`) lists the files under the roots and the changed files, with one `ls-files` call and two diffs against the merge base, and each unchanged file's blob OID.
 2. **Extraction.** For each file the scanner reads, `extract` (`src/scan.ts`) returns its raw specifiers, globs, `goto()` arguments and annotations, from the one-pass lexer (`src/lex.ts`, with `src/host.ts` for files that embed scripts), or from the regex extractor (`src/scan-regex.ts`) when the lexer can't read the file. The cache (`src/cache.ts`) stores extractions by blob OID, so only files git can't vouch for are read. Leaves are never read.
 3. **Resolution.** `graphFrom` (`src/graph.ts`) resolves every specifier (`src/resolve.ts`) to the files it can load, a `pkg:` node, or unknown, binds named imports to barrel names, and applies `edges` and `reads`. Resolution runs every time: it depends on which files exist, and on the `package.json` and `tsconfig.json` files (`src/tsconfig.ts`), which are read on every run.
-4. **Packages.** When a root lockfile or a `package.json` changed, `readPackageDiff` (`src/lockfile.ts`) reads it in both trees and lists the packages whose entries or declared ranges changed, with the lockfiles' dependency tree. It runs alongside extraction.
+4. **Packages.** When a root lockfile or a `package.json` changed, `readPackageDiff` (`src/lockfile.ts`) reads it in both trees and lists the packages whose entries or declared ranges changed, with the lockfiles' dependency tree. It runs alongside extraction. `settingChanges` (`src/settings.ts`) compares any other changed `tsconfig.json`, file one extends, or `package.json` in both trees, and seeds the files each governs.
 5. **Narrowers.** Each narrower whose files changed runs (`runNarrowers`), with the graph and both trees.
 6. **Selection.** `planTests` (`src/plan.ts`) classifies the changes (ignored, the selector's own, wiring, a lockfile or dependency change, outside the roots, or seeds), seeds the `pkg:` nodes of changed packages and their dependents (`packageSeeds`), walks the graph backwards from the seeds (`affectedBy`), applies the orphan rule and the narrowers, and picks each suite's tests.
 
@@ -53,6 +53,7 @@ bun src/cli.ts plan   # the CLI from source
 | `tests/css-narrower.test.ts` | Carbon's CSS narrower (`eval/carbon/css-narrower.ts`) with fake tools |
 | `tests/cache.test.ts` | The cache's format, bounds and corruption handling, which files git vouches for, what `readRevision` reads at the merge base, and the scanner fingerprint |
 | `tests/config.test.ts` | Loading, checking and resolving configs |
+| `tests/settings.test.ts` | Changed `tsconfig.json`, extended and `package.json` files through `computePlan`: what each governs, nested configs and packages, deletion, formatting and metadata-only changes, the orphan rule, and `why` |
 | `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, `loadedByName`, unreadable lockfiles, `package-lock.json`, `pnpm-lock.yaml` |
 | `tests/main.test.ts` | `plan` and `run`, their outputs and options, and `plan()` from code |
 | `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs, hints and `knownUnknowns` included |
