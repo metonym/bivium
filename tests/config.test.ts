@@ -77,6 +77,10 @@ describe("checkConfig", () => {
       { suites: SUITES, knownUnknowns: [{ file: "a.ts" }] },
       "knownUnknowns[0] needs a file and reason",
     ],
+    [
+      { suites: { e2e: { tests: "e2e/**", urls: { "/*": ["a/*", 1] } } } },
+      "suites.e2e.urls must be a map of URL patterns",
+    ],
     [[], "not an object"],
   ])("rejects %j", (config, message) => {
     expect(() => checkConfig(config)).toThrow(message);

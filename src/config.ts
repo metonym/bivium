@@ -27,7 +27,7 @@ export function defineConfig<Suite extends string>(
 
 interface UrlPattern {
   key: string;
-  target: string;
+  targets: string[];
 }
 
 export interface ResolvedSuite {
@@ -161,9 +161,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
       isTest: matcher(suite.tests),
       run: suite.run,
       roots: list(suite.root, ["."]).map(normalizeRoot),
-      urls: Object.entries(suite.urls ?? {}).map(([key, target]) => ({
+      urls: Object.entries(suite.urls ?? {}).map(([key, targets]) => ({
         key,
-        target,
+        targets: list(targets, []),
       })),
       isPage: matcher(suite.pages),
       isWiring: matcher(suite.wiring),
@@ -340,7 +340,7 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
     tests,
     run: field(value, "run", isString, at, "a command"),
     root: paths(value, "root", at),
-    urls: field(value, "urls", isStringRecord, at, "a map of URL patterns"),
+    urls: field(value, "urls", isGlobsRecord, at, "a map of URL patterns"),
     pages: field(value, "pages", isGlobs, at, globs),
     wiring: field(value, "wiring", isGlobs, at, globs),
     setup: field(value, "setup", isGlobs, at, globs),

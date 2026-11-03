@@ -251,6 +251,75 @@ describe("dependencies", () => {
     },
   );
 
+  it("takes @depends-on, or an edges key for the file, as naming what a non-literal goto() opens", () => {
+    const loop = [
+      "// @depends-on e2e/fixtures/{about,careers}.html",
+      `const ROUTES = ["/about", "/careers"];`,
+      "for (const route of ROUTES) await page.goto(route);",
+    ].join("\n");
+    expect(deps("e2e/routes.test.ts", loop)).toMatchObject({
+      patterns: [String(globToRegExp("e2e/fixtures/{about,careers}.html"))],
+      unknown: [],
+    });
+    const plain = "for (const route of ROUTES) await page.goto(route);";
+    const edges = {
+      ...CONFIG,
+      edges: { "e2e/routes.test.ts": "e2e/fixtures/*.html" },
+    };
+    expect(
+      deps("e2e/routes.test.ts", plain, {}, { config: edges }).unknown,
+    ).toEqual([]);
+    // A `reads` key says what it reads as text, not what pages it opens.
+    const reads = {
+      ...CONFIG,
+      reads: { "e2e/routes.test.ts": "e2e/fixtures/*.html" },
+    };
+    expect(
+      deps("e2e/routes.test.ts", plain, {}, { config: reads }).unknown,
+    ).toEqual(["non-literal goto(route)"]);
+  });
+
+  it("maps a URL to every file a urls list names that exists", () => {
+    const config: Config = {
+      ...CONFIG,
+      suites: {
+        ...CONFIG.suites,
+        e2e: {
+          ...CONFIG.suites.e2e,
+          urls: {
+            "/*": [
+              "app/(marketing)/*/page.tsx",
+              "app/(marketing)/layout.tsx",
+              "app/layout.tsx",
+            ],
+          },
+        },
+      },
+    };
+    const extra = {
+      "app/layout.tsx": "export default 1;",
+      "app/(marketing)/layout.tsx": "export default 1;",
+      "app/(marketing)/about/page.tsx": "export default 1;",
+    };
+    expect(
+      deps("e2e/about.test.ts", `await page.goto("/about");`, extra, {
+        config,
+      }),
+    ).toMatchObject({
+      files: [
+        "app/(marketing)/about/page.tsx",
+        "app/(marketing)/layout.tsx",
+        "app/layout.tsx",
+      ],
+      unknown: [],
+    });
+    // The page itself must exist: its layouts alone would hide a typo.
+    expect(
+      deps("e2e/gone.test.ts", `await page.goto("/gone");`, extra, { config })
+        .unknown,
+    ).toEqual([`missing fixture "/gone"`]);
+  });
+
   it("reads goto() only under a suite with urls", () => {
     expect(deps("tests/x.test.ts", "await page.goto(url);").unknown).toEqual(
       [],

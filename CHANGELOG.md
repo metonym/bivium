@@ -10,6 +10,15 @@
   looks like (`reads` for a test's snapshot, `wiring` for a runner's
   config, `nonInputs` otherwise), and `check --json` has them as
   `unreached`. It's reported, not a failure (#48).
+- A `urls` value can be a list: the page first, then what else it loads
+  that no import says, such as a router's layouts (`/about` →
+  `app/(marketing)/about/page.tsx`, `app/(marketing)/layout.tsx`,
+  `app/layout.tsx`). The page must exist; the rest are edges where they
+  do (#26).
+- A file's `@depends-on`, or an `edges` key that names it, now also
+  covers its `goto()` calls whose URL bivium can't read, such as a loop
+  over a list of routes: list the pages they open, and the file is no
+  longer unknown (#27).
 
 ## 0.3.0 — 2026-11-02
 
