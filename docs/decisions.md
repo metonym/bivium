@@ -1229,10 +1229,15 @@ Reads asked for in the same turn now share a batch: in a partial clone,
 without fetching them, and one `fetch` with no negotiation brings them
 all, after which each `git show` is local. A failed fetch leaves each
 read to fetch its own blob, as before. Whether the clone is partial is
-one `git config` call, made alongside the listing and the diffs: asked
-on the first base read instead, it held that read back by about 30 ms,
-which the release replay caught as carbon's median plan going from 230
-to 249 ms. Each path is read once, however many ask: the package diff
+read from the repository's config file, which `git clone --filter`
+marks (`extensions.partialClone`, the remote's `promisor`), found from
+the working directory up and through a worktree's `commondir`. A
+`git config` call asked on the first base read held it back by about
+30 ms, which the release replay caught as carbon's median plan going
+from 230 to 249 ms; run alongside the listing, it still cost the small
+repositories about 4 ms, a process start. A config the file read
+misses, such as one set through an `include`, only leaves each read to
+fetch its own blob. Each path is read once, however many ask: the package diff
 and the setting files both read a changed `package.json`.
 
 A read of a file unchanged since the merge base, as a narrower makes,
