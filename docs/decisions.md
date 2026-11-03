@@ -1150,3 +1150,28 @@ file would do would let a typo in the page's path hide behind its
 layouts. Route groups and dynamic segments are literal paths in the
 value (`/docs/*` → `app/docs/[...slug]/page.tsx`).
 
+## 58. A replay plans each commit with its own config
+
+The golden check needs carbon's Phase 0 data, which a fresh checkout
+doesn't have, so `eval/replay.ts` replays any repository's history
+instead: the last N first-parent commits, each planned against its
+parent, cold, with two builds of bivium built into temporary worktrees.
+
+The first version of this (for 0.3.0's PR) planned every commit with
+the repository's config of the day, and reported large gains for sveld
+and carbon-preprocess-svelte that weren't real: most commits predated
+the `// @reads` annotations those repositories added when they adopted
+bivium, so the old code showed gaps that had since closed. So a replay
+uses the config each commit had, skipping a commit without one, and a
+fixed `--config` is an explicit choice for trying a change.
+
+A config is copied outside the checkout, since an untracked file in it
+would be a change, with `bivium` imported from the build under test and
+relative imports made absolute. Linked dependencies are excluded from
+git in the clone, for the same reason. The report leads with the
+commits where the new build selects a test the old one doesn't, since
+each is either a miss fixed or a regression, and only reading the
+commit tells which. Replaying carbon's last 60 merges, v0.2.1 and 0.3.1
+select the same 11,473 of 56,345 test files; the one commit 0.2.1
+can't plan is the one that uses 0.3.0's `setup` key.
+
