@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Computed } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
+import { fanIn } from "./fanin.ts";
 import { globToRegExp } from "./glob.ts";
 import { walksByTypes } from "./graph.ts";
 import {
@@ -11,10 +12,12 @@ import {
   sourceOf,
   specifierLine,
 } from "./locate.ts";
+import { orphanOf } from "./plan.ts";
 import { aliasPath } from "./resolve.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
+import { plural } from "./text.ts";
 
 interface Unknown {
   node: string;
@@ -65,6 +68,9 @@ export interface Report {
   // that it doesn't list, and its entries for nodes that aren't unknown.
   unlistedUnknowns: string[];
   staleKnownUnknowns: { file: string; reason: string; fix: string }[];
+  // Files under a suite's `root` that no test of it reaches and that the
+  // config doesn't exempt: a change to one runs the whole suite.
+  unreached: { suite: string; file: string; fix: string }[];
 }
 
 const EXAMPLES = 3;
@@ -364,6 +370,52 @@ async function findDeadGlobs(
   ];
 }
 
+const CONFIG_FILE =
+  /(?:^|[./_-])(?:config|setup|teardown|harness)(?:[./_-]|$)|^tsconfig[^/]*\.json$|^\.[^/]*rc(?:\.[^/]+)?$/;
+
+// How to stop a change to `file`, which no test reaches, from running the
+// whole suite, by what it looks like: a test's own file (a snapshot named
+// after it), a runner's config or harness, or anything else.
+function unreachedFix(file: string, tests: readonly string[]): string {
+  const name = posix.basename(file);
+  const owner = tests.find((test) =>
+    name.startsWith(`${posix.basename(test)}.`),
+  );
+  if (owner !== undefined) {
+    return `if ${owner} reads it, add \`reads: { "${owner}": "${file}" }\` (or \`// @reads ${file}\` in the test)`;
+  }
+  if (CONFIG_FILE.test(name)) {
+    return "if the runner loads it, name it in the suite's `wiring` (or `setup`, if it runs before every test), which makes the full run deliberate";
+  }
+  return "if a test reads or runs it, say so with `reads` or `@depends-on` in that test or what loads it; if none can observe it, list it in the suite's `nonInputs`, or delete it if it's dead";
+}
+
+// The files a change to which the orphan rule would run a suite for. Each
+// suite's forward walk from its tests rules out what any test reaches, so
+// only the rest pay for a walk of their own.
+function unreachedFiles(
+  config: ResolvedConfig,
+  { graph }: Computed,
+): Report["unreached"] {
+  const found: Report["unreached"] = [];
+  const files = [...graph.keys()].filter(
+    (node) => !node.startsWith("pkg:") && !node.includes("#"),
+  );
+  for (const suite of config.suites) {
+    const reached = fanIn(graph, suite);
+    const tests = files.filter(suite.isTest);
+    for (const file of files) {
+      if ((reached.get(file) ?? 0) > 0) continue;
+      // Exempt, or run in full by a rule the config chose.
+      if (config.isIgnored(file) || config.isSelf(file)) continue;
+      if (suite.isWiring(file)) continue;
+      if (!orphanOf(graph, config, suite, file)) continue;
+      found.push({ suite: suite.name, file, fix: unreachedFix(file, tests) });
+    }
+  }
+  return found;
+}
+
 // Every node with unknown dependencies, with where and how to fix each
 // cause, and every dead glob `deadGlobs` doesn't allow.
 export async function check(
@@ -412,6 +464,7 @@ export async function check(
     reason,
   }));
   const dead = await findDeadGlobs(root, config, computed);
+  const unreached = unreachedFiles(config, computed);
   const allows = (entry: { file: string; glob: string }, found: DeadGlob) =>
     entry.file === found.node && entry.glob === found.glob;
   return {
@@ -434,6 +487,7 @@ export async function check(
         ...entry,
         fix: "remove the entry: its dependencies are known now",
       })),
+    unreached,
     staleDeadGlobs: config.deadGlobs
       .filter((entry) => !dead.some((found) => allows(entry, found)))
       .map((entry) => ({
@@ -561,6 +615,11 @@ function summaryLines(report: Report): string[] {
       "stale `knownUnknowns` entry",
       "stale `knownUnknowns` entries",
     ],
+    [
+      report.unreached.length,
+      "file under a suite's root that no test reaches",
+      "files under a suite's root that no test reaches",
+    ],
   ] as const;
   for (const [count, one, many] of problems) {
     if (count > 0) lines.push(plural(count, one, many));
@@ -570,8 +629,35 @@ function summaryLines(report: Report): string[] {
     : ["Summary:", ...lines.map((line) => `  ${line}`), ""];
 }
 
-export function plural(count: number, one: string, many = `${one}s`) {
-  return `${count} ${count === 1 ? one : many}`;
+// Files listed one by one per suite; past that, counted by directory.
+const UNREACHED_SHOWN = 10;
+
+function pushUnreached(lines: string[], unreached: Report["unreached"]) {
+  if (unreached.length === 0) return;
+  lines.push(
+    "",
+    "Files under a suite's root that no test reaches: a change to one runs the whole suite:",
+  );
+  for (const suite of new Set(unreached.map((entry) => entry.suite))) {
+    const entries = unreached.filter((entry) => entry.suite === suite);
+    lines.push(`  ${suite} (${entries.length})`);
+    for (const { file, fix } of entries.slice(0, UNREACHED_SHOWN)) {
+      lines.push(`    ${file}`, `      fix: ${fix}`);
+    }
+    const rest = entries.slice(UNREACHED_SHOWN);
+    if (rest.length === 0) continue;
+    const dirs = new Map<string, number>();
+    for (const { file } of rest) {
+      const dir = posix.dirname(file);
+      dirs.set(dir, (dirs.get(dir) ?? 0) + 1);
+    }
+    const counts = [...dirs]
+      .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+      .map(([dir, count]) => `${dir}/ (${count})`);
+    lines.push(
+      `    … ${rest.length} more in ${counts.slice(0, 5).join(", ")}${counts.length > 5 ? ", …" : ""} (--json lists each)`,
+    );
+  }
 }
 
 export function formatReport(report: Report, max: number | undefined): string {
@@ -595,6 +681,7 @@ export function formatReport(report: Report, max: number | undefined): string {
       lines.push(`  ${file}: ${reason}`);
     }
   }
+  pushUnreached(lines, report.unreached);
   if (report.unparsedTsconfigs.length > 0) {
     lines.push(
       "",

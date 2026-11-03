@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+**Features**
+
+- `bivium check` lists the files under a suite's `root` that no test
+  reaches and the config doesn't exempt: a change to any of them runs
+  the whole suite by the orphan rule. Each comes with a fix by what it
+  looks like (`reads` for a test's snapshot, `wiring` for a runner's
+  config, `nonInputs` otherwise), and `check --json` has them as
+  `unreached`. It's reported, not a failure (#48).
+
 ## 0.3.0 — 2026-11-02
 
 **Breaking changes**
