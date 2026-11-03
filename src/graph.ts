@@ -542,6 +542,18 @@ function runtimeDependents(
   return runtime;
 }
 
+/** Whether a walk from `changed` reaches a node `match` accepts. */
+export function reaches(
+  graph: Graph,
+  changed: Iterable<string>,
+  match: (path: string) => boolean,
+  options: Omit<WalkOptions, "until" | "parents"> = {},
+): boolean {
+  const reached = affectedBy(graph, changed, { ...options, until: match });
+  for (const path of reached) if (match(path)) return true;
+  return false;
+}
+
 // Walks from `changed` as a suite with each `types` setting would, each
 // at most once.
 export function walksByTypes(
@@ -616,6 +628,9 @@ export interface WalkOptions {
   // node isn't a change, so what it puts on every change skips its readers.
   readers?: boolean;
   opaque?: (path: string) => boolean;
+  // Stops the walk at the first node it matches, for a caller that only
+  // asks whether one is reached.
+  until?: (path: string) => boolean;
   // Filled with how each node other than a seed was first reached. The walk
   // is breadth-first, so following them back is a shortest chain.
   parents?: Map<string, Via>;
@@ -635,6 +650,7 @@ export function affectedBy(
     layout,
     readers: seedReaders = true,
     opaque,
+    until,
     parents,
   }: WalkOptions = {},
 ): Set<string> {
@@ -643,11 +659,13 @@ export function affectedBy(
   const dependents = types ? index.dependents : runtimeDependents(graph, index);
   const affected = new Set<string>();
   const queue: string[] = [];
+  let done = false;
   const visit = (path: string, via?: Via) => {
     if (affected.has(path) || opaque?.(path)) return;
     affected.add(path);
     queue.push(path);
     if (via && parents) parents.set(path, via);
+    if (until?.(path)) done = true;
   };
   const visitGroup = (group: PatternGroup, from: string) => {
     const { nodes, kinds } = group;
@@ -694,7 +712,7 @@ export function affectedBy(
     spent ??= new Set();
     spent.add(group);
   };
-  for (let at = 0; at < queue.length; at++) {
+  for (let at = 0; at < queue.length && !done; at++) {
     const path = queue[at];
     for (const dependent of dependents.get(path) ?? []) {
       visit(

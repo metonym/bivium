@@ -82,6 +82,7 @@ The fixture is a generated, carbon-shaped repository with a fixed seed, so runs 
 | `graph` | `bivium graph`'s fan-in for every suite |
 | `git` | `readRevision` on a checkout, with and without blob OIDs |
 | `plan` | Cold and warm plans for one changed component, and a warm one for a change that reaches most tests through a util and the barrel |
+| `plan at scale` | Cold and warm plans of 350 changes in a 5,900-file repository, under a `root` the orphan rule checks each change in; `--peak-mem` shows what a cold plan holds |
 | `lockfile` | Parsing and diffing an 800-package bump, as `bun.lock` and as `pnpm-lock.yaml` |
 | `inspect` | `check`, and `why --all` across four changes |
 

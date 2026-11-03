@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import type { ResolvedConfig } from "./config.ts";
-import { type Graph, walksByTypes } from "./graph.ts";
+import { type Graph, reaches } from "./graph.ts";
 import { byCodeUnit, sorted } from "./sorted.ts";
 import { parseYaml } from "./yaml.ts";
 
@@ -562,20 +562,22 @@ export function packageSeeds(
   const { isLoadedByName } = config;
   const loadedOtherwise = (name: string) =>
     isLoadedByName === undefined || diff.bins.has(name) || isLoadedByName(name);
-  const reaches = new Map<string, boolean>();
+  const tested = new Map<string, boolean>();
   const reachesTest = (name: string) => {
-    let found = reaches.get(name);
+    let found = tested.get(name);
     if (found === undefined) {
       const node = `pkg:${name}`;
       // By a suite's own walk: a type import reaches no test of a suite
       // that runs code.
-      const reach = walksByTypes(graph, [node], { includeUnknown: false });
       found =
         graph.has(node) &&
         config.suites.some((suite) =>
-          [...reach(suite.types)].some(suite.isTest),
+          reaches(graph, [node], suite.isTest, {
+            includeUnknown: false,
+            types: suite.types,
+          }),
         );
-      reaches.set(name, found);
+      tested.set(name, found);
     }
     return found;
   };

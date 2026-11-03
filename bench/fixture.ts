@@ -8,9 +8,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Config } from "../src/types.ts";
 
-const COMPONENTS = 400;
-const UTILS = 60;
-
 // mulberry32: small and seedable, so every run gets the same repository.
 function random(seed: number) {
   let state = seed;
@@ -29,7 +26,12 @@ const lorem = (next: () => number, lines: number) =>
       `  const value${i} = ${Math.floor(next() * 1000)} / 7; // ${"x".repeat(Math.floor(next() * 40))}`,
   ).join("\n");
 
-export function repository(seed = 1): Map<string, string> {
+// `scale` multiplies the components, utilities and pages: 1 is about
+// 1,000 files, 6 about 5,500.
+export function repository(seed = 1, scale = 1): Map<string, string> {
+  const COMPONENTS = 400 * scale;
+  const UTILS = 60 * scale;
+  const PAGES = 40 * scale;
   const next = random(seed);
   const pick = (n: number) => Math.floor(next() * n);
   const files = new Map<string, string>();
@@ -68,7 +70,7 @@ export function repository(seed = 1): Map<string, string> {
     "tests/render.ts",
     "export function render(component: unknown) { return component; }\n",
   );
-  for (let p = 0; p < 40; p++) {
+  for (let p = 0; p < PAGES; p++) {
     files.set(
       `e2e/fixtures/page${p}.html`,
       `<script type="module" src="./page${p}.ts"></script>\n`,

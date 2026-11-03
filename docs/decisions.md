@@ -1088,3 +1088,16 @@ imports it, a change that reaches it selects its importers' tests and
 nothing more. bivium has no built-in list: `happy-dom` is a library to
 one repository and a test environment to another.
 
+## 55. Backstops stop at the first test
+
+The orphan rule asks of each changed file under a suite's `root` whether
+any test of the suite reaches it, and the lockfile check asks the same of
+each changed package. Both walked everything that depends on the file
+and then looked for a test, so a pull request of hundreds of files paid
+a full walk each. `affectedBy` takes `until`, which ends the walk at the
+first node it accepts, and `reaches` wraps it. The orphan rule stops at
+a test or a page (either means the file isn't an orphan). On the bench's
+5,900-file repository with 350 changes, the selection step went from
+21.7 ms to 8.1 ms with the same selections. A file no test reaches still
+costs a full walk: that's the case that runs the suite.
+

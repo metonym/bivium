@@ -71,6 +71,10 @@
   the file's text, and reads 64 at a time. A cold plan of 7,000 files
   needs a 20 MB heap on Node instead of over 64 MB, and peaks at 124 MB
   of RSS instead of 285 MB (Bun: 88 MB instead of 115 MB) (#42).
+- The orphan rule's walk from each changed file stops at the first test
+  or page it reaches, as does the lockfile check for a package a test
+  imports: with 350 changes in 5,900 files, the selection step took
+  21.7 ms and now 8.1 ms.
 
 **Fixes**
 

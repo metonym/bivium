@@ -3,7 +3,13 @@ import {
   type ResolvedConfig,
   type ResolvedNarrower,
 } from "./config.ts";
-import { affectedBy, DECLARATION, type Graph, walksByTypes } from "./graph.ts";
+import {
+  affectedBy,
+  DECLARATION,
+  type Graph,
+  reaches,
+  walksByTypes,
+} from "./graph.ts";
 import { type PackageDiff, packageSeeds } from "./lockfile.ts";
 import type { FullRunCause, NarrowResult, Selection } from "./types.ts";
 
@@ -205,32 +211,33 @@ export function planTests(
 
   // A changed config or helper file that no test imports is wired in some
   // other way (an undeclared setup file, webServer, …): run its whole suite.
-  const reaches = new Map<string, (types: boolean) => Set<string>>();
+  // Each walk stops at the first test or page it reaches. A page is opened
+  // by a test's goto(), which the graph reads, so a page no test reaches,
+  // and the files only such pages load, are wired to no test at all.
   for (const suite of config.suites) {
-    const suiteTests = tests.get(suite.name) ?? [];
+    const wired = (path: string) => suite.isTest(path) || suite.isPage(path);
     for (const file of relevant) {
       if (!suite.roots.some((root) => inRoot(file, root))) continue;
-      let reachOf = reaches.get(file);
-      if (!reachOf) {
-        reachOf = walksByTypes(graph, [file], { includeUnknown: false });
-        reaches.set(file, reachOf);
-      }
       // A suite that runs code is reached only at runtime: a file a test
       // just type-imports may still be one the runner loads. A declaration
       // file never is.
-      const reach = reachOf(suite.types || DECLARATION.test(file));
-      if (suiteTests.some((test) => reach.has(test))) continue;
+      if (
+        reaches(graph, [file], wired, {
+          includeUnknown: false,
+          types: suite.types || DECLARATION.test(file),
+        })
+      ) {
+        continue;
+      }
       const deleted = !graph.has(file);
       if (deleted && suite.isTest(file)) continue;
       // An importer left pointing at a deleted import-only file can't
       // resolve it, so it runs as unknown anyway.
       if (deleted && config.isImportOnly(file)) continue;
       if (suite.isNonInput(file)) continue;
-      // A page is opened by a test's goto(), which the graph reads, so a
-      // page no test reaches, and the files only such pages load, are wired
-      // to no test at all.
-      if ([...reach].some(suite.isPage)) continue;
-      const typed = [...reachOf(true)].some(suite.isTest);
+      const typed =
+        !suite.types &&
+        reaches(graph, [file], suite.isTest, { includeUnknown: false });
       causes.push({
         kind: "orphan",
         suites: [suite.name],
