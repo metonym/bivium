@@ -311,6 +311,9 @@ describe("computePlan with the cache", () => {
   });
 });
 
+// A `git fetch` starting, in a GIT_TRACE2 log.
+const FETCH_START = / start .*\bfetch\b/;
+
 describe("readRevision", () => {
   const ORIGINAL = "export const x = 0;";
   const EDIT = "export const x = 1;";
@@ -407,5 +410,54 @@ describe("readRevision", () => {
     expect(await read(kept)).toEqual(kept.map(() => ORIGINAL));
     const absent = ["g", "h", "n", "x", "nowhere"];
     expect(await read(absent)).toEqual(absent.map(() => undefined));
+  });
+
+  it("fetches a partial clone's missing base files in one round trip", async () => {
+    const origin = temp("bivium-origin-");
+    git(origin, "init", "-q", "-b", "main");
+    git(origin, "config", "user.email", "t@example.com");
+    git(origin, "config", "user.name", "t");
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+    const changed = ["a", "b", "c"];
+    // A blob each, and the same one twice.
+    const text = (name: string) => `export const ${name} = 0;`;
+    write(origin, {
+      ...Object.fromEntries(
+        changed.map((name) => [`src/${name}.js`, text(name)]),
+      ),
+      "src/d.js": text("a"),
+    });
+    git(origin, "add", "-A");
+    git(origin, "commit", "-q", "-m", "base");
+    write(origin, {
+      ...Object.fromEntries(changed.map((name) => [`src/${name}.js`, EDIT])),
+      "src/d.js": EDIT,
+    });
+    git(origin, "commit", "-q", "-am", "edits");
+    const dir = join(temp("bivium-partial-"), "clone");
+    git(
+      dirname(dir),
+      "clone",
+      "-q",
+      "--filter=blob:none",
+      `file://${origin}`,
+      dir,
+    );
+    const trace = join(dirname(dir), "trace");
+    const revision = await readRevision(dir, "HEAD~1", ["src"]);
+    process.env.GIT_TRACE2 = trace;
+    try {
+      const texts = await Promise.all(
+        [...changed, "d"].map((name) => revision.readBase(`src/${name}.js`)),
+      );
+      expect(texts).toEqual([...changed, "a"].map(text));
+    } finally {
+      delete process.env.GIT_TRACE2;
+    }
+    const fetches = readFileSync(trace, "utf-8")
+      .split("\n")
+      .filter((line) => FETCH_START.test(line));
+    expect(fetches).toHaveLength(1);
   });
 });

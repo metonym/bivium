@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { inRoot } from "./config.ts";
 import { sorted } from "./sorted.ts";
 
@@ -135,12 +137,20 @@ export async function readRevision(
       before.set(path, oid);
     }
   }
+  const blob = blobReader(cwd);
   const readBase = (path: string) => {
     if (!before.has(path)) {
+      // Unchanged since the merge base, here as there: no git, and no
+      // fetch in a partial clone.
+      if (present.has(path)) {
+        return readFile(join(cwd, path), "utf-8").catch(() =>
+          mergeBase().then((commit) => show(cwd, `${commit}:${path}`)),
+        );
+      }
       return mergeBase().then((commit) => show(cwd, `${commit}:${path}`));
     }
     const oid = before.get(path);
-    return oid === undefined ? Promise.resolve(undefined) : show(cwd, oid);
+    return oid === undefined ? Promise.resolve(undefined) : blob(oid);
   };
   const changed = [...new Set([...diffed, ...untracked])];
   const dirty = new Set([...changed, ...lines(staged)]);
@@ -178,6 +188,74 @@ export async function readRevision(
     readBase,
     blobs: oids,
     present,
+  };
+}
+
+// The remote a partial clone fetches missing objects from, if it is one.
+async function promisorRemote(cwd: string): Promise<string | undefined> {
+  const result = await git(
+    cwd,
+    "config",
+    "--get-regexp",
+    "^remote\\..*\\.promisor$",
+  );
+  for (const line of lines(result.stdout)) {
+    const [key, value] = line.split(" ");
+    if (value === "true")
+      return key.slice("remote.".length, -".promisor".length);
+  }
+  return undefined;
+}
+
+// Reads blobs by OID. In a partial clone each missing blob a read finds is
+// a fetch of its own, a round trip that took seconds on a CI runner, so the
+// reads asked for together are fetched together first: one round trip.
+function blobReader(cwd: string): (oid: string) => Promise<string | undefined> {
+  let remote: Promise<string | undefined> | undefined;
+  let queue: string[] = [];
+  let batch: Promise<void> | undefined;
+  const prefetch = async (oids: string[]) => {
+    remote ??= promisorRemote(cwd);
+    const name = await remote;
+    if (name === undefined) return;
+    // `--missing=print` lists what isn't here without fetching it.
+    const listed = await git(
+      cwd,
+      "rev-list",
+      "--objects",
+      "--no-walk",
+      "--missing=print",
+      ...oids,
+    );
+    const missing = lines(listed.stdout)
+      .filter((line) => line.startsWith("?"))
+      .map((line) => line.slice(1));
+    if (missing.length === 0) return;
+    await git(
+      cwd,
+      "-c",
+      "fetch.negotiationAlgorithm=noop",
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      "--no-write-fetch-head",
+      "--recurse-submodules=no",
+      "--filter=blob:none",
+      name,
+      ...missing,
+    );
+  };
+  return (oid) => {
+    queue.push(oid);
+    // Reads asked for in the same turn share one batch.
+    batch ??= new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
+      const oids = queue;
+      queue = [];
+      batch = undefined;
+      // A prefetch that fails leaves each read to fetch its own blob.
+      return prefetch([...new Set(oids)]).catch(() => undefined);
+    });
+    return batch.then(() => show(cwd, oid));
   };
 }
 
