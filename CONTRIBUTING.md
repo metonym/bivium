@@ -88,6 +88,20 @@ The fixture is a generated, carbon-shaped repository with a fixed seed, so runs 
 
 On a real repository git is most of a warm plan (carbon-components-svelte: about 45 of 70 ms), which the fixture's small history understates, so check a change that touches git or resolution with `bench/phases.ts` too. On a shared machine, report the load average with any number, compare `Instr/call` (it holds steady under load where times don't), and prefer `ostia ab` to compare a change with `HEAD`.
 
+## Replay a repository's history
+
+`eval/replay.ts` plans a repository's last N merged commits, each against its parent, with two bivium builds, and compares the selections. Each commit is planned with the config it had, and a commit from before the repository adopted bivium is skipped: today's config over older code reports gaps its annotations have since closed.
+
+```sh
+# The newest v* tag against this working tree, over carbon's last 60 merges.
+bun eval/replay.ts <carbon checkout> --commits 60 --node-modules <carbon checkout>/node_modules
+# Try a config change on the same history.
+bun eval/replay.ts <sveld checkout> --old HEAD --new HEAD --config my.config.ts
+bun eval/replay.ts --summary <rows.jsonl>
+```
+
+The report gives each build's share of test files selected, its full runs by cause, its median plan time, and every commit where the new build selects a test the old one doesn't: a miss the old one had, or a regression, so read each one. A selector change cites its replay as it would the golden check below. `--node-modules` links an install into each checkout for a config whose narrower imports dependencies; without a matching install, the narrower can't run and its suites run in full on both sides.
+
 ## Golden check on carbon-components-svelte
 
 `eval/` holds the harnesses that check bivium against carbon's own selector. They aren't packaged. They need a carbon checkout with `.context/test-graph-package/phase0` (the PR groups and recorded plans from Phase 0) and a scratch clone to check out commits in:
@@ -118,5 +132,5 @@ bun eval/corpus.ts <checkout>                     # the lexer against TypeScript
 ## Before you finish
 
 - [ ] `bun run lint`, `bun run typecheck`, `bun run knip`, `bun run test` and `bun run test:package` pass.
-- [ ] Scanner, resolver or selection changes: the golden replay finds no unexplained difference.
+- [ ] Scanner, resolver or selection changes: `eval/replay.ts` (or the golden replay) finds no unexplained difference.
 - [ ] The README and this guide still describe what the code does.
