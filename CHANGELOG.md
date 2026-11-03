@@ -9,6 +9,12 @@
   default one-commit fetch, failed with `git diff … failed`. It now says
   which is missing, and that a shallow clone needs `fetch-depth: 0`.
 
+**Docs**
+
+- The README's CI section explains the checkout a plan needs: history
+  back to the merge base, and when to add `filter: blob:none` (a large
+  history) or leave it off (a small one).
+
 ## 0.3.2 — 2026-11-03
 
 **Performance**
