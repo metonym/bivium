@@ -415,6 +415,30 @@ describe("readRevision", () => {
     expect(await read(absent)).toEqual(absent.map(() => undefined));
   });
 
+  it("says what history a shallow clone lacks", async () => {
+    const { dir } = repo();
+    git(dir, "commit", "-q", "-am", "main moves on");
+    const clone = join(temp("bivium-shallow-"), "clone");
+    git(
+      dirname(clone),
+      "clone",
+      "-q",
+      "--depth",
+      "1",
+      "--no-single-branch",
+      `file://${dir}`,
+      clone,
+    );
+    await expect(
+      readRevision(clone, "origin/nowhere", ["src"]),
+    ).rejects.toThrow(
+      "bivium: no commit origin/nowhere here to diff against: fetch it. The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`).",
+    );
+    await expect(readRevision(clone, "origin/base", ["src"])).rejects.toThrow(
+      "bivium: origin/base and HEAD share no commit here, so there's no merge base to diff against.",
+    );
+  });
+
   it("reads a path once, however many ask", async () => {
     const { dir } = repo();
     const revision = await readRevision(dir, "base", ["src"]);

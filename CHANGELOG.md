@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**Fixes**
+
+- A plan in a clone without the base branch, or without the history back
+  to where the branch forked from it, such as `actions/checkout`'s
+  default one-commit fetch, failed with `git diff … failed`. It now says
+  which is missing, and that a shallow clone needs `fetch-depth: 0`.
+
 ## 0.3.2 — 2026-11-03
 
 **Performance**
