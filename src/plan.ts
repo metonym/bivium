@@ -4,7 +4,7 @@ import {
   type ResolvedNarrower,
   type ResolvedSuite,
 } from "./config.ts";
-import { affectedBy, type Graph } from "./graph.ts";
+import { affectedBy, DECLARATION, type Graph } from "./graph.ts";
 import { type PackageDiff, packageSeeds } from "./lockfile.ts";
 import type { FullRunCause, NarrowResult, Selection } from "./types.ts";
 
@@ -217,6 +217,12 @@ export function planTests(
       ? packageSeeds(graph, config, packages, packageFiles)
       : { seeds: new Map<string, string>(), notes: [], reasons: [] };
   const { add, full } = runs;
+  // Whether type-only edges, which `suite` doesn't follow, reach its tests.
+  const typed = (file: string, suite: ResolvedSuite) =>
+    !suite.types &&
+    [...affectedBy(graph, [file], { includeUnknown: false })].some(
+      suite.isTest,
+    );
   for (const unused of bumped.reasons) add({ kind: "package", ...unused });
   const seeds = [
     ...relevant,
@@ -243,7 +249,13 @@ export function planTests(
     const suiteTests = tests.get(suite.name) ?? [];
     for (const file of relevant) {
       if (!suite.roots.some((root) => inRoot(file, root))) continue;
-      const reach = affectedBy(graph, [file], { includeUnknown: false });
+      // A suite that runs code is reached only at runtime: a file a test
+      // just type-imports may still be one the runner loads. A declaration
+      // file never is.
+      const reach = affectedBy(graph, [file], {
+        includeUnknown: false,
+        types: suite.types || DECLARATION.test(file),
+      });
       if (suiteTests.some((test) => reach.has(test))) continue;
       const deleted = !graph.has(file);
       if (deleted && suite.isTest(file)) continue;
@@ -259,7 +271,7 @@ export function planTests(
         kind: "orphan",
         suites: [suite.name],
         file,
-        message: `${file}: no ${suite.name} test imports it`,
+        message: `${file}: no ${suite.name} test imports it${typed(file, suite) ? " (only type imports reach it: list it in the suite's `nonInputs` if nothing loads it at runtime)" : ""}`,
       });
     }
   }

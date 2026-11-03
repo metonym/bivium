@@ -567,12 +567,18 @@ export function packageSeeds(
     let found = reaches.get(name);
     if (found === undefined) {
       const node = `pkg:${name}`;
-      const reached = graph.has(node)
-        ? affectedBy(graph, [node], { includeUnknown: false })
-        : new Set<string>();
-      found = [...reached].some((path) =>
-        config.suites.some((suite) => suite.isTest(path)),
-      );
+      // By a suite's own walk: a type import reaches no test of a suite
+      // that runs code.
+      found =
+        graph.has(node) &&
+        config.suites.some((suite) =>
+          [
+            ...affectedBy(graph, [node], {
+              includeUnknown: false,
+              types: suite.types,
+            }),
+          ].some(suite.isTest),
+        );
       reaches.set(name, found);
     }
     return found;

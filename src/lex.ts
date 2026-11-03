@@ -859,9 +859,9 @@ function declaration(k: number) {
     while (clauseStart < end && isSpace(src.charCodeAt(clauseStart))) {
       clauseStart++;
     }
+    const next = skipTrivia(k + 4);
     type = !(
-      isWord(clauseStart, "from") &&
-      isQuote(src.charCodeAt(skipTrivia(clauseStart + 4)))
+      isWord(next, "from") && isQuote(src.charCodeAt(skipTrivia(next + 4)))
     );
   }
   let p = k;

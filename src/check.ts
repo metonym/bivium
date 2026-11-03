@@ -93,6 +93,9 @@ export function fixFor(cause: string) {
     }
     return "declare the package in a package.json, list it in `external` if a dependency installs it, or map it with `alias` or tsconfig `paths`";
   }
+  if (cause.startsWith("only declarations for ")) {
+    return "only a declaration file is there, so what runs isn't in the graph: if a build writes it, name it in `edges` with its inputs, or import it with `import type` if only its types are used";
+  }
   if (cause === "non-literal dynamic import") {
     return "spell the path as a string literal, load the files with `import.meta.glob` and literal patterns, or list the file in `hermetic` if it only imports paths its caller passes";
   }
@@ -492,6 +495,9 @@ function categoryOf(cause: string): string {
     if (RELATIVE.test(specifier)) return "unresolved relative import";
     if (specifier.startsWith("#")) return "unresolved # import";
     return "unresolved bare import (a package, alias or path)";
+  }
+  if (cause.startsWith("only declarations for ")) {
+    return "a .js import with only its declarations there";
   }
   if (cause.startsWith("non-literal goto(")) return "non-literal goto()";
   if (cause.startsWith("goto(")) return "goto() URL no `urls` pattern maps";

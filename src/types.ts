@@ -35,8 +35,9 @@ export interface SuiteConfig {
    * Whether the suite's tests can observe types. `false` for a suite that
    * runs code (Vitest, Jest, Playwright, `bun test`): a change that reaches
    * its tests only through type-only edges (`import type`, `export type …
-   * from`, JSDoc types, declaration files) selects none of them. Such a
-   * change still counts as reaching them for the orphan rule. Default:
+   * from`, JSDoc types, declaration files) selects none of them. For the
+   * orphan rule only a declaration file counts as reached that way: list a
+   * types-only module under `root` in `nonInputs`. Default:
    * `true`, for a type-checking suite (`tsc`, `vitest --typecheck`).
    */
   types?: boolean;
