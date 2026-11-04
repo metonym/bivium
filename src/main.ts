@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
-import { isAbsolute, posix, relative, resolve } from "node:path";
+import { appendFileSync, realpathSync } from "node:fs";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+} from "node:path";
 import { version } from "../package.json" with { type: "json" };
 import { check, failed, formatReport, summarize } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
@@ -125,10 +133,14 @@ function parseArgs(command: string, argv: string[]): Args {
     const flag = equals === -1 ? arg : arg.slice(0, equals);
     if (!known.includes(flag)) throw unknownOption(command, flag);
     if (!VALUED.has(flag)) {
-      if (equals !== -1) {
-        throw usageError(`bivium ${command}: ${flag} takes no value`);
+      // A switch takes =true or =false, which some callers always send.
+      const on = equals === -1 ? "true" : arg.slice(equals + 1);
+      if (on !== "true" && on !== "false") {
+        throw usageError(
+          `bivium ${command}: ${flag} is a switch: give it alone, or as ${flag}=true or ${flag}=false`,
+        );
       }
-      flags.set(flag, "");
+      if (on === "true") flags.set(flag, "");
       continue;
     }
     const value = equals === -1 ? argv[++i] : arg.slice(equals + 1);
@@ -235,12 +247,27 @@ function findSuite(config: ResolvedConfig, name: string | undefined) {
   );
 }
 
+// `path` with its symlinks resolved, as far as it exists. The root is
+// resolved (it comes from the working directory), and a path a shell built
+// from $PWD may go through a link: /tmp and /var on macOS, a linked
+// checkout.
+function real(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(real(parent), basename(path));
+  }
+}
+
 // A path as the repository names it. One given relative to the current
 // directory (./x, ../x, or from a subdirectory) or absolute is mapped onto
 // the root, so a path a shell completed names the same file; a bare path
 // that's in the graph as written stays repo-relative, as it always was.
 function repoPath(root: string, arg: string, known: (path: string) => boolean) {
-  const fromCwd = relative(root, resolve(arg)).split("\\").join("/");
+  const fromCwd = relative(real(root), real(resolve(arg)))
+    .split("\\")
+    .join("/");
   const inside = !(fromCwd.startsWith("..") || isAbsolute(fromCwd));
   if (isAbsolute(arg)) return inside ? fromCwd : arg;
   const asWritten = posix.normalize(arg.split("\\").join("/"));
@@ -427,6 +454,7 @@ function wantsJson(argv: string[]) {
   return argv.some(
     (arg, i) =>
       arg === "--json" ||
+      arg === "--json=true" ||
       arg === "--format=json" ||
       (arg === "--format" && argv[i + 1] === "json"),
   );

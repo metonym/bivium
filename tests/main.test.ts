@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -645,7 +646,10 @@ describe("calling it the way an agent does", () => {
 
   it.each([
     [["plan", "-j"], "bivium plan: unknown option -j"],
-    [["plan", "--json=yes"], "bivium plan: --json takes no value"],
+    [
+      ["plan", "--json=yes"],
+      "bivium plan: --json is a switch: give it alone, or as --json=true or --json=false",
+    ],
     [["plna"], `bivium: unknown command "plna" (did you mean plan?)`],
     [
       ["plan", "--jsno"],
@@ -679,6 +683,43 @@ describe("calling it the way an agent does", () => {
       status: 0,
       output: expected,
     });
+  });
+
+  it("explains a test named from a working directory reached through a symlink", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": "export const a = 3;" });
+    const links = mkdtempSync(join(tmpdir(), "bivium-link-"));
+    dirs.push(links);
+    const link = join(links, "repo");
+    symlinkSync(dir, link);
+    const before = process.cwd();
+    // The root comes from the resolved working directory; the paths go
+    // through the link, as a shell's $PWD does.
+    process.chdir(link);
+    try {
+      const expected = (await run(["why", "test/a.test.js", "--base", "base"]))
+        .output;
+      expect(expected).toContain("test/a.test.js");
+      const why = (test: string) => run(["why", test, "--base", "base"]);
+      expect(await why(join(link, "test/a.test.js"))).toEqual({
+        status: 0,
+        output: expected,
+      });
+      expect(await why("./test/a.test.js")).toEqual({
+        status: 0,
+        output: expected,
+      });
+    } finally {
+      process.chdir(before);
+    }
+  });
+
+  it("takes a switch as =true or =false", async () => {
+    const dir = repo();
+    const on = await run(["plan", "base", "--json=true", "--cwd", dir]);
+    expect(JSON.parse(on.output)).toMatchObject({ schemaVersion: 1 });
+    const off = await run(["plan", "base", "--json=false", "--cwd", dir]);
+    expect(off.output).toContain("unit tests:");
   });
 
   it("suggests the test or file a misspelled one meant", async () => {

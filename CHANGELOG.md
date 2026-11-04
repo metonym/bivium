@@ -8,9 +8,9 @@
   - `bivium why` takes a test or file relative to the current
     directory or absolute, as a shell completes it; `./tests/a.test.ts`
     used to be "no suite's test".
-  - Options take `--flag=value`. A single-dash option other than `-h`
-    and `-v` is an unknown option, where `plan -j` took `-j` as the
-    base.
+  - Options take `--flag=value`, and switches `=true` or `=false`. A
+    single-dash option other than `-h` and `-v` is an unknown option,
+    where `plan -j` took `-j` as the base.
   - A misspelled command, option, suite, test, file, `--format` value or
     config key names what's close (`did you mean --json?`), and an
     option another command takes says which.
