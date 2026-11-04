@@ -152,6 +152,13 @@ function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
   });
 }
 
+// bivium itself is always inert: no test runs it, so a bump changes which
+// tests later plans pick, never what a test does.
+function isInertOf(inert: Globs | undefined): Matcher {
+  const listed = matcher(inert);
+  return (name) => name === "bivium" || listed(name);
+}
+
 export function resolveConfig(config: Config): ResolvedConfig {
   const names = Object.keys(config.suites);
   if (names.length === 0) throw new Error("bivium config: no suites");
@@ -210,7 +217,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     isHermetic: matcher(config.hermetic),
     isBarrel: config.barrels ? matcher(config.barrels) : () => true,
     external: new Set(config.external),
-    isInert: matcher(config.inert),
+    isInert: isInertOf(config.inert),
     ...(config.loadedByName !== undefined && {
       isLoadedByName: matcher(config.loadedByName),
     }),

@@ -113,7 +113,7 @@ describe("a changed tsconfig.json", () => {
     expect(await planOf(dir)).toMatchObject({
       unit: { mode: "none" },
       settings: [
-        "tsconfig.json: only formatting or comments changed, which no file resolves or runs by",
+        "tsconfig.json: only formatting or comments changed, so no file resolves or runs differently",
       ],
     });
   });
@@ -170,7 +170,7 @@ describe("a changed package.json", () => {
     expect(await planOf(dir)).toMatchObject({
       unit: { mode: "none" },
       settings: [
-        "package.json: only version changed, which no file resolves or runs by",
+        "package.json: only version changed, so no file resolves or runs differently",
       ],
     });
   });

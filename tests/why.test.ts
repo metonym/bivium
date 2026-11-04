@@ -495,6 +495,26 @@ describe("bivium why", () => {
 });
 
 describe("bivium check", () => {
+  it("spells out each fix once, and points back to it after", async () => {
+    const dir = repo({
+      "test/w.test.js": `import { readFileSync } from "node:fs";\n`,
+    });
+    const { output } = await run(["check", "--cwd", dir]);
+    expect(output).toContain(
+      [
+        "test/u.test.js",
+        `  ✗ unresolved "./gone.js"    test/u.test.js:2`,
+        `    fix: ${UNRESOLVED_FIX}`,
+        "  ✗ reads the disk without @depends-on    test/u.test.js:1",
+        `    fix: ${DISK_FIX}`,
+        "  runs on any change: test/u.test.js",
+        "test/w.test.js",
+        "  ✗ reads the disk without @depends-on    test/w.test.js:1",
+        "    fix: as for test/u.test.js",
+      ].join("\n"),
+    );
+  });
+
   it("lists unknown nodes with locations and fixes, and fails past --max-unknown", async () => {
     const dir = repo();
     const { status, output } = await run([
