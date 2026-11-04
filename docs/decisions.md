@@ -1298,5 +1298,6 @@ No test runs bivium. CI runs it before the tests to pick them, and a new
 version changes which tests later plans pick, not what any test does, so
 a full run on its bump checks nothing the bump could break. It's inert
 whatever `inert` says, the way the config file is always `self`. A file
-that imports it, such as a narrower a test reaches, still selects that
-test through the import.
+that imports it still selects the tests that reach it through the
+import; on carbon-components-svelte, whose narrower only imports its
+types, a bump now runs the 2 tests that declare `@depends-on bun.lock`.
