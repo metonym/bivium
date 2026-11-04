@@ -36,7 +36,23 @@ describe("defineConfig", () => {
 
 describe("checkConfig", () => {
   it.each([
-    [{ suites: SUITES, ignored: ["x"] }, "unknown key ignored"],
+    [
+      { suites: SUITES, ignored: ["x"] },
+      "unknown key ignored (did you mean ignore?)",
+    ],
+    [
+      { suites: { unit: { test: "a/**" } }, ignroe: [], zzz: 1 },
+      [
+        "unknown keys:",
+        "  ignroe (did you mean ignore?)",
+        "  zzz",
+        "  suites.unit.test (did you mean tests?)",
+      ].join("\n"),
+    ],
+    [
+      { suites: SUITES, deadGlobs: [{ file: "a", glob: "b", reson: "c" }] },
+      "unknown key deadGlobs[0].reson (did you mean reason?)",
+    ],
     [
       { suites: { unit: { tests: "a/**", roots: "a" } } },
       "unknown key suites.unit.roots",
@@ -134,8 +150,21 @@ describe("loadConfig", () => {
     expect(loaded.file).toBe(join(other, "custom.mjs"));
   });
 
-  it("fails without a config", async () => {
-    await expect(loadConfig(repo({}))).rejects.toThrow("no config found");
+  it("fails without a config, and says which names it looked for", async () => {
+    await expect(loadConfig(repo({}))).rejects.toThrow(
+      "looked for bivium.config.ts, bivium.config.mts",
+    );
+  });
+
+  it("names the file in a config error, a parse error too", async () => {
+    await expect(
+      loadConfig(repo({ "bivium.config.json": `{ "suites": ` })),
+    ).rejects.toThrow("bivium config: bivium.config.json: JSON Parse error");
+    await expect(
+      loadConfig(
+        repo({ "bivium.config.json": JSON.stringify({ suites: {} }) }),
+      ),
+    ).rejects.toThrow("bivium config: bivium.config.json: no suites");
   });
 });
 

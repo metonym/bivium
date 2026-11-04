@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { BiviumError, didYouMean } from "./errors.ts";
 import {
   captureGlob,
   captureReferences,
@@ -312,17 +313,36 @@ const CONFIG_KEYS = new Set([
   "cache",
 ]);
 
-// A misspelled key would silently select less, so it's an error.
-function checkKeys(
-  record: Record<string, unknown>,
-  known: Set<string>,
-  path: string,
-) {
-  for (const key of Object.keys(record)) {
-    if (!known.has(key)) {
-      throw new Error(`bivium config: unknown key ${path}${key}`);
+// Every key no shape names, with what it likely meant. A misspelled key
+// would silently select less, so it's an error; all of them are listed at
+// once, so a config with several takes one run to fix.
+function unknownKeys(value: Record<string, unknown>): string[] {
+  const found: string[] = [];
+  const visit = (record: unknown, known: Set<string>, path: string) => {
+    if (!isRecord(record)) return;
+    for (const key of Object.keys(record)) {
+      if (!known.has(key)) found.push(`${path}${key}${didYouMean(key, known)}`);
+    }
+  };
+  visit(value, CONFIG_KEYS, "");
+  if (isRecord(value.suites)) {
+    for (const [name, suite] of Object.entries(value.suites)) {
+      visit(suite, SUITE_KEYS, `suites.${name}.`);
     }
   }
+  const lists = [
+    ["narrowers", NARROWER_KEYS],
+    ["deadGlobs", DEAD_GLOB_KEYS],
+    ["knownUnknowns", KNOWN_UNKNOWN_KEYS],
+  ] as const;
+  for (const [key, known] of lists) {
+    const entries = value[key];
+    if (!Array.isArray(entries)) continue;
+    for (const [i, entry] of entries.entries()) {
+      visit(entry, known, `${key}[${i}].`);
+    }
+  }
+  return found;
 }
 
 function checkSuite(name: string, value: unknown): SuiteConfig {
@@ -330,7 +350,6 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
     throw new Error(`bivium config: suites.${name} must be an object`);
   }
   const at = `suites.${name}.`;
-  checkKeys(value, SUITE_KEYS, at);
   const tests = field(value, "tests", isGlobs, at, "a glob or a list of globs");
   if (tests === undefined || tests.length === 0) {
     throw new Error(`bivium config: suite ${name} has no tests`);
@@ -392,7 +411,6 @@ function checkNarrower(value: unknown, at: string): Narrower {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);
   }
-  checkKeys(value, NARROWER_KEYS, `${at}.`);
   const name = field(value, "name", isString, `${at}.`, "a string");
   const match = field(value, "match", isGlobs, `${at}.`, "globs");
   const opaque = field(value, "opaque", isGlobs, `${at}.`, "globs");
@@ -421,7 +439,6 @@ function checkDeadGlob(value: unknown, at: string): DeadGlobEntry {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);
   }
-  checkKeys(value, DEAD_GLOB_KEYS, `${at}.`);
   const file = field(value, "file", isString, `${at}.`, "a path");
   const glob = field(value, "glob", isString, `${at}.`, "a glob");
   const reason = field(value, "reason", isString, `${at}.`, "a string");
@@ -435,7 +452,6 @@ function checkKnownUnknown(value: unknown, at: string): KnownUnknown {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);
   }
-  checkKeys(value, KNOWN_UNKNOWN_KEYS, `${at}.`);
   const file = field(value, "file", isString, `${at}.`, "a path");
   const reason = field(value, "reason", isString, `${at}.`, "a string");
   if (!(file && reason)) {
@@ -470,7 +486,15 @@ export function checkConfig(value: unknown): Config {
   if (!isRecord(value.suites)) {
     throw new Error("bivium config: suites must be an object");
   }
-  checkKeys(value, CONFIG_KEYS, "");
+  const unknown = unknownKeys(value);
+  if (unknown.length === 1) {
+    throw new Error(`bivium config: unknown key ${unknown[0]}`);
+  }
+  if (unknown.length > 1) {
+    throw new Error(
+      `bivium config: unknown keys:\n${unknown.map((key) => `  ${key}`).join("\n")}`,
+    );
+  }
   const { narrowers, deadGlobs, knownUnknowns } = value;
   if (narrowers !== undefined && !Array.isArray(narrowers)) {
     throw new Error("bivium config: narrowers must be a list");
@@ -539,6 +563,8 @@ async function readConfig(file: string): Promise<unknown> {
   return isRecord(module) ? module.default : undefined;
 }
 
+const CONFIG_PREFIX = /^bivium config: /;
+
 // A `.ts` config loads natively on Bun and on Node ≥ 22.18 (type stripping).
 export async function loadConfig(
   root: string,
@@ -549,13 +575,28 @@ export async function loadConfig(
       ? CONFIG_FILES.map((name) => join(root, name)).find((f) => existsSync(f))
       : resolve(process.cwd(), path);
   if (!file || !existsSync(file)) {
-    throw new Error(
-      `bivium: no config found${path ? ` at ${path}` : ` in ${root}`}`,
+    throw new BiviumError(
+      "config",
+      path
+        ? `bivium: no config found at ${path}`
+        : `bivium: no config found in ${root}: looked for ${CONFIG_FILES.join(", ")} (--config names another file, --cwd another repository)`,
     );
   }
   const inside = relative(root, file);
-  return {
-    config: resolveConfig(checkConfig(await readConfig(file))),
-    file: inside.startsWith("..") || isAbsolute(inside) ? file : inside,
-  };
+  const shown = inside.startsWith("..") || isAbsolute(inside) ? file : inside;
+  let config: ResolvedConfig;
+  try {
+    config = resolveConfig(checkConfig(await readConfig(file)));
+  } catch (error) {
+    // Which file, since --config or a parent's config may not be the one
+    // the caller had in mind, and a parse error names none.
+    const message = error instanceof Error ? error.message : String(error);
+    // biome-ignore lint/style/useErrorCause: the cause is the third argument.
+    throw new BiviumError(
+      "config",
+      `bivium config: ${shown}: ${message.replace(CONFIG_PREFIX, "")}`,
+      { cause: error },
+    );
+  }
+  return { config, file: shown };
 }

@@ -1239,3 +1239,18 @@ Two parts stay, since they cost nothing and save a process each: a file
 unchanged since the merge base is read from the working tree, and each
 path is read once, however many ask (the package diff and the setting
 files both read a changed `package.json`).
+
+## 61. Errors keep exit 2, and say their kind in JSON
+
+A caller needs to tell "you called me wrong" from "the repository or
+config is broken" from "git refused", and #40 settled exit 2 for every
+error and 1 for `check`'s findings. More exit codes would split 2 into
+codes no other CLI shares, and a script that checks for 2 would miss
+the new ones. So the exit status stays, and with `--json` an error is
+also printed to stdout as `{ "schemaVersion", "error": { "kind",
+"message" } }`: a pipeline that parses stdout gets an object either
+way, where it got nothing, and the kind says which. The message still
+goes to stderr, for a person.
+
+Each JSON output carries `schemaVersion`. New fields are additive and
+leave it; dropping or retyping one bumps it.

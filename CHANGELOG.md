@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+**Features**
+
+- The CLI is cheaper for an agent to drive (#62):
+  - `bivium why` takes a test or file relative to the current
+    directory or absolute, as a shell completes it; `./tests/a.test.ts`
+    used to be "no suite's test".
+  - Options take `--flag=value`, and switches `=true` or `=false`. A
+    single-dash option other than `-h` and `-v` is an unknown option,
+    where `plan -j` took `-j` as the base.
+  - A misspelled command, option, suite, test, file, `--format` value or
+    config key names what's close (`did you mean --json?`), and an
+    option another command takes says which.
+  - With `--json`, an error is printed to stdout too, as
+    `{ "schemaVersion", "error": { "kind", "message" } }`, `kind` one of
+    `usage`, `config`, `git` or `other`.
+  - A git failure other than missing history adds git's own message,
+    where it printed only the failed command.
+  - A config error names the config file, a parse error too, and lists
+    every unknown key at once. A missing config lists the names looked
+    for.
+  - `plan --github` checks `$GITHUB_OUTPUT`, and `run` the suite's
+    `run` command, before planning, so a failed step prints no plan.
+  - `check --json` adds `ok` and `summary`, the verdict and the counts
+    the text leads with.
+  - `plan` and `run` lead with what they planned against: the base, its
+    merge base, how many files changed, and the config file. `plan
+    --json` adds `config`.
+  - Every JSON output has `schemaVersion: 1`.
+
 ## 0.3.3 — 2026-11-03
 
 **Performance**

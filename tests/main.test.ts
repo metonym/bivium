@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -319,8 +320,15 @@ describe("bivium plan", () => {
 
   it("prints each selection's scale, and tells a full run from every test reached", async () => {
     const dir = repo();
-    const text = async () => (await run(["plan", "base", "--cwd", dir])).output;
+    const mergeBase = git(dir, "rev-parse", "--short=7", "base");
+    const lines = async () =>
+      (await run(["plan", "base", "--cwd", dir])).output.split("\n");
+    // Each plan leads with what it was made against.
+    const text = async () => (await lines()).slice(1).join("\n");
     write(dir, { "src/a.js": "export const a = 3;" });
+    expect((await lines())[0]).toBe(
+      `Against base (merge base ${mergeBase}): 1 changed file, config bivium.config.json`,
+    );
     expect(await text()).toBe("unit tests: 1 of 2 files\n  test/a.test.js");
     write(dir, { "src/b.js": "export const b = 3;" });
     expect(await text()).toBe(
@@ -490,7 +498,7 @@ describe("bivium plan", () => {
     try {
       expect(await main(["plan", "base", "--githb", "--cwd", dir])).toBe(2);
       expect(error.mock.calls[0]?.[0]).toBe(
-        "bivium plan: unknown option --githb",
+        "bivium plan: unknown option --githb (did you mean --github?)",
       );
     } finally {
       error.mockRestore();
@@ -596,6 +604,201 @@ describe("the command line", () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+describe("calling it the way an agent does", () => {
+  async function failing(args: readonly string[]) {
+    const error = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const { status, output } = await run(args);
+      return { status, output, error: String(error.mock.calls[0]?.[0]) };
+    } finally {
+      error.mockRestore();
+    }
+  }
+
+  it("takes --flag=value", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": "export const a = 3;" });
+    const { status, output } = await run([
+      "plan",
+      "base",
+      "--json",
+      `--cwd=${dir}`,
+    ]);
+    expect(status).toBe(0);
+    expect(JSON.parse(output).suites.unit.files).toEqual(["test/a.test.js"]);
+    const why = await run([
+      "why",
+      "test/a.test.js",
+      "--format=json",
+      `--cwd=${dir}`,
+      "--base=base",
+    ]);
+    expect(JSON.parse(why.output)).toMatchObject({
+      schemaVersion: 1,
+      test: "test/a.test.js",
+    });
+  });
+
+  it.each([
+    [["plan", "-j"], "bivium plan: unknown option -j"],
+    [
+      ["plan", "--json=yes"],
+      "bivium plan: --json is a switch: give it alone, or as --json=true or --json=false",
+    ],
+    [["plna"], `bivium: unknown command "plna" (did you mean plan?)`],
+    [
+      ["plan", "--jsno"],
+      "bivium plan: unknown option --jsno (did you mean --json?)",
+    ],
+    [
+      ["plan", "--base", "x"],
+      "bivium plan: unknown option --base (why and check take it)",
+    ],
+    [["--no-cache"], "bivium: which command?"],
+  ])("rejects %j as a usage error", async (args, message) => {
+    const { status, error } = await failing(args);
+    expect(status).toBe(2);
+    expect(error.startsWith(message)).toBe(true);
+  });
+
+  it("explains a test named relative to the current directory, or absolutely", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": "export const a = 3;" });
+    const expected = (
+      await run(["why", "test/a.test.js", "--cwd", dir, "--base", "base"])
+    ).output;
+    expect(expected).toContain("test/a.test.js");
+    const why = (test: string) =>
+      run(["why", test, "--cwd", dir, "--base", "base"]);
+    expect(await why(join(dir, "test/a.test.js"))).toEqual({
+      status: 0,
+      output: expected,
+    });
+    expect(await why("./test/a.test.js")).toEqual({
+      status: 0,
+      output: expected,
+    });
+  });
+
+  it("explains a test named from a working directory reached through a symlink", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": "export const a = 3;" });
+    const links = mkdtempSync(join(tmpdir(), "bivium-link-"));
+    dirs.push(links);
+    const link = join(links, "repo");
+    symlinkSync(dir, link);
+    const before = process.cwd();
+    // The root comes from the resolved working directory; the paths go
+    // through the link, as a shell's $PWD does.
+    process.chdir(link);
+    try {
+      const expected = (await run(["why", "test/a.test.js", "--base", "base"]))
+        .output;
+      expect(expected).toContain("test/a.test.js");
+      const why = (test: string) => run(["why", test, "--base", "base"]);
+      expect(await why(join(link, "test/a.test.js"))).toEqual({
+        status: 0,
+        output: expected,
+      });
+      expect(await why("./test/a.test.js")).toEqual({
+        status: 0,
+        output: expected,
+      });
+    } finally {
+      process.chdir(before);
+    }
+  });
+
+  it("names a test that is itself a symlink by its own path, not its target's", async () => {
+    const dir = repo();
+    write(dir, {
+      "src/c.js": `import { a } from "../src/a.js";`,
+      "src/a.js": "export const a = 3;",
+    });
+    symlinkSync("../src/c.js", join(dir, "test/c.test.js"));
+    const why = (test: string) =>
+      run(["why", test, "--cwd", dir, "--base", "base"]);
+    const expected = await why("test/c.test.js");
+    expect(expected.output).toContain("test/c.test.js");
+    expect(await why(join(dir, "test/c.test.js"))).toEqual(expected);
+  });
+
+  it("takes a switch as =true or =false", async () => {
+    const dir = repo();
+    const on = await run(["plan", "base", "--json=true", "--cwd", dir]);
+    expect(JSON.parse(on.output)).toMatchObject({ schemaVersion: 1 });
+    const off = await run(["plan", "base", "--json=false", "--cwd", dir]);
+    expect(off.output).toContain("unit tests:");
+  });
+
+  it("suggests the test or file a misspelled one meant", async () => {
+    const dir = repo();
+    const args = ["--cwd", dir, "--base", "base"];
+    expect((await failing(["why", "test/a.tst.js", ...args])).error).toBe(
+      "bivium why: no test test/a.tst.js (did you mean test/a.test.js?)",
+    );
+    expect((await failing(["why", "src/a.js", ...args])).error).toBe(
+      "bivium why: src/a.js is no suite's test: name a test first, as in bivium why <test> src/a.js",
+    );
+    expect(
+      (await failing(["why", "test/a.test.js", "src/aa.js", ...args])).error,
+    ).toBe("bivium why: no file src/aa.js (did you mean src/a.js?)");
+  });
+
+  it("says what's wrong with a base, and prints an error as JSON with --json", async () => {
+    const dir = repo();
+    const { status, output, error } = await failing([
+      "plan",
+      "nosuchref",
+      "--json",
+      "--cwd",
+      dir,
+    ]);
+    expect(status).toBe(2);
+    expect(error).toStartWith(
+      "bivium: no commit nosuchref here to diff against: fetch it.",
+    );
+    expect(JSON.parse(output)).toEqual({
+      schemaVersion: 1,
+      error: { kind: "git", message: error },
+    });
+  });
+
+  it("checks $GITHUB_OUTPUT before planning", async () => {
+    const dir = repo();
+    delete process.env.GITHUB_OUTPUT;
+    const { status, output, error } = await failing([
+      "plan",
+      "--github",
+      "--cwd",
+      dir,
+    ]);
+    expect({ status, output }).toEqual({ status: 2, output: "" });
+    expect(error).toContain("$GITHUB_OUTPUT");
+  });
+
+  it("gives check's verdict and summary in its JSON", async () => {
+    const dir = repo();
+    write(dir, { "src/a.js": `import "./gone.js";\nexport const a = 1;` });
+    const report = async (...extra: string[]) =>
+      JSON.parse(
+        (await run(["check", "--json", "--cwd", dir, ...extra])).output,
+      );
+    expect(await report()).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      summary: {
+        unknown: 1,
+        testsOnAnyChange: 1,
+        unknownByCause: { "unresolved relative import": 1 },
+      },
+    });
+    expect((await report("--max-unknown", "0")).ok).toBe(false);
   });
 });
 

@@ -552,71 +552,112 @@ function categoryOf(cause: string): string {
 const POSITION = /(?: in <>)? at \d+.*$/;
 const BLANK_LINES = /\n{3,}/g;
 
-function counted(counts: Map<string, number>): string[] {
-  return [...counts]
-    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
-    .map(([what, count]) => `${count} ${what}`);
+// Largest first, then by name, so the order is stable.
+function byCount(counts: Map<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    [...counts].sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1)),
+  );
+}
+
+function counted(counts: Record<string, number>): string[] {
+  return Object.entries(counts).map(([what, count]) => `${count} ${what}`);
+}
+
+/** The counts `check` leads with, which `--json` prints as `summary`. */
+export interface Summary {
+  // Nodes with unknown dependencies that some test reaches, the tests they
+  // make run on any change, and how many nodes each cause accounts for.
+  unknown: number;
+  testsOnAnyChange: number;
+  unknownByCause: Record<string, number>;
+  // Unknown nodes no test reaches, which widen nothing.
+  unknownNoTestReaches: number;
+  fallbacks: number;
+  fallbackReasons: Record<string, number>;
+  unparsedTsconfigs: number;
+  deadGlobs: number;
+  staleDeadGlobs: number;
+  unlistedUnknowns: number;
+  staleKnownUnknowns: number;
+  unreached: number;
+}
+
+export function summarize(report: Report): Summary {
+  const widen = widening(report);
+  const causes = new Map<string, number>();
+  for (const node of widen) {
+    for (const category of new Set(
+      node.causes.map(({ cause }) => categoryOf(cause)),
+    )) {
+      causes.set(category, (causes.get(category) ?? 0) + 1);
+    }
+  }
+  const reasons = new Map<string, number>();
+  for (const { reason } of report.fallbacks) {
+    const what = reason.replace(POSITION, "");
+    reasons.set(what, (reasons.get(what) ?? 0) + 1);
+  }
+  return {
+    unknown: widen.length,
+    testsOnAnyChange: new Set(widen.flatMap((node) => node.tests)).size,
+    unknownByCause: byCount(causes),
+    unknownNoTestReaches: report.unknown.length - widen.length,
+    fallbacks: report.fallbacks.length,
+    fallbackReasons: byCount(reasons),
+    unparsedTsconfigs: report.unparsedTsconfigs.length,
+    deadGlobs: report.deadGlobs.length,
+    staleDeadGlobs: report.staleDeadGlobs.length,
+    unlistedUnknowns: report.unlistedUnknowns.length,
+    staleKnownUnknowns: report.staleKnownUnknowns.length,
+    unreached: report.unreached.length,
+  };
 }
 
 // Counts by cause first, so a long report is actionable from its head.
 function summaryLines(report: Report): string[] {
-  const widen = widening(report);
+  const counts = summarize(report);
   const lines: string[] = [];
-  if (widen.length > 0) {
-    const tests = new Set(widen.flatMap((node) => node.tests));
+  if (counts.unknown > 0) {
+    const { unknown, testsOnAnyChange: tests } = counts;
     lines.push(
-      `${plural(widen.length, "node")} with unknown dependencies ${widen.length === 1 ? "reaches" : "reach"} ${plural(tests.size, "test")}, which ${tests.size === 1 ? "runs" : "run"} on any change:`,
+      `${plural(unknown, "node")} with unknown dependencies ${unknown === 1 ? "reaches" : "reach"} ${plural(tests, "test")}, which ${tests === 1 ? "runs" : "run"} on any change:`,
     );
-    const causes = new Map<string, number>();
-    for (const node of widen) {
-      for (const category of new Set(
-        node.causes.map(({ cause }) => categoryOf(cause)),
-      )) {
-        causes.set(category, (causes.get(category) ?? 0) + 1);
-      }
-    }
-    lines.push(...counted(causes).map((line) => `  ${line}`));
+    lines.push(...counted(counts.unknownByCause).map((line) => `  ${line}`));
   }
-  const idle = report.unknown.length - widen.length;
-  if (idle > 0) {
+  if (counts.unknownNoTestReaches > 0) {
     lines.push(
-      `${plural(idle, "more node")} with unknown dependencies no test reaches`,
+      `${plural(counts.unknownNoTestReaches, "more node")} with unknown dependencies no test reaches`,
     );
   }
-  if (report.fallbacks.length > 0) {
-    const reasons = new Map<string, number>();
-    for (const { reason } of report.fallbacks) {
-      const what = reason.replace(POSITION, "");
-      reasons.set(what, (reasons.get(what) ?? 0) + 1);
-    }
+  if (counts.fallbacks > 0) {
     lines.push(
-      `${plural(report.fallbacks.length, "file")} read by the regex extractor: ${counted(reasons).join(", ")}`,
+      `${plural(counts.fallbacks, "file")} read by the regex extractor: ${counted(counts.fallbackReasons).join(", ")}`,
     );
   }
   const problems = [
     [
-      report.unparsedTsconfigs.length,
+      counts.unparsedTsconfigs,
       "tsconfig file that doesn't parse",
       "tsconfig files that don't parse",
     ],
-    [report.deadGlobs.length, "dead glob", "dead globs"],
+    [counts.deadGlobs, "dead glob", "dead globs"],
     [
-      report.staleDeadGlobs.length,
+      counts.staleDeadGlobs,
       "stale `deadGlobs` entry",
       "stale `deadGlobs` entries",
     ],
     [
-      report.unlistedUnknowns.length,
+      counts.unlistedUnknowns,
       "unknown not in `knownUnknowns`",
       "unknowns not in `knownUnknowns`",
     ],
     [
-      report.staleKnownUnknowns.length,
+      counts.staleKnownUnknowns,
       "stale `knownUnknowns` entry",
       "stale `knownUnknowns` entries",
     ],
     [
-      report.unreached.length,
+      counts.unreached,
       "file under a suite's root that no test reaches",
       "files under a suite's root that no test reaches",
     ],
