@@ -28,7 +28,7 @@ bun src/cli.ts plan   # the CLI from source
 5. **Narrowers.** Each narrower whose files changed runs (`runNarrowers`), with the graph and both trees.
 6. **Selection.** `planTests` (`src/plan.ts`) classifies the changes (ignored, the selector's own, wiring, a lockfile or dependency change, outside the roots, or seeds), seeds the `pkg:` nodes of changed packages and their dependents (`packageSeeds`), walks the graph backwards from the seeds (`affectedBy`), applies the orphan rule and the narrowers, and picks each suite's tests.
 
-`graph` (`src/fanin.ts`) counts each node's test fan-in by walking forward from every test. `why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes (against `knownUnknowns`), the files under a suite's `root` no test reaches (by `orphanOf`, the orphan rule `plan` applies), and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
+`graph` (`src/fanin.ts`) counts each node's test fan-in by walking forward from every test. `why` (`src/why.ts`) walks again, recording how it reached each node, and `check` (`src/check.ts`) lists the unknown nodes (against `knownUnknowns`), the files under a suite's `root` no test reaches (by `orphanOf`, the orphan rule `plan` applies), the repository paths a test spells in a string that no edge declares (`src/spelled.ts`, from the lexer's string literals, which only `check` collects), and the dead globs (declared globs no change can select through, from the extractions and the whole-repo listing); both find lines by searching the source (`src/locate.ts`). `src/main.ts` is the CLI, `src/cli.ts` its bin.
 
 ## Rules every change must keep
 
@@ -44,7 +44,7 @@ bun src/cli.ts plan   # the CLI from source
 
 | File | Covers |
 |:---|:---|
-| `tests/lex.test.ts` | The lexer: regexes and division, strings, templates, comments, JSX, host formats, and the fallback, against the regex extractor |
+| `tests/lex.test.ts` | The lexer: regexes and division, strings, templates, comments, JSX, host formats, and the fallback, against the regex extractor; the string literals `check` reads |
 | `tests/resolve.test.ts` | Relative specifiers, aliases, tsconfig `paths`, `exports`, packages, builtins |
 | `tests/barrel.test.ts` | Barrel names, `sideEffects`, and `barrels` |
 | `tests/graph.test.ts` | Graph edges and the walk |
@@ -56,7 +56,7 @@ bun src/cli.ts plan   # the CLI from source
 | `tests/settings.test.ts` | Changed `tsconfig.json`, extended and `package.json` files through `computePlan`: what each governs, nested configs and packages, deletion, formatting and metadata-only changes, the orphan rule, and `why` |
 | `tests/lockfile.test.ts` | Lockfile and `package.json` dependency changes through `plan()`: direct and transitive bumps, `inert`, `loadedByName`, unreadable lockfiles, `package-lock.json`, `pnpm-lock.yaml` |
 | `tests/main.test.ts` | `plan` and `run`, their outputs and options, and `plan()` from code |
-| `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs, hints and `knownUnknowns` included |
+| `tests/why.test.ts` | `why`, its edge kinds and formats, and `check`, dead globs, undeclared paths, hints and `knownUnknowns` included |
 | `tests/fanin.test.ts` | `bivium graph`'s fan-in, against a walk per node |
 | `tests/yaml.test.ts` | The YAML subset `pnpm-lock.yaml` is read with |
 | `scripts/test-package.ts` | `bun run test:package`: the packed tarball installs, imports only builtins, plans a repository from Node and Bun, and type-checks for a consumer |

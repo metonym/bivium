@@ -159,7 +159,7 @@ const SCANNER_SOURCES = [
 ];
 const FINGERPRINT = {
   version: 6,
-  sha1: "7466594a1aaf2b8d0ed43ee3220099f7d845a63a",
+  sha1: "1880a619b34523197f70f9ca213ae3920da69ee0",
 };
 
 describe("SCANNER_VERSION", () => {

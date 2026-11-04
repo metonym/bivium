@@ -16,6 +16,7 @@ import { orphanOf } from "./plan.ts";
 import { aliasPath } from "./resolve.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
+import { type SpelledPath, undeclaredPaths } from "./spelled.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
 import { plural } from "./text.ts";
 
@@ -71,6 +72,9 @@ export interface Report {
   // Files under a suite's `root` that no test of it reaches and that the
   // config doesn't exempt: a change to one runs the whole suite.
   unreached: { suite: string; file: string; fix: string }[];
+  // Repository paths a file spells in its code that a change to wouldn't
+  // select it: an input nothing declares.
+  undeclaredPaths: SpelledPath[];
 }
 
 const EXAMPLES = 3;
@@ -376,7 +380,17 @@ const CONFIG_FILE =
 // How to stop a change to `file`, which no test reaches, from running the
 // whole suite, by what it looks like: a test's own file (a snapshot named
 // after it), a runner's config or harness, or anything else.
-function unreachedFix(file: string, tests: readonly string[]): string {
+function unreachedFix(
+  file: string,
+  tests: readonly string[],
+  spelled: readonly SpelledPath[],
+): string {
+  const named = spelled.find(
+    ({ path }) => file === path || file.startsWith(`${path}/`),
+  );
+  if (named !== undefined) {
+    return `${named.at ?? named.file} names ${named.path}: ${named.fix}`;
+  }
   const name = posix.basename(file);
   const owner = tests.find((test) =>
     name.startsWith(`${posix.basename(test)}.`),
@@ -396,6 +410,7 @@ function unreachedFix(file: string, tests: readonly string[]): string {
 function unreachedFiles(
   config: ResolvedConfig,
   { graph }: Computed,
+  spelled: readonly SpelledPath[],
 ): Report["unreached"] {
   const found: Report["unreached"] = [];
   const files = [...graph.keys()].filter(
@@ -410,7 +425,11 @@ function unreachedFiles(
       if (config.isIgnored(file) || config.isSelf(file)) continue;
       if (suite.isWiring(file)) continue;
       if (!orphanOf(graph, config, suite, file)) continue;
-      found.push({ suite: suite.name, file, fix: unreachedFix(file, tests) });
+      found.push({
+        suite: suite.name,
+        file,
+        fix: unreachedFix(file, tests, spelled),
+      });
     }
   }
   return found;
@@ -464,7 +483,8 @@ export async function check(
     reason,
   }));
   const dead = await findDeadGlobs(root, config, computed);
-  const unreached = unreachedFiles(config, computed);
+  const spelled = await undeclaredPaths(root, config, computed);
+  const unreached = unreachedFiles(config, computed, spelled);
   const allows = (entry: { file: string; glob: string }, found: DeadGlob) =>
     entry.file === found.node && entry.glob === found.glob;
   return {
@@ -488,6 +508,7 @@ export async function check(
         fix: "remove the entry: its dependencies are known now",
       })),
     unreached,
+    undeclaredPaths: spelled,
     staleDeadGlobs: config.deadGlobs
       .filter((entry) => !dead.some((found) => allows(entry, found)))
       .map((entry) => ({
@@ -517,7 +538,8 @@ export function failed(report: Report, max: number | undefined): boolean {
     report.unlistedUnknowns.length > 0 ||
     report.staleKnownUnknowns.length > 0 ||
     report.deadGlobs.length > 0 ||
-    report.staleDeadGlobs.length > 0
+    report.staleDeadGlobs.length > 0 ||
+    report.undeclaredPaths.length > 0
   );
 }
 
@@ -616,6 +638,11 @@ function summaryLines(report: Report): string[] {
       "stale `knownUnknowns` entries",
     ],
     [
+      report.undeclaredPaths.length,
+      "path spelled in code that nothing declares",
+      "paths spelled in code that nothing declares",
+    ],
+    [
       report.unreached.length,
       "file under a suite's root that no test reaches",
       "files under a suite's root that no test reaches",
@@ -660,6 +687,23 @@ function pushUnreached(lines: string[], unreached: Report["unreached"]) {
   }
 }
 
+function pushUndeclared(lines: string[], spelled: Report["undeclaredPaths"]) {
+  if (spelled.length === 0) return;
+  lines.push(
+    "",
+    "Paths spelled in code that nothing declares: a change there doesn't select the file:",
+  );
+  let file: string | undefined;
+  for (const { file: node, path, dir, at, fix } of spelled) {
+    if (node !== file) lines.push(`  ${node}`);
+    file = node;
+    lines.push(
+      `    ✗ ${dir ? `${path}/` : path}${at ? `    ${at}` : ""}`,
+      `      fix: ${fix}`,
+    );
+  }
+}
+
 export function formatReport(report: Report, max: number | undefined): string {
   const lines: string[] = summaryLines(report);
   const widen = widening(report);
@@ -681,6 +725,7 @@ export function formatReport(report: Report, max: number | undefined): string {
       lines.push(`  ${file}: ${reason}`);
     }
   }
+  pushUndeclared(lines, report.undeclaredPaths);
   pushUnreached(lines, report.unreached);
   if (report.unparsedTsconfigs.length > 0) {
     lines.push(
@@ -737,6 +782,12 @@ export function formatReport(report: Report, max: number | undefined): string {
   if (staleKnown > 0) {
     lines.push(
       `${plural(staleKnown, "stale `knownUnknowns` entry", "stale `knownUnknowns` entries")}.`,
+    );
+  }
+  const undeclared = report.undeclaredPaths.length;
+  if (undeclared > 0) {
+    lines.push(
+      `${plural(undeclared, "path", "paths")} spelled in code that nothing declares.`,
     );
   }
   const dead = report.deadGlobs.length;

@@ -75,6 +75,25 @@ export function extract(format: Format, source: string): Extraction {
   return detach(extraction);
 }
 
+// The string literals in a file's code, and its templates' static parts,
+// or `undefined` for a file the lexer can't read.
+export function stringsOf(
+  format: Format,
+  source: string,
+): string[] | undefined {
+  const lexed = createLexed();
+  const strings: string[] = [];
+  lexed.strings = strings;
+  try {
+    openFile(source, lexed);
+    if (isHost(format)) lexHost(source, lexed, format);
+    else lexRange(0, source.length, DIALECTS[format]);
+  } catch {
+    return undefined;
+  }
+  return strings;
+}
+
 // A copy of `text` that shares no memory with the string it was sliced
 // from. V8 and JavaScriptCore keep a whole source alive for any slice of
 // it, so without this a plan that reads every file holds every file's text

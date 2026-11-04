@@ -909,3 +909,156 @@ describe("bivium check: dead globs", () => {
     });
   });
 });
+
+// test/check.test.js hands paths to src/check.js, which reads them.
+function spelledRepo(files: Record<string, string>, config: object = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "bivium-spelled-"));
+  dirs.push(dir);
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "user.email", "t@example.com");
+  git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
+  write(dir, {
+    "bivium.config.json": JSON.stringify({
+      suites: { unit: { tests: "test/**/*.test.js", root: "test" } },
+      roots: ["src", "test"],
+      ...config,
+    }),
+    "src/check.js": "export const check = (dir) => dir;",
+    "src/cli.js": "export {};",
+    "src/a.js": "export const a = 1;",
+    "test/fixtures/a.svelte": "<p>a</p>",
+    "src/data.json": "{}",
+    "docs/x.md": "",
+    ...files,
+  });
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "base");
+  return dir;
+}
+
+async function checkSpelled(dir: string) {
+  const { status, output } = await run(["check", "--json", "--cwd", dir]);
+  const report: Report = JSON.parse(output);
+  return { status, report };
+}
+
+describe("bivium check: undeclared paths", () => {
+  const handsFixtures = {
+    "test/check.test.js": `import { check } from "../src/check.js";\ncheck(join(root, "test/fixtures"));\n`,
+  };
+
+  it("reports a path a test hands to the code under test, and says so for what it names", async () => {
+    const dir = spelledRepo(handsFixtures);
+    const { status, report } = await checkSpelled(dir);
+    expect(status).toBe(1);
+    const fix =
+      'if it reads them, add `reads: { "test/check.test.js": "test/fixtures/**" }` (or `// @reads test/fixtures/**`), `@depends-on` if it runs them, `@lists` if it only names them';
+    expect(report.undeclaredPaths).toEqual([
+      {
+        file: "test/check.test.js",
+        path: "test/fixtures",
+        dir: true,
+        fix,
+        at: "test/check.test.js:2",
+      },
+    ]);
+    // The orphan rule's fix points at where the fixture's directory is named.
+    expect(report.unreached).toEqual([
+      {
+        suite: "unit",
+        file: "test/fixtures/a.svelte",
+        fix: `test/check.test.js:2 names test/fixtures: ${fix}`,
+      },
+    ]);
+    const text = await run(["check", "--cwd", dir]);
+    expect(text.output).toContain(
+      `Paths spelled in code that nothing declares: a change there doesn't select the file:\n  test/check.test.js\n    ✗ test/fixtures/    test/check.test.js:2\n      fix: ${fix}\n`,
+    );
+    expect(text.output).toEndWith(
+      "1 path spelled in code that nothing declares.",
+    );
+  });
+
+  it("clears once the config declares it", async () => {
+    const dir = spelledRepo(handsFixtures, {
+      reads: { "test/check.test.js": "test/fixtures/**" },
+    });
+    const { status, report } = await checkSpelled(dir);
+    expect(report.undeclaredPaths).toEqual([]);
+    expect(report.unreached).toEqual([]);
+    expect(status).toBe(0);
+  });
+
+  it("clears for a path a test only names, with @lists", async () => {
+    const names = `expect(out).toBe("src/cli.js");\n`;
+    const paths = async (test: string) =>
+      (
+        await checkSpelled(spelledRepo({ "test/names.test.js": test }))
+      ).report.undeclaredPaths.map(({ path }) => path);
+    expect(await paths(names)).toEqual(["src/cli.js"]);
+    expect(await paths(`// @lists src/cli.js\n${names}`)).toEqual([]);
+  });
+
+  it("reads hermetic files, bare names from the file, and templates after the root", async () => {
+    const dir = spelledRepo(
+      {
+        "test/run.test.js": [
+          `import { spawnSync } from "node:child_process";`,
+          `const fixtures = new URL("fixtures", import.meta.url);`,
+          `const cli = join(root, "src/cli.js");`,
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
+          "const data = `${root}/src/data.json`;",
+          "",
+        ].join("\n"),
+      },
+      { hermetic: "test/**" },
+    );
+    const { report } = await checkSpelled(dir);
+    expect(
+      report.undeclaredPaths.map((found) => [
+        found.path,
+        found.dir,
+        found.at,
+        found.fix.slice(0, found.fix.indexOf(" (or")),
+      ]),
+    ).toEqual([
+      [
+        "test/fixtures",
+        true,
+        "test/run.test.js:2",
+        'if it reads them, add `reads: { "test/run.test.js": "test/fixtures/**" }`',
+      ],
+      [
+        "src/cli.js",
+        false,
+        "test/run.test.js:3",
+        'if it runs it, add `edges: { "test/run.test.js": "src/cli.js" }`',
+      ],
+      [
+        "src/data.json",
+        false,
+        "test/run.test.js:4",
+        'if it reads it, add `reads: { "test/run.test.js": "src/data.json" }`',
+      ],
+    ]);
+  });
+
+  it("skips what a change already selects the file through, and what isn't an input", async () => {
+    const dir = spelledRepo({
+      "test/quiet.test.js": [
+        `import { a } from "../src/a.js";`,
+        `// join(root, "src/cli.js")`,
+        `const up = join(import.meta.dirname, "..", "test");`,
+        `const names = ["src/cli.js", { file: "src/data.json" }];`,
+        `const self = "test/quiet.test.js";`,
+        `const outside = "docs/x.md";`,
+        `const url = "/a.html";`,
+        `const missing = "test/gone.json";`,
+        "",
+      ].join("\n"),
+    });
+    const { report } = await checkSpelled(dir);
+    expect(report.undeclaredPaths).toEqual([]);
+  });
+});

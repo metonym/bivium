@@ -1,4 +1,4 @@
-import { scan } from "../src/scan.ts";
+import { scan, stringsOf } from "../src/scan.ts";
 import { scanRegex } from "../src/scan-regex.ts";
 import type { Scan } from "../src/syntax.ts";
 
@@ -397,5 +397,34 @@ describe("fallback", () => {
     const { fallback: _, ...rest } = result;
     expect(rest).toEqual(scanRegex(path, source));
     expect(result.imports).toContainEqual({ specifier: "./a" });
+  });
+});
+
+describe("stringsOf", () => {
+  it("lists strings in code and templates' static parts, not in brackets or comments", () => {
+    const source = [
+      `// "in/a/comment"`,
+      `const a = join(root, "tests/fixtures", 'b');`,
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
+      "const t = `${root}/tests/x/${name}.json`;",
+      `const data = ["in/an/array", { key: "in/an/array/object" }];`,
+      `const v = map["an/index"];`,
+    ].join("\n");
+    expect(stringsOf("ts", source)).toEqual([
+      "tests/fixtures",
+      "b",
+      "",
+      "/tests/x/",
+      ".json",
+    ]);
+  });
+
+  it("reads a host format's scripts and markup expressions", () => {
+    const source = `<script>const a = "a/b";</script>\n<p title="c/d">{f("e/f")}</p>\n`;
+    expect(stringsOf("svelte", source)).toEqual(["a/b", "e/f"]);
+  });
+
+  it("is undefined for a file the lexer can't read", () => {
+    expect(stringsOf("ts", "const s = `abc;")).toBeUndefined();
   });
 });
