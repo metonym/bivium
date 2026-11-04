@@ -162,6 +162,8 @@ function parseBunLock(text: string): Lockfile | undefined {
 }
 
 const NODE_MODULES = "node_modules/";
+// The selector's own package, which no test imports.
+const SELECTOR = "bivium";
 
 // `package-lock.json` v2 and v3: `packages` maps an install path to its
 // entry, and a workspace's directory (`""` for the root) to its manifest.
@@ -651,12 +653,14 @@ export function packageSeeds(
       more.length === 0
         ? ""
         : ` (and ${more.length} more ${more.length === 1 ? "package" : "packages"} ${user} depends on)`;
+    // bivium itself: a new version may select differently.
+    const why = user === SELECTOR ? "the test selector changed" : undefined;
     result.reasons.push({
       package: user,
       file: first.file,
       message: own
-        ? `${first.detail}${also}, and no test imports it`
-        : `${first.detail}, which ${user} depends on${also}, and no test imports ${user}`,
+        ? `${first.detail}${also}, ${why ?? "and no test imports it"}`
+        : `${first.detail}, which ${user} depends on${also}, ${why ?? `and no test imports ${user}`}`,
     });
   }
   return result;

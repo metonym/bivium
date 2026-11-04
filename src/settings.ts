@@ -141,7 +141,7 @@ export async function settingChanges({
           : `only ${keys.join(", ")}`;
       result.set(file, {
         seeds: [],
-        note: `${file}: ${what} changed, which no file resolves or runs by`,
+        note: `${file}: ${what} changed, so no file resolves or runs differently`,
       });
       continue;
     }

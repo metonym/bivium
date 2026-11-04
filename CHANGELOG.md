@@ -12,6 +12,20 @@
   doesn't fail, and an unreached file's fix names where it's spelled.
   `check --json` has them as `undeclaredPaths`. On
   carbon-preprocess-svelte it found the CLI a hermetic test spawns.
+- An `edges` or `reads` key that's a brace list of names
+  (`tests/{a,b}.test.ts`) declares what each of them reads from disk, as
+  a key per file does. One with a `*` or `?` still vouches for none.
+
+**Fixes**
+
+- A change to bivium in a lockfile says the test selector changed, not
+  that no test imports it.
+- `check` spells out each fix at the first node it's for and points back
+  to it after (`fix: as for test/u.test.js`), so a report of many alike
+  nodes isn't one sentence repeated.
+- The note for a `tsconfig.json` or `package.json` change that leaves
+  resolution alone reads as a sentence:
+  `only version changed, so no file resolves or runs differently`.
 
 ## 0.3.3 — 2026-11-03
 

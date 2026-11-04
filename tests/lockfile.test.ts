@@ -269,6 +269,28 @@ describe("a lockfile change", () => {
     ]);
   });
 
+  it("says a change to bivium is the selector's", async () => {
+    const dir = repo();
+    const declared = {
+      ...DECLARED,
+      devDependencies: { ...DECLARED.devDependencies, bivium: "^0.4.0" },
+    };
+    write(dir, {
+      "package.json": JSON.stringify({ name: "app", ...declared }, null, 2),
+      "bun.lock": bunLock(
+        {
+          ...PACKAGES,
+          bivium: { version: "0.4.0", bin: { bivium: "cli.js" } },
+        },
+        declared,
+      ),
+    });
+    expect(await planOf(dir)).toMatchObject({
+      unit: { mode: "all" },
+      reasons: ["bun.lock: bivium 0.4.0 added, the test selector changed"],
+    });
+  });
+
   it("selects nothing for an inert package or what only it depends on", async () => {
     const dir = repo();
     write(dir, {
