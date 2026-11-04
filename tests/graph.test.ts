@@ -438,6 +438,15 @@ describe("dependencies", () => {
     },
   );
 
+  it("takes a brace list of names in a key as declaring each one's reads", () => {
+    const source = `import { readFileSync } from "node:fs";\nreadFileSync("x");`;
+    const config = {
+      config: { ...CONFIG, reads: { "src/{load,save}.ts": "content/**" } },
+    };
+    expect(deps("src/load.ts", source, {}, config).unknown).toEqual([]);
+    expect(deps("src/save.ts", source, {}, config).unknown).toEqual([]);
+  });
+
   it("doesn't take a key with a wildcard as declaring each match's reads", () => {
     const source = `import { readFileSync } from "node:fs";\nreadFileSync("x");`;
     const config = {

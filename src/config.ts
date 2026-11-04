@@ -62,7 +62,8 @@ type KnownUnknown = NonNullable<Config["knownUnknowns"]>[number];
 // depends on or reads, where `$1`… stand for what the key's wildcards matched.
 export interface PathMap {
   key: string;
-  // The key names one file: it has no wildcard.
+  // The key names its files: no `*` or `?`, so one file, or a brace list
+  // of them (`tests/{a,b}.test.ts`).
   exact: boolean;
   pattern: RegExp;
   values: string[];
@@ -118,6 +119,7 @@ function list(value: Globs | undefined, fallback: readonly string[]) {
 }
 
 const LEADING_DOT_SLASH = /^\.\//;
+const NAME_WILDCARD = /[*?]/;
 const TRAILING_SLASHES = /\/+$/;
 
 // `src/` and `./src` both mean `src`; `.` and `./` mean the whole repo.
@@ -129,7 +131,7 @@ function normalizeRoot(root: string) {
 
 function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
   return Object.entries(record).map(([key, globs]) => {
-    const { pattern, wildcards } = captureGlob(key);
+    const { pattern } = captureGlob(key);
     const values = list(globs, []);
     // A value without references is the same for every match.
     const fixed = values.map((value) =>
@@ -137,7 +139,7 @@ function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
     );
     return {
       key,
-      exact: wildcards === 0,
+      exact: !NAME_WILDCARD.test(key),
       pattern,
       values,
       targets: (path) => {

@@ -368,10 +368,11 @@ export function graphFrom(
     }
   }
   for (const [path, deps] of graph) {
-    // An `edges` or `reads` key that names the file says what it reads, as
-    // its own `@depends-on` or `@reads` would, and an `edges` key also what
-    // pages it opens. One with a wildcard gives many files one input (each
-    // test its snapshot) and vouches for none of their other reads.
+    // An `edges` or `reads` key that names the file, alone or in a brace
+    // list, says what it reads, as its own `@depends-on` or `@reads` would,
+    // and an `edges` key also what pages it opens. One with a `*` or `?`
+    // gives many files one input (each test its snapshot) and vouches for
+    // none of their other reads.
     let depends = false;
     let declared = false;
     for (const edge of config.generated) {
