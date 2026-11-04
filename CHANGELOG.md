@@ -17,7 +17,7 @@
   selects only the tests that import bivium, where it ran everything
   because no test imports it. On carbon-components-svelte a bivium bump
   ran all 704 unit tests and every e2e test; it now runs the 2 that
-  import its CSS narrower.
+  declare `@depends-on bun.lock`.
 
 **Fixes**
 
