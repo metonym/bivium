@@ -1285,3 +1285,18 @@ select on every edit to it. `check` asks, and `@lists` says "only names
 it" for the rare false positive. It doesn't see a path built from parts
 (`join(root, "tests", name)`) or one in an array, so the promise
 `hermetic` makes is still the config's.
+
+## 62. bivium is inert
+
+A lockfile change that reaches a package no test imports runs everything,
+since a test may run its CLI (#42, #54), and bivium has a `bin`. So every
+bivium bump ran every suite in full: sveld and carbon-preprocess-svelte
+each took four in three months, more than any other single package, and
+on carbon-components-svelte each ran 704 unit tests and every e2e test.
+
+No test runs bivium. CI runs it before the tests to pick them, and a new
+version changes which tests later plans pick, not what any test does, so
+a full run on its bump checks nothing the bump could break. It's inert
+whatever `inert` says, the way the config file is always `self`. A file
+that imports it, such as a narrower a test reaches, still selects that
+test through the import.

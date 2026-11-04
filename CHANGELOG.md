@@ -12,6 +12,21 @@
   doesn't fail, and an unreached file's fix names where it's spelled.
   `check --json` has them as `undeclaredPaths`. On
   carbon-preprocess-svelte it found the CLI a hermetic test spawns.
+- A lockfile change to bivium itself is inert: no test runs it, so a
+  bump changes which tests later plans pick, not what any test does. It
+  selects only the tests that import bivium, where it ran everything
+  because no test imports it. On carbon-components-svelte a bivium bump
+  ran all 704 unit tests and every e2e test; it now runs the 2 that
+  import its CSS narrower.
+
+**Fixes**
+
+- `check` spells out each fix at the first node it's for and points back
+  to it after (`fix: as for test/u.test.js`), so a report of many alike
+  nodes isn't one sentence repeated.
+- The note for a `tsconfig.json` or `package.json` change that leaves
+  resolution alone reads as a sentence:
+  `only version changed, so no file resolves or runs differently`.
 
 ## 0.3.3 — 2026-11-03
 
