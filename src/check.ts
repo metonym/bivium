@@ -547,10 +547,21 @@ export function failed(report: Report, max: number | undefined): boolean {
   );
 }
 
-function pushUnknown(lines: string[], { node, causes, tests, known }: Unknown) {
+// Each fix is spelled out at the first node it's for; a later one points
+// back to it, so a report of many alike nodes isn't one sentence repeated.
+function pushUnknown(
+  lines: string[],
+  { node, causes, tests, known }: Unknown,
+  shown: Map<string, string>,
+) {
   lines.push(known === undefined ? node : `${node}    (known: ${known})`);
   for (const { cause, at, fix } of causes) {
-    lines.push(`  ✗ ${cause}${at ? `    ${at}` : ""}`, `    fix: ${fix}`);
+    const first = shown.get(fix);
+    if (first === undefined) shown.set(fix, node);
+    lines.push(
+      `  ✗ ${cause}${at ? `    ${at}` : ""}`,
+      `    fix: ${first === undefined ? fix : `as for ${first}`}`,
+    );
   }
   if (tests.length > 0) {
     const more = tests.length > 3 ? `, and ${tests.length - 3} more` : "";
@@ -711,14 +722,15 @@ function pushUndeclared(lines: string[], spelled: Report["undeclaredPaths"]) {
 export function formatReport(report: Report, max: number | undefined): string {
   const lines: string[] = summaryLines(report);
   const widen = widening(report);
-  for (const unknown of widen) pushUnknown(lines, unknown);
+  const shown = new Map<string, string>();
+  for (const unknown of widen) pushUnknown(lines, unknown, shown);
   const idle = report.unknown.filter((node) => node.tests.length === 0);
   if (idle.length > 0) {
     lines.push(
       "",
       "Unknown, but no test depends on them, so they widen nothing:",
     );
-    for (const unknown of idle) pushUnknown(lines, unknown);
+    for (const unknown of idle) pushUnknown(lines, unknown, shown);
   }
   if (report.fallbacks.length > 0) {
     lines.push(
