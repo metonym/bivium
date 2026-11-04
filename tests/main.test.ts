@@ -714,6 +714,20 @@ describe("calling it the way an agent does", () => {
     }
   });
 
+  it("names a test that is itself a symlink by its own path, not its target's", async () => {
+    const dir = repo();
+    write(dir, {
+      "src/c.js": `import { a } from "../src/a.js";`,
+      "src/a.js": "export const a = 3;",
+    });
+    symlinkSync("../src/c.js", join(dir, "test/c.test.js"));
+    const why = (test: string) =>
+      run(["why", test, "--cwd", dir, "--base", "base"]);
+    const expected = await why("test/c.test.js");
+    expect(expected.output).toContain("test/c.test.js");
+    expect(await why(join(dir, "test/c.test.js"))).toEqual(expected);
+  });
+
   it("takes a switch as =true or =false", async () => {
     const dir = repo();
     const on = await run(["plan", "base", "--json=true", "--cwd", dir]);

@@ -264,15 +264,25 @@ function real(path: string): string {
 // directory (./x, ../x, or from a subdirectory) or absolute is mapped onto
 // the root, so a path a shell completed names the same file; a bare path
 // that's in the graph as written stays repo-relative, as it always was.
+// The path is tried as written first, then with symlinks resolved: a link
+// above the repository (macOS's /tmp, a linked checkout) must resolve, but
+// a link inside it (a test that's a symlink) must not, or it names its
+// target instead.
 function repoPath(root: string, arg: string, known: (path: string) => boolean) {
-  const fromCwd = relative(real(root), real(resolve(arg)))
-    .split("\\")
-    .join("/");
-  const inside = !(fromCwd.startsWith("..") || isAbsolute(fromCwd));
-  if (isAbsolute(arg)) return inside ? fromCwd : arg;
+  const absolute = resolve(arg);
+  const realRoot = real(root);
+  const mappings = [
+    relative(root, absolute),
+    relative(realRoot, join(real(dirname(absolute)), basename(absolute))),
+    relative(realRoot, real(absolute)),
+  ]
+    .map((path) => path.split("\\").join("/"))
+    .filter((path) => !(path.startsWith("..") || isAbsolute(path)));
+  const fromCwd = mappings.find(known) ?? mappings[0];
+  if (isAbsolute(arg)) return fromCwd ?? arg;
   const asWritten = posix.normalize(arg.split("\\").join("/"));
   if (known(asWritten)) return asWritten;
-  return inside && known(fromCwd) ? fromCwd : asWritten;
+  return fromCwd !== undefined && known(fromCwd) ? fromCwd : asWritten;
 }
 
 async function inspect(
