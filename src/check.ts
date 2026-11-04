@@ -16,7 +16,7 @@ import { orphanOf } from "./plan.ts";
 import { aliasPath } from "./resolve.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { type SpelledPath, undeclaredPaths } from "./spelled.ts";
+import { type SpelledPath, spelledPaths } from "./spelled.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
 import { plural } from "./text.ts";
 
@@ -73,7 +73,8 @@ export interface Report {
   // config doesn't exempt: a change to one runs the whole suite.
   unreached: { suite: string; file: string; fix: string }[];
   // Repository paths a file spells in its code that a change to wouldn't
-  // select it: an input nothing declares.
+  // select the tests that reach it: an input nothing declares. One the orphan rule covers, which
+  // runs the suite in full, is left to `unreached`'s fix.
   undeclaredPaths: SpelledPath[];
 }
 
@@ -483,8 +484,11 @@ export async function check(
     reason,
   }));
   const dead = await findDeadGlobs(root, config, computed);
-  const spelled = await undeclaredPaths(root, config, computed);
-  const unreached = unreachedFiles(config, computed, spelled);
+  const spelled = await spelledPaths(root, config, computed);
+  const unreached = unreachedFiles(config, computed, [
+    ...spelled.undeclared,
+    ...spelled.orphaned,
+  ]);
   const allows = (entry: { file: string; glob: string }, found: DeadGlob) =>
     entry.file === found.node && entry.glob === found.glob;
   return {
@@ -508,7 +512,7 @@ export async function check(
         fix: "remove the entry: its dependencies are known now",
       })),
     unreached,
-    undeclaredPaths: spelled,
+    undeclaredPaths: spelled.undeclared,
     staleDeadGlobs: config.deadGlobs
       .filter((entry) => !dead.some((found) => allows(entry, found)))
       .map((entry) => ({
@@ -691,7 +695,7 @@ function pushUndeclared(lines: string[], spelled: Report["undeclaredPaths"]) {
   if (spelled.length === 0) return;
   lines.push(
     "",
-    "Paths spelled in code that nothing declares: a change there doesn't select the file:",
+    "Paths spelled in code that nothing declares: a change there doesn't select the tests that reach the file:",
   );
   let file: string | undefined;
   for (const { file: node, path, dir, at, fix } of spelled) {

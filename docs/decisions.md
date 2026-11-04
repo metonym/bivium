@@ -1256,9 +1256,13 @@ notices, for a fixture no test reaches at all.
 So `check` reads the string literals and templates' static parts in each
 suite's tests, and in what they reach under its roots, and resolves each
 path-like one against the root (with a slash) and the file's directory.
-One that names a file of the graph, or a directory of them, a change to
-which wouldn't select the file (`reaches`, as `plan` walks), is reported
-with its fix, and fails `check`.
+One that names a file of the graph, or a directory of them, is checked
+the way `plan` would select: a change there must select every test that
+reaches the file (for a test, itself; for a helper, the tests it reaches),
+or run its suite anyway, as `self`, its `wiring`, or by the orphan rule.
+One that doesn't is reported with its fix, and fails `check`. One only
+the orphan rule covers is sound but coarse, so it doesn't fail, and the
+unreached file's fix names where it's spelled instead.
 
 The lexer collects the strings, since a regex would count comments, and
 only when `check` asks: the extraction and its cache are unchanged, and a
@@ -1266,10 +1270,13 @@ plan pays one property test per literal. Strings inside brackets are
 skipped. On carbon-components-svelte, 12 of the first 13 hits were data:
 paths in an array a test compares (`["css/all.css", "src/index.js"]`),
 `Map` entries of fake sources, component names that match test
-directories. The one left is real: an e2e test that loads
-`e2e/vite.config.ts` by name. carbon-preprocess-svelte has two, the CLI
-a hermetic test spawns and the entries a Vite config builds; sveld has
-none; svelte-typecheck's first config, three. It costs a lex of the
+directories. The one left, an e2e test that loads
+`e2e/vite.config.ts` by name, is the suite's `wiring`, so a change to it
+runs every e2e test: what made the check compare tests, not edges. A Vite
+config on carbon-preprocess-svelte that builds `entries/` was the same,
+since its test reads `examples/**`. What's left is real: the CLI a
+hermetic test spawns on carbon-preprocess-svelte, and three fixture reads
+svelte-typecheck's first config left out. sveld has none. It costs a lex of the
 tests: 150 ms on carbon-components-svelte, under 10 ms on the rest.
 
 It's a check, not part of the graph. A string is evidence, not an edge:

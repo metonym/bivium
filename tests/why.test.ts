@@ -910,7 +910,8 @@ describe("bivium check: dead globs", () => {
   });
 });
 
-// test/check.test.js hands paths to src/check.js, which reads them.
+// Tests hand paths to src/check.js, which reads them; test/other.test.js
+// reads the fixtures, so the orphan rule doesn't cover them.
 function spelledRepo(files: Record<string, string>, config: object = {}) {
   const dir = mkdtempSync(join(tmpdir(), "bivium-spelled-"));
   dirs.push(dir);
@@ -928,6 +929,7 @@ function spelledRepo(files: Record<string, string>, config: object = {}) {
     "src/cli.js": "export {};",
     "src/a.js": "export const a = 1;",
     "test/fixtures/a.svelte": "<p>a</p>",
+    "test/other.test.js": "// @reads test/fixtures/**\nexport {};\n",
     "src/data.json": "{}",
     "docs/x.md": "",
     ...files,
@@ -948,7 +950,7 @@ describe("bivium check: undeclared paths", () => {
     "test/check.test.js": `import { check } from "../src/check.js";\ncheck(join(root, "test/fixtures"));\n`,
   };
 
-  it("reports a path a test hands to the code under test, and says so for what it names", async () => {
+  it("reports a path a test hands to the code under test", async () => {
     const dir = spelledRepo(handsFixtures);
     const { status, report } = await checkSpelled(dir);
     expect(status).toBe(1);
@@ -963,21 +965,77 @@ describe("bivium check: undeclared paths", () => {
         at: "test/check.test.js:2",
       },
     ]);
-    // The orphan rule's fix points at where the fixture's directory is named.
-    expect(report.unreached).toEqual([
-      {
-        suite: "unit",
-        file: "test/fixtures/a.svelte",
-        fix: `test/check.test.js:2 names test/fixtures: ${fix}`,
-      },
-    ]);
     const text = await run(["check", "--cwd", dir]);
     expect(text.output).toContain(
-      `Paths spelled in code that nothing declares: a change there doesn't select the file:\n  test/check.test.js\n    ✗ test/fixtures/    test/check.test.js:2\n      fix: ${fix}\n`,
+      `Paths spelled in code that nothing declares: a change there doesn't select the tests that reach the file:\n  test/check.test.js\n    ✗ test/fixtures/    test/check.test.js:2\n      fix: ${fix}\n`,
     );
     expect(text.output).toEndWith(
       "1 path spelled in code that nothing declares.",
     );
+  });
+
+  it("leaves a path the orphan rule covers to the unreached file's fix", async () => {
+    // No other test reads the fixtures: a change to one runs the suite.
+    const dir = spelledRepo({
+      ...handsFixtures,
+      "test/other.test.js": "export {};\n",
+    });
+    const { status, report } = await checkSpelled(dir);
+    expect(report.undeclaredPaths).toEqual([]);
+    expect(report.unreached).toEqual([
+      {
+        suite: "unit",
+        file: "test/fixtures/a.svelte",
+        fix: 'test/check.test.js:2 names test/fixtures: if it reads them, add `reads: { "test/check.test.js": "test/fixtures/**" }` (or `// @reads test/fixtures/**`), `@depends-on` if it runs them, `@lists` if it only names them',
+      },
+    ]);
+    expect(status).toBe(0);
+  });
+
+  it("skips a path whose change runs the suite anyway", async () => {
+    const dir = spelledRepo(
+      {
+        "test/vite.test.js": `createServer({ configFile: "test/vite.config.js" });\n`,
+        "test/vite.config.js": "export default {};",
+        "test/self.test.js": `load("src/cli.js");\n`,
+      },
+      {
+        suites: {
+          unit: {
+            tests: "test/**/*.test.js",
+            root: "test",
+            wiring: "test/vite.config.js",
+          },
+        },
+        self: "src/cli.js",
+      },
+    );
+    expect((await checkSpelled(dir)).report.undeclaredPaths).toEqual([]);
+  });
+
+  it("asks a helper's path to select the tests that reach the helper", async () => {
+    const helper = `export const at = join(root, "test/fixtures");\n`;
+    const paths = async (other: string) =>
+      (
+        await checkSpelled(
+          spelledRepo({
+            "test/helper.js": helper,
+            "test/other.test.js": other,
+          }),
+        )
+      ).report.undeclaredPaths.map(({ file }) => file);
+    // The test that reaches the helper reads the fixtures itself.
+    expect(
+      await paths(`// @reads test/fixtures/**\nimport "./helper.js";\n`),
+    ).toEqual([]);
+    // It doesn't: another test reads them, so the orphan rule won't run it.
+    const dir = spelledRepo({
+      "test/helper.js": helper,
+      "test/uses.test.js": `import "./helper.js";\n`,
+    });
+    expect(
+      (await checkSpelled(dir)).report.undeclaredPaths.map(({ file }) => file),
+    ).toEqual(["test/helper.js"]);
   });
 
   it("clears once the config declares it", async () => {

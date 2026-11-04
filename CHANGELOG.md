@@ -7,11 +7,11 @@
 - `bivium check` fails on a repository path a test spells in a string
   that a change to wouldn't select it: a fixture directory it hands to
   the code under test, or a script a `hermetic` test spawns. Each comes
-  with the `reads`, `edges` or annotation that declares it, and an
-  unreached file's fix names where it's spelled. `check --json` has them
-  as `undeclaredPaths`. On carbon-components-svelte it found a Vite
-  config an e2e test loads; on carbon-preprocess-svelte, the CLI a test
-  spawns.
+  with the `reads`, `edges` or annotation that declares it. A path whose
+  change runs the suite anyway (`wiring`, `self`, the orphan rule)
+  doesn't fail, and an unreached file's fix names where it's spelled.
+  `check --json` has them as `undeclaredPaths`. On
+  carbon-preprocess-svelte it found the CLI a hermetic test spawns.
 
 ## 0.3.3 — 2026-11-03
 
