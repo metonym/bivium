@@ -1239,3 +1239,49 @@ Two parts stay, since they cost nothing and save a process each: a file
 unchanged since the merge base is read from the working tree, and each
 path is read once, however many ask (the package diff and the setting
 files both read a changed `package.json`).
+
+## 61. check reads the paths a test spells
+
+A test's disk reads make it unknown until it declares them, and that's
+the only thing that asks for a declaration. Two kinds of test read
+repository files without one. A test that hands a path to the code under
+test, `typecheck({ workspace: "tests/fixtures-preprocess" })`, reads
+nothing itself: the library does, and a library is `hermetic` (#36). And
+a `hermetic` test, which sveld's, carbon-preprocess-svelte's and
+svelte-typecheck's first configs all were, because that's the quickest
+way to clear the "reads the disk" list, has its reads vouched for. In
+both, a change to the fixture selects nothing, and only the orphan rule
+notices, for a fixture no test reaches at all.
+
+So `check` reads the string literals and templates' static parts in each
+suite's tests, and in what they reach under its roots, and resolves each
+path-like one against the root (with a slash) and the file's directory.
+One that names a file of the graph, or a directory of them, is checked
+the way `plan` would select: a change there must select every test that
+reaches the file (for a test, itself; for a helper, the tests it reaches),
+or run its suite anyway, as `self`, its `wiring`, or by the orphan rule.
+One that doesn't is reported with its fix, and fails `check`. One only
+the orphan rule covers is sound but coarse, so it doesn't fail, and the
+unreached file's fix names where it's spelled instead.
+
+The lexer collects the strings, since a regex would count comments, and
+only when `check` asks: the extraction and its cache are unchanged, and a
+plan pays one property test per literal. Strings inside brackets are
+skipped. On carbon-components-svelte, 12 of the first 13 hits were data:
+paths in an array a test compares (`["css/all.css", "src/index.js"]`),
+`Map` entries of fake sources, component names that match test
+directories. The one left, an e2e test that loads
+`e2e/vite.config.ts` by name, is the suite's `wiring`, so a change to it
+runs every e2e test: what made the check compare tests, not edges. A Vite
+config on carbon-preprocess-svelte that builds `entries/` was the same,
+since its test reads `examples/**`. What's left is real: the CLI a
+hermetic test spawns on carbon-preprocess-svelte, and three fixture reads
+svelte-typecheck's first config left out. sveld has none. It costs a lex of the
+tests: 150 ms on carbon-components-svelte, under 10 ms on the rest.
+
+It's a check, not part of the graph. A string is evidence, not an edge:
+a test that only names a path, in an expected message, would otherwise
+select on every edit to it. `check` asks, and `@lists` says "only names
+it" for the rare false positive. It doesn't see a path built from parts
+(`join(root, "tests", name)`) or one in an array, so the promise
+`hermetic` makes is still the config's.

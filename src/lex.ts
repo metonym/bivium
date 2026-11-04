@@ -42,6 +42,11 @@ export interface Lexed {
   nonLiteralGlob: boolean;
   // Imports `fs`/`child_process`, or calls `Bun.file`/`Glob`/`spawn`.
   readsDisk: boolean;
+  // When set, filled with the raw text of every string literal in code and
+  // every template's static parts, but those inside brackets (an array
+  // literal's are mostly data, an index's a key): `check` looks for paths
+  // in them. No extraction needs them, so a plan leaves it unset.
+  strings?: string[];
 }
 
 export function createLexed(): Lexed {
@@ -319,6 +324,15 @@ function template(start: number) {
   return fail("unterminated template", j);
 }
 
+// `template()`, recording the text it scanned when strings are wanted.
+function templatePart(start: number, stack: number[]) {
+  const e = template(start);
+  if (out.strings && !stack.includes(M_BRACKET)) {
+    out.strings.push(src.slice(start, templateOpen ? e - 2 : e - 1));
+  }
+  return e;
+}
+
 // Index after the regex literal opening at `i`.
 function regex(i: number) {
   let j = i + 1;
@@ -514,12 +528,15 @@ function code(start: number, brace: boolean): number {
       case 34: {
         const e = stringEnd(i);
         if (e === -1) fail("unterminated string", i);
+        if (out.strings && !stack.includes(M_BRACKET)) {
+          out.strings.push(src.slice(i + 1, e - 1));
+        }
         i = e;
         last = T_OPERAND;
         continue;
       }
       case 96:
-        i = template(i + 1);
+        i = templatePart(i + 1, stack);
         if (templateOpen) {
           stack.push(M_TEMPLATE);
           last = T_PUNCT;
@@ -551,7 +568,7 @@ function code(start: number, brace: boolean): number {
         }
         const open = stack.pop();
         if (open === M_TEMPLATE) {
-          i = template(i + 1);
+          i = templatePart(i + 1, stack);
           if (templateOpen) {
             stack.push(M_TEMPLATE);
             last = T_PUNCT;
