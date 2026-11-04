@@ -12,6 +12,11 @@
   doesn't fail, and an unreached file's fix names where it's spelled.
   `check --json` has them as `undeclaredPaths`. On
   carbon-preprocess-svelte it found the CLI a hermetic test spawns.
+- `@depends-on` and `edges` take a package: `// @depends-on pkg:svelte-check`
+  in a test that runs its CLI. A lockfile change to the package, or to
+  one it depends on, selects the tests that name it, instead of running
+  everything because no test imports it. `check` reports a `pkg:` name
+  no `package.json` declares as a dead glob.
 - An `edges` or `reads` key that's a brace list of names
   (`tests/{a,b}.test.ts`) declares what each of them reads from disk, as
   a key per file does. One with a `*` or `?` still vouches for none.

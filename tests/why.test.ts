@@ -810,6 +810,28 @@ describe("bivium check: dead globs", () => {
     });
   });
 
+  it("reports a package no package.json declares", async () => {
+    const dir = globRepo(
+      '// @depends-on pkg:runner pkg:runnr\nspawnSync("runner");\n',
+    );
+    write(dir, {
+      "package.json": JSON.stringify({ devDependencies: { runner: "^1.0.0" } }),
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "runner");
+    const { status, deadGlobs } = await checkJson(dir);
+    expect(status).toBe(1);
+    expect(deadGlobs).toMatchObject([
+      {
+        node: "test/a.test.js",
+        kind: "depends-on",
+        glob: "pkg:runnr",
+        problem: "matches nothing",
+        fix: "no package.json declares that package: fix the name, or declare it",
+      },
+    ]);
+  });
+
   it("reports a glob over ignored files outside the graph", async () => {
     const dir = globRepo(
       "// @reads docs/*.md\n// @reads **/*.md\nexport {};\n",

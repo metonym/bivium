@@ -13,7 +13,7 @@ import {
   specifierLine,
 } from "./locate.ts";
 import { orphanOf } from "./plan.ts";
-import { aliasPath } from "./resolve.ts";
+import { aliasPath, DEP_FIELDS } from "./resolve.ts";
 import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
 import { type SpelledPath, spelledPaths } from "./spelled.ts";
@@ -265,11 +265,30 @@ function deadOf(
     matches: matches.length,
     ignored: ignored.length,
     examples: ignored.slice(0, EXAMPLES),
-    fix:
-      problem === "matches nothing"
-        ? "fix the path"
-        : "point it at files the selector reads, or allowlist it in `deadGlobs` with a reason",
+    fix: fixForDead(glob, problem),
   };
+}
+
+function fixForDead(glob: string, problem: DeadGlob["problem"]) {
+  if (problem !== "matches nothing") {
+    return "point it at files the selector reads, or allowlist it in `deadGlobs` with a reason";
+  }
+  return glob.startsWith("pkg:")
+    ? "no package.json declares that package: fix the name, or declare it"
+    : "fix the path";
+}
+
+// What a declared glob can match: every file git lists, and every package a
+// package.json declares, which `pkg:` globs name.
+function matchable({ listed, packages }: Computed): string[] {
+  const names = new Set<string>();
+  for (const pkg of packages.values()) {
+    for (const field of DEP_FIELDS) {
+      for (const name of Object.keys(pkg[field] ?? {}))
+        names.add(`pkg:${name}`);
+    }
+  }
+  return [...listed, ...sorted(names)];
 }
 
 // The config's `edges` and `reads`, under the config's file. A key no node
@@ -278,7 +297,8 @@ function deadOf(
 // most tests' captures miss is alive while some test's hits.
 function configDeadGlobs(
   config: ResolvedConfig,
-  { graph, listed }: Computed,
+  { graph }: Computed,
+  listed: string[],
   skipped: (file: string) => boolean,
 ): Found[] {
   const file = config.file ?? "the config";
@@ -331,7 +351,8 @@ async function findDeadGlobs(
   config: ResolvedConfig,
   computed: Computed,
 ): Promise<DeadGlob[]> {
-  const { graph, extractions, listed } = computed;
+  const { graph, extractions } = computed;
+  const listed = matchable(computed);
   const skipped = (file: string) => config.isIgnored(file) && !graph.has(file);
   const found: Found[] = [];
   for (const node of graph.keys()) {
@@ -342,7 +363,7 @@ async function findDeadGlobs(
       if (dead) found.push(dead);
     }
   }
-  const configured = configDeadGlobs(config, computed, skipped);
+  const configured = configDeadGlobs(config, computed, listed, skipped);
   const nodes = [
     ...new Set([
       ...found.map(({ node }) => node),

@@ -269,6 +269,39 @@ describe("a lockfile change", () => {
     ]);
   });
 
+  it("selects only the tests that name a package they run", async () => {
+    const dir = repo();
+    write(dir, {
+      "test/runs.test.js": `// @depends-on pkg:runner\nspawnSync("runner");\n`,
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "runs");
+    write(dir, { "bun.lock": bunLock(bump("runner", "3.1.0")) });
+    expect(await planOf(dir)).toMatchObject({
+      unit: { mode: "some", files: ["test/runs.test.js"] },
+      reasons: [],
+    });
+    // Through a dependency, too.
+    write(dir, { "bun.lock": bunLock(bump("dep-y", "1.0.1")) });
+    expect((await planOf(dir)).unit).toEqual({
+      mode: "some",
+      files: ["test/runs.test.js"],
+    });
+    // And from the config's edges.
+    write(dir, {
+      "test/runs.test.js": `spawnSync("runner");\n`,
+      "bun.lock": bunLock(bump("runner", "3.1.0")),
+    });
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "undeclared");
+    write(dir, { "bun.lock": bunLock(bump("runner", "3.2.0")) });
+    const edges = { ...CONFIG, edges: { "test/runs.test.js": "pkg:runner" } };
+    expect((await planOf(dir, edges)).unit).toEqual({
+      mode: "some",
+      files: ["test/runs.test.js"],
+    });
+  });
+
   it("says a change to bivium is the selector's", async () => {
     const dir = repo();
     const declared = {

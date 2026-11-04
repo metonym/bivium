@@ -1285,3 +1285,25 @@ select on every edit to it. `check` asks, and `@lists` says "only names
 it" for the rare false positive. It doesn't see a path built from parts
 (`join(root, "tests", name)`) or one in an array, so the promise
 `hermetic` makes is still the config's.
+
+## 62. A test names the package it runs
+
+A package with a CLI is used in ways no import shows, so a lockfile change
+that reaches one no test imports runs everything (#42, #54). svelte-typecheck's
+parity tests run svelte-check and svelte-kit by path, and nothing else
+does: a svelte-check bump ran every test in every suite, when one file
+could observe it.
+
+`@depends-on` and `edges` take `pkg:<name>`, as the graph names a
+package. Spelled without wildcards, it makes the `pkg:` node even if no
+file imports the package, and the pattern edge reaches the file from it.
+A lockfile change seeds the node as it does for an imported package, so
+the walk selects the file, and `packageSeeds` finds that the package
+reaches a test: no full run. A change to a package it depends on reaches
+it the same way. `why` shows the edge as `depends-on` (or `edges`) from
+the package, with the version change.
+
+It's the promise a file's `@depends-on` makes, and no more: a second test
+that runs the same CLI without naming it is missed, as one that reads a
+file without naming it is. A `pkg:` glob is matched against the packages
+the `package.json` files declare, so a misspelled one is a dead glob.

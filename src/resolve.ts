@@ -99,7 +99,7 @@ const INDEX = "/index";
 const SVELTE_CONFIGS = ["js", "mjs", "cjs", "ts", "mts"].map(
   (ext) => `svelte.config.${ext}`,
 );
-const DEP_FIELDS = [
+export const DEP_FIELDS = [
   "dependencies",
   "devDependencies",
   "peerDependencies",

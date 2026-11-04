@@ -341,6 +341,17 @@ export function graphFrom(
     }
   }
   for (const id of external) graph.set(id, leaf());
+  // A package a file names in `@depends-on` or `edges` (`pkg:svelte-check`),
+  // a CLI it runs: a node even if nothing imports it, so a lockfile change to
+  // it reaches the file through the pattern, as one to a file would.
+  const runs = new Set<string>();
+  for (const found of scans.values()) {
+    for (const glob of found.dependsOn) if (isPackageName(glob)) runs.add(glob);
+  }
+  for (const edge of config.generated) {
+    for (const value of edge.values) if (isPackageName(value)) runs.add(value);
+  }
+  for (const id of runs) if (!graph.has(id)) graph.set(id, leaf());
   // Every test of a suite depends on its setup files, as the runner loads
   // them first.
   for (const suite of config.suites) {
@@ -397,6 +408,10 @@ export function graphFrom(
   }
   return graph;
 }
+
+// A `pkg:` node spelled without wildcards.
+const PACKAGE_NAME = /^pkg:[^*?{}]+$/;
+const isPackageName = (glob: string) => PACKAGE_NAME.test(glob);
 
 function isGenerated(config: ResolvedConfig, path: string) {
   return config.generated.some(({ pattern }) => pattern.test(path));
