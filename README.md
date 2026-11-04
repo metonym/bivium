@@ -310,9 +310,9 @@ The history git fetches is three kinds of object: commits, trees (each directory
 | History | Checkout | What a plan pays |
 | :--- | :--- | :--- |
 | Small: a full clone takes a second or two | `fetch-depth: 0` | Nothing more: every old version is already on disk |
-| Large: years of commits, big files | `fetch-depth: 0` and `filter: blob:none` | One fetch for the old versions it reads, when a change needs any |
+| Large: years of commits, big files | `fetch-depth: 0` and `filter: blob:none` | A fetch from the remote for the old versions it reads, when a change needs any: about a second, sometimes several |
 
-`filter: blob:none` makes a partial clone: every commit and tree, and only the blobs the checkout needs. Git fetches any other blob when something reads it, and bivium asks for the ones a plan reads together, in one fetch. Without the filter, a large history's old contents are most of the download; with it, a small repository pays a fetch for contents it could have had for free.
+`filter: blob:none` makes a partial clone: every commit and tree, and only the blobs the checkout needs. Git fetches any other blob when something reads it, and fetches for reads made at once run in parallel. Without the filter, a large history's old contents are most of the download; with it, a small repository pays a round trip to the remote for contents it could have had for free.
 
 ### The cache
 
