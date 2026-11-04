@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { isAbsolute, posix, relative, resolve } from "node:path";
 import { version } from "../package.json" with { type: "json" };
-import { check, failed, formatReport } from "./check.ts";
+import { check, failed, formatReport, summarize } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
+import { BiviumError, didYouMean, type ErrorKind } from "./errors.ts";
 import { formatGraph, graphReport } from "./fanin.ts";
 import { formatSelection } from "./plan.ts";
 import type { Selection } from "./types.ts";
@@ -22,7 +24,9 @@ const USAGE = `Usage:
   bivium --help                            print this
 
   base defaults to the config's base, else the upstream default branch.
-  Options go before or after the command.
+  Options go before or after the command, as --flag value or --flag=value.
+  Paths may be repo-relative, relative to the current directory, or
+  absolute.
 
 Options:
   --config <file>   config file (default: bivium.config.{ts,mts,mjs,js,json})
@@ -42,8 +46,10 @@ Options:
                     a test
   --top <n>         for graph: how many files to list per suite (default: 10)
 
-Exit status: 0 done; 1 check found problems; 2 a usage or configuration
-error. run exits with its command's status.
+Exit status: 0 done; 1 check found problems; 2 a usage, configuration or
+git error. run exits with its command's status. With --json, an error is
+also printed to stdout as { "schemaVersion", "error": { "kind", "message" } },
+kind one of usage, config, git or other.
 
 Examples:
   bivium plan origin/main --json
@@ -81,33 +87,58 @@ interface Args {
   positional: string[];
 }
 
+// The JSON outputs' shape. A change that drops or retypes a field bumps it.
+const SCHEMA_VERSION = 1;
+
+function usageError(message: string): BiviumError {
+  return new BiviumError("usage", message);
+}
+
 // An unknown flag is an error: a misspelled --github would skip the outputs
 // CI reads, and a step that reads none runs nothing.
+function unknownOption(command: string, flag: string): BiviumError {
+  const known = FLAGS[command] ?? [];
+  const others = Object.keys(FLAGS).filter(
+    (other) => other !== command && FLAGS[other].includes(flag),
+  );
+  const hint =
+    others.length > 0
+      ? ` (${others.join(" and ")} ${others.length === 1 ? "takes" : "take"} it)`
+      : didYouMean(flag, known);
+  return usageError(`bivium ${command}: unknown option ${flag}${hint}`);
+}
+
 function parseArgs(command: string, argv: string[]): Args {
   const known = FLAGS[command] ?? [];
   const flags = new Map<string, string>();
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (!arg.startsWith("--")) {
+    // A lone "-" is a value (stdin, by convention), never an option.
+    if (!arg.startsWith("-") || arg === "-") {
       positional.push(arg);
       continue;
     }
-    if (!known.includes(arg)) {
-      throw new Error(`bivium ${command}: unknown option ${arg}`);
-    }
-    if (!VALUED.has(arg)) {
-      flags.set(arg, "");
+    // A single-dash option other than -h and -v (handled before this) is
+    // unknown, not a base ref.
+    const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
+    const flag = equals === -1 ? arg : arg.slice(0, equals);
+    if (!known.includes(flag)) throw unknownOption(command, flag);
+    if (!VALUED.has(flag)) {
+      if (equals !== -1) {
+        throw usageError(`bivium ${command}: ${flag} takes no value`);
+      }
+      flags.set(flag, "");
       continue;
     }
-    const value = argv[++i];
-    if (value === undefined || value.startsWith("--")) {
-      throw new Error(`bivium: ${arg} needs a value`);
+    const value = equals === -1 ? argv[++i] : arg.slice(equals + 1);
+    if (value === undefined || value === "" || value.startsWith("--")) {
+      throw usageError(`bivium: ${flag} needs a value`);
     }
-    flags.set(arg, value);
+    flags.set(flag, value);
   }
   if (positional.length > (POSITIONAL[command] ?? 0)) {
-    throw new Error(`bivium ${command}: unexpected ${positional.at(-1)}`);
+    throw usageError(`bivium ${command}: unexpected ${positional.at(-1)}`);
   }
   return { flags, positional };
 }
@@ -141,6 +172,19 @@ function logSelection(
   }
 }
 
+// What the plan was made against, which `--json` gives as fields.
+async function logContext(
+  base: string,
+  config: ResolvedConfig,
+  computed: Computed,
+) {
+  const mergeBase = (await computed.mergeBase()).slice(0, 7);
+  const count = computed.changed.length;
+  const changed = `${count} changed ${count === 1 ? "file" : "files"}`;
+  const file = config.file ? `, config ${config.file}` : "";
+  console.log(`Against ${base} (merge base ${mergeBase}): ${changed}${file}`);
+}
+
 function logPlan({ plan, narrowed }: Computed) {
   for (const reason of plan.reasons) console.log(`Full run: ${reason}`);
   for (const line of plan.packages) console.log(line);
@@ -156,13 +200,52 @@ function logPlan({ plan, narrowed }: Computed) {
   }
 }
 
-function writeOutputs(config: ResolvedConfig, { plan }: Computed) {
+function githubOutput(): string {
   const output = process.env.GITHUB_OUTPUT;
-  if (!output) throw new Error("bivium: GITHUB_OUTPUT is not set");
+  if (!output) {
+    throw usageError(
+      "bivium plan: --github writes to $GITHUB_OUTPUT, which is not set (it is in a GitHub Actions step)",
+    );
+  }
+  return output;
+}
+
+function writeOutputs(
+  output: string,
+  config: ResolvedConfig,
+  { plan }: Computed,
+) {
   const lines = config.suites.map(
     (suite) => `${suite.output}=${formatSelection(plan.suites[suite.name])}\n`,
   );
   appendFileSync(output, lines.join(""));
+}
+
+function json(value: object): string {
+  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...value }, null, 2);
+}
+
+function findSuite(config: ResolvedConfig, name: string | undefined) {
+  if (name === undefined) return;
+  const suite = config.suites.find((candidate) => candidate.name === name);
+  if (suite) return suite;
+  const names = config.suites.map((candidate) => candidate.name);
+  throw usageError(
+    `bivium: no suite "${name}"${didYouMean(name, names)}; the config has ${names.join(", ")}`,
+  );
+}
+
+// A path as the repository names it. One given relative to the current
+// directory (./x, ../x, or from a subdirectory) or absolute is mapped onto
+// the root, so a path a shell completed names the same file; a bare path
+// that's in the graph as written stays repo-relative, as it always was.
+function repoPath(root: string, arg: string, known: (path: string) => boolean) {
+  const fromCwd = relative(root, resolve(arg)).split("\\").join("/");
+  const inside = !(fromCwd.startsWith("..") || isAbsolute(fromCwd));
+  if (isAbsolute(arg)) return inside ? fromCwd : arg;
+  const asWritten = posix.normalize(arg.split("\\").join("/"));
+  if (known(asWritten)) return asWritten;
+  return inside && known(fromCwd) ? fromCwd : asWritten;
 }
 
 async function inspect(
@@ -171,7 +254,18 @@ async function inspect(
 ): Promise<0 | 1> {
   const format = flags.get("--format") ?? "tree";
   if (format !== "json" && !isFormat(format)) {
-    throw new Error("bivium why: --format takes tree, chain, source or json");
+    throw usageError(
+      `bivium why: --format takes tree, chain, source or json${didYouMean(format, ["tree", "chain", "source", "json"])}`,
+    );
+  }
+  const maxFlag = flags.get("--max-unknown");
+  const max = maxFlag === undefined ? undefined : Number(maxFlag);
+  if (max !== undefined && !Number.isInteger(max)) {
+    throw usageError("bivium check: --max-unknown takes a whole number");
+  }
+  const [testArg, fileArg] = positional;
+  if (command === "why" && testArg === undefined) {
+    throw usageError("bivium why: which test? bivium why <test> [file]");
   }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
@@ -183,27 +277,44 @@ async function inspect(
     ...(flags.has("--no-cache") && { cache: false }),
   });
   if (command === "check") {
-    const maxFlag = flags.get("--max-unknown");
-    const max = maxFlag === undefined ? undefined : Number(maxFlag);
-    if (max !== undefined && !Number.isInteger(max)) {
-      throw new Error("bivium check: --max-unknown takes a whole number");
-    }
     const report = await check(root, config, computed);
+    const ok = !failed(report, max);
     console.log(
       flags.has("--json")
-        ? JSON.stringify(report, null, 2)
+        ? json({ ok, summary: summarize(report), ...report })
         : formatReport(report, max),
     );
-    return failed(report, max) ? 1 : 0;
+    return ok ? 0 : 1;
   }
-  const [test, file] = positional;
-  if (test === undefined) throw new Error("bivium why: which test?");
+  const inGraph = (path: string) => computed.graph.has(path);
+  const isTest = (path: string) =>
+    config.suites.some((suite) => suite.isTest(path));
+  const test = repoPath(
+    root,
+    testArg ?? "",
+    (path) => inGraph(path) && isTest(path),
+  );
+  const file =
+    fileArg === undefined ? undefined : repoPath(root, fileArg, inGraph);
+  if (!isTest(test) || !inGraph(test)) {
+    const tests = [...computed.graph.keys()].filter(isTest);
+    throw usageError(
+      inGraph(test)
+        ? `bivium why: ${test} is no suite's test: name a test first, as in bivium why <test> ${test}`
+        : `bivium why: no test ${test}${didYouMean(test, tests)}`,
+    );
+  }
+  if (file !== undefined && !inGraph(file)) {
+    throw usageError(
+      `bivium why: no file ${file}${didYouMean(file, computed.graph.keys())}`,
+    );
+  }
   const explanation = await explain(root, config, computed, test, file, {
     all: flags.has("--all"),
   });
   console.log(
     flags.has("--json") || format === "json"
-      ? JSON.stringify(explanation, null, 2)
+      ? json(explanation)
       : formatExplanation(explanation, format),
   );
   return 0;
@@ -212,7 +323,7 @@ async function inspect(
 async function graphCommand({ flags }: Args): Promise<number> {
   const top = Number(flags.get("--top") ?? "10");
   if (!Number.isInteger(top) || top < 0) {
-    throw new Error("bivium graph: --top takes a whole number");
+    throw usageError("bivium graph: --top takes a whole number");
   }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
@@ -220,21 +331,13 @@ async function graphCommand({ flags }: Args): Promise<number> {
     base: "HEAD",
     configFile: flags.get("--config"),
   });
-  const name = flags.get("--suite");
-  const suites =
-    name === undefined
-      ? config.suites
-      : config.suites.filter((suite) => suite.name === name);
-  if (suites.length === 0) throw new Error(`bivium: no suite "${name}"`);
+  const one = findSuite(config, flags.get("--suite"));
+  const suites = one ? [one] : config.suites;
   const { graph } = await computePlan(root, base, config, {
     ...(flags.has("--no-cache") && { cache: false }),
   });
   const report = graphReport(graph, suites);
-  console.log(
-    flags.has("--json")
-      ? JSON.stringify(report, null, 2)
-      : formatGraph(report, top),
-  );
+  console.log(flags.has("--json") ? json(report) : formatGraph(report, top));
   return 0;
 }
 
@@ -242,24 +345,24 @@ async function runCommand(
   command: string,
   { flags, positional }: Args,
 ): Promise<number> {
+  // Checked before planning, so a failed step prints no plan.
+  const output = flags.has("--github") ? githubOutput() : undefined;
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
     base: positional[0],
     configFile: flags.get("--config"),
   });
-  const suiteName = flags.get("--suite");
-  const suite =
-    suiteName === undefined
-      ? config.suites[0]
-      : config.suites.find((candidate) => candidate.name === suiteName);
-  if (!suite) {
-    throw new Error(`bivium: no suite "${suiteName}"`);
+  const suite = findSuite(config, flags.get("--suite")) ?? config.suites[0];
+  if (command === "run" && !suite.run) {
+    throw usageError(
+      `bivium run: suite "${suite.name}" has no run command: add suites.${suite.name}.run to the config`,
+    );
   }
   const computed = await computePlan(root, base, config, {
     ...(flags.has("--no-cache") && { cache: false }),
     // Running one suite needs no narrower that narrows only others.
     ...(command === "run" && { suites: [suite.name] }),
-    mergeBase: command === "plan" && flags.has("--json"),
+    mergeBase: true,
   });
 
   if (command === "plan") {
@@ -270,40 +373,36 @@ async function runCommand(
         result: ran.result,
       }));
       console.log(
-        JSON.stringify(
-          {
-            base,
-            mergeBase: await computed.mergeBase(),
-            changed: computed.changed,
-            suites,
-            reasons,
-            causes,
-            totals,
-            packages,
-            narrowed,
-          },
-          null,
-          2,
-        ),
+        json({
+          base,
+          mergeBase: await computed.mergeBase(),
+          config: config.file,
+          changed: computed.changed,
+          suites,
+          reasons,
+          causes,
+          totals,
+          packages,
+          narrowed,
+        }),
       );
     } else {
+      await logContext(base, config, computed);
       logPlan(computed);
     }
-    if (flags.has("--github")) writeOutputs(config, computed);
+    if (output !== undefined) writeOutputs(output, config, computed);
     return 0;
   }
 
+  await logContext(base, config, computed);
   logPlan(computed);
-  if (!suite.run) {
-    throw new Error(`bivium: suite "${suite.name}" has no run command`);
-  }
   const selection = computed.plan.suites[suite.name];
   if (selection.mode === "none") {
     console.log(`No ${suite.name} tests affected against ${base}; skipping.`);
     return 0;
   }
   const [program, ...args] = commandFor(
-    suite.run,
+    suite.run ?? "",
     selection.mode === "some" ? selection.files : [],
   );
   const result = spawnSync(program, args, { cwd: root, stdio: "inherit" });
@@ -319,6 +418,24 @@ function commandAt(argv: string[]) {
     if (VALUED.has(arg)) i++;
   }
   return -1;
+}
+
+const COMMANDS = Object.keys(FLAGS);
+
+// Whether the caller asked for JSON, so an error is printed as JSON too.
+function wantsJson(argv: string[]) {
+  return argv.some(
+    (arg, i) =>
+      arg === "--json" ||
+      arg === "--format=json" ||
+      (arg === "--format" && argv[i + 1] === "json"),
+  );
+}
+
+function fail(argv: string[], kind: ErrorKind, message: string): 2 {
+  console.error(message);
+  if (wantsJson(argv)) console.log(json({ error: { kind, message } }));
+  return 2;
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -337,14 +454,18 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (command === undefined) {
-    const first = argv[0];
-    const why = first === undefined ? "" : `unknown option ${first}\n\n`;
-    console.error(`bivium: ${why}${USAGE}`);
-    return 2;
+    return fail(
+      argv,
+      "usage",
+      `bivium: which command? ${COMMANDS.join(", ")} (bivium --help for usage)`,
+    );
   }
   if (!(command in FLAGS)) {
-    console.error(`bivium: unknown command "${command}"\n\n${USAGE}`);
-    return 2;
+    return fail(
+      argv,
+      "usage",
+      `bivium: unknown command "${command}"${didYouMean(command, COMMANDS)}; the commands are ${COMMANDS.join(", ")} (bivium --help for usage)`,
+    );
   }
   const rest = [...argv.slice(0, at), ...argv.slice(at + 1)];
   try {
@@ -354,7 +475,11 @@ export async function main(argv: string[]): Promise<number> {
     if (command === "graph") return await graphCommand(args);
     return await runCommand(command, args);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    return 2;
+    if (error instanceof BiviumError) {
+      return fail(argv, error.kind, error.message);
+    }
+    // Anything else is a bug or an environment problem bivium didn't name.
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(argv, "other", message);
   }
 }

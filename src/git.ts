@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { inRoot } from "./config.ts";
+import { BiviumError } from "./errors.ts";
 import { sorted } from "./sorted.ts";
 
 interface GitResult {
   status: number;
   stdout: string;
+  stderr: string;
 }
 
 // Runs git without blocking, so independent calls overlap.
@@ -14,12 +16,15 @@ function git(cwd: string, ...args: string[]): Promise<GitResult> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, { cwd });
     const chunks: Buffer[] = [];
+    const errors: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
     child.on("error", reject);
     child.on("close", (status) => {
       resolve({
         status: status ?? 1,
         stdout: Buffer.concat(chunks).toString("utf-8"),
+        stderr: Buffer.concat(errors).toString("utf-8"),
       });
     });
   });
@@ -27,7 +32,14 @@ function git(cwd: string, ...args: string[]): Promise<GitResult> {
 
 async function gitOrThrow(cwd: string, ...args: string[]): Promise<string> {
   const result = await git(cwd, ...args);
-  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed`);
+  if (result.status !== 0) {
+    // git's own words say what's wrong (not a repository, a bad object).
+    const said = result.stderr.trim().split("\n")[0];
+    throw new BiviumError(
+      "git",
+      `bivium: git ${args.join(" ")} failed${said ? `: ${said}` : ""}`,
+    );
+  }
   return result.stdout;
 }
 
@@ -80,7 +92,7 @@ const RAW_ENTRY = /^:(\d{6}) \d{6} ([0-9a-f]+) [0-9a-f]+ ([A-Z])\d*\t(.*)$/;
 async function missingHistory(
   cwd: string,
   base: string,
-): Promise<Error | undefined> {
+): Promise<BiviumError | undefined> {
   const [known, forked, shallow] = await Promise.all([
     git(cwd, "rev-parse", "--verify", "--quiet", `${base}^{commit}`),
     git(cwd, "merge-base", base, "HEAD"),
@@ -91,12 +103,14 @@ async function missingHistory(
       ? " The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`)."
       : "";
   if (known.status !== 0) {
-    return new Error(
+    return new BiviumError(
+      "git",
       `bivium: no commit ${base} here to diff against: fetch it.${fix}`,
     );
   }
   if (forked.status !== 0) {
-    return new Error(
+    return new BiviumError(
+      "git",
       `bivium: ${base} and HEAD share no commit here, so there's no merge base to diff against.${fix}`,
     );
   }
@@ -253,5 +267,8 @@ export async function defaultBase(cwd: string): Promise<string> {
   );
   const branch = refs.find((_, i) => found[i].status === 0);
   if (branch) return branch;
-  throw new Error("bivium: no base given and no default branch found");
+  throw new BiviumError(
+    "git",
+    `bivium: no base given and no default branch found (tried origin/HEAD, ${refs.join(", ")}): pass one, as in \`bivium plan origin/main\`, or set base in the config`,
+  );
 }
