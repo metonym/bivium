@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { resolve as absolute, dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { inRoot } from "./config.ts";
 import { sorted } from "./sorted.ts";
 
@@ -138,9 +138,6 @@ export async function readRevision(
   const mergeBase = mergeBaseOf(cwd, base);
   if (eager) mergeBase();
   const diffArgs = ["--no-renames", "--merge-base", base];
-  // Whether this is a partial clone, asked alongside the listing so a base
-  // read doesn't wait for it.
-  const promisor = promisorRemote(cwd).catch(() => undefined);
   // One listing of the whole repo: the index, and untracked files, which
   // count as changed anywhere (outside the roots, they run everything).
   const [listing, diff, staged] = await Promise.all([
@@ -171,7 +168,6 @@ export async function readRevision(
       before.set(path, oid);
     }
   }
-  const blob = blobReader(cwd, promisor);
   // Each path is read once, whoever asks: the package diff and the
   // setting files can both want a changed `package.json`.
   const reads = new Map<string, Promise<string | undefined>>();
@@ -185,8 +181,8 @@ export async function readRevision(
   };
   const readBaseOnce = (path: string) => {
     if (!before.has(path)) {
-      // Unchanged since the merge base, here as there: no git, and no
-      // fetch in a partial clone.
+      // Unchanged since the merge base: the working tree has it as it was,
+      // with no git call.
       if (present.has(path)) {
         return readFile(join(cwd, path), "utf-8").catch(() =>
           mergeBase().then((commit) => show(cwd, `${commit}:${path}`)),
@@ -195,7 +191,7 @@ export async function readRevision(
       return mergeBase().then((commit) => show(cwd, `${commit}:${path}`));
     }
     const oid = before.get(path);
-    return oid === undefined ? Promise.resolve(undefined) : blob(oid);
+    return oid === undefined ? Promise.resolve(undefined) : show(cwd, oid);
   };
   const changed = [...new Set([...diffed, ...untracked])];
   const dirty = new Set([...changed, ...lines(staged)]);
@@ -233,121 +229,6 @@ export async function readRevision(
     readBase,
     blobs: oids,
     present,
-  };
-}
-
-// A `.git/config` section header, and a `key = value` line in one.
-const SECTION = /^\s*\[\s*([^\s\]"]+)(?:\s+"([^"]*)")?\s*\]/;
-const ENTRY = /^\s*([\w.-]+)\s*=\s*(.*?)\s*$/;
-
-// The repository's common git directory, found from `cwd` up: a `.git`
-// directory, or a `.git` file naming a worktree's, whose `commondir` file
-// names the shared one.
-async function gitDir(cwd: string): Promise<string | undefined> {
-  for (let dir = absolute(cwd); ; dir = dirname(dir)) {
-    const dotGit = join(dir, ".git");
-    // biome-ignore lint/performance/noAwaitInLoops: each directory up is looked at only if the last had no .git
-    const found = await stat(dotGit).catch(() => undefined);
-    if (found?.isDirectory()) return dotGit;
-    if (found?.isFile()) {
-      const text = await readFile(dotGit, "utf-8").catch(() => "");
-      const named = GITDIR.exec(text)?.[1];
-      if (named === undefined) return undefined;
-      const worktree = absolute(dir, named);
-      return readFile(join(worktree, "commondir"), "utf-8")
-        .then((common) => absolute(worktree, common.trim()))
-        .catch(() => worktree);
-    }
-    if (dirname(dir) === dir) return undefined;
-  }
-}
-
-const GITDIR = /^gitdir:\s*(.+?)\s*$/m;
-
-// The remote a partial clone fetches missing objects from, if it is one,
-// from the repository's config file: `git clone --filter` sets
-// `extensions.partialClone` and the remote's `promisor`. A config this
-// can't read counts as a full clone, whose reads fetch as git does.
-async function promisorRemote(cwd: string): Promise<string | undefined> {
-  const dir = await gitDir(cwd);
-  if (dir === undefined) return undefined;
-  const text = await readFile(join(dir, "config"), "utf-8").catch(
-    () => undefined,
-  );
-  if (text === undefined) return undefined;
-  let section = "";
-  let name = "";
-  for (const line of text.split("\n")) {
-    const header = SECTION.exec(line);
-    if (header) {
-      section = header[1].toLowerCase();
-      name = header[2] ?? "";
-      continue;
-    }
-    const entry = ENTRY.exec(line);
-    if (!entry) continue;
-    const key = entry[1].toLowerCase();
-    const value = entry[2];
-    if (section === "extensions" && key === "partialclone") return value;
-    if (section === "remote" && key === "promisor" && value === "true") {
-      return name;
-    }
-  }
-  return undefined;
-}
-
-// Reads blobs by OID. In a partial clone each missing blob a read finds is
-// a fetch of its own, a round trip that took seconds on a CI runner, so the
-// reads asked for together are fetched together first: one round trip.
-function blobReader(
-  cwd: string,
-  remote: Promise<string | undefined>,
-): (oid: string) => Promise<string | undefined> {
-  let queue: string[] = [];
-  let batch: Promise<void> | undefined;
-  const prefetch = async (oids: string[]) => {
-    const name = await remote;
-    if (name === undefined) return;
-    // `--missing=print` lists what isn't here without fetching it.
-    const listed = await git(
-      cwd,
-      "rev-list",
-      "--objects",
-      "--no-walk",
-      "--missing=print",
-      ...oids,
-    );
-    const missing = lines(listed.stdout)
-      .filter((line) => line.startsWith("?"))
-      .map((line) => line.slice(1));
-    if (missing.length === 0) return;
-    await git(
-      cwd,
-      "-c",
-      "fetch.negotiationAlgorithm=noop",
-      "fetch",
-      "--quiet",
-      "--no-tags",
-      "--no-write-fetch-head",
-      "--recurse-submodules=no",
-      "--filter=blob:none",
-      name,
-      ...missing,
-    );
-  };
-  return (oid) => {
-    queue.push(oid);
-    // Reads asked for in the same turn share one batch. A microtask, not
-    // setImmediate: a cold plan's lexing keeps the event loop busy, and a
-    // read held to the next turn of it waited on that.
-    batch ??= Promise.resolve().then(() => {
-      const oids = queue;
-      queue = [];
-      batch = undefined;
-      // A prefetch that fails leaves each read to fetch its own blob.
-      return prefetch([...new Set(oids)]).catch(() => undefined);
-    });
-    return batch.then(() => show(cwd, oid));
   };
 }
 

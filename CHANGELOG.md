@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Performance**
+
+- 0.3.2 fetched a partial clone's merge-base reads in one batch, to save
+  round trips (#55). git already fetches reads made at once in parallel,
+  so it saved none, and its check for missing blobs ran first: the batch
+  is removed. A file unchanged since the merge base is still read from
+  the working tree, and each path once.
+
 **Fixes**
 
 - A plan in a clone without the base branch, or without the history back

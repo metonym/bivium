@@ -1214,39 +1214,28 @@ carbon-preprocess-svelte's last 100 commits, that was the one commit
 whose selection the change would otherwise widen. A dependency change the lockfile records stays with the
 package diff, which seeds the packages that changed.
 
-## 60. A partial clone's base reads fetch together
+## 60. A partial clone's base reads are git's to fetch
 
 A plan reads a file as the merge base had it for a changed lockfile,
-`package.json`, `tsconfig.json` or barrel, and for a narrower. Each read
-was a `git show`, and in a partial clone (`filter: blob:none`, as the
-README's CI example clones) each missing blob was a fetch of its own.
-On sveast's first bivium PR, which changed `bun.lock` and
-`package.json`, the plan step took 11 to 14 s on GitHub's runners and
-under 1 s with a full clone.
+`package.json`, `tsconfig.json` or barrel, and for a narrower. In a
+partial clone (`filter: blob:none`) the blob is fetched when read. On
+sveast's first bivium PR, which changed `bun.lock` and `package.json`,
+the plan step took 11 to 14 s on GitHub's runners and under 1 s with a
+full clone, and 0.3.2 batched those reads into one fetch on the theory
+that git fetched each in turn.
 
-Reads asked for in the same turn now share a batch: in a partial clone,
-`rev-list --missing=print` lists which of their blobs aren't here
-without fetching them, and one `fetch` with no negotiation brings them
-all, after which each `git show` is local. A failed fetch leaves each
-read to fetch its own blob, as before. Whether the clone is partial is
-read from the repository's config file, which `git clone --filter`
-marks (`extensions.partialClone`, the remote's `promisor`), found from
-the working directory up and through a worktree's `commondir`. A
-`git config` call asked on the first base read held it back by about
-30 ms, which the release replay caught as carbon's median plan going
-from 230 to 249 ms; run alongside the listing, it still cost the small
-repositories about 4 ms, a process start. A config the file read
-misses, such as one set through an `include`, only leaves each read to
-fetch its own blob. A batch closes in a microtask, not on
-`setImmediate`: during a cold plan, lexing keeps the event loop busy,
-and reads held to its next turn waited on that, about 10 ms on
-carbon-preprocess-svelte's plan of a `bun.lock` change. Each path is read once, however many ask: the package diff
-and the setting files both read a changed `package.json`.
+It didn't. Traced on a partial clone of carbon-preprocess-svelte, git's
+own fetches for reads made at once run in parallel, with the same
+no-negotiation fetch the batch used, so two blobs cost one round trip
+already. The batch saved requests, not time, and its `rev-list
+--missing=print` check ran first: 1.04 and 1.35 s for 0.3.1, 1.34 and
+1.10 s for 0.3.2. On the runners, the bump PRs that changed `bun.lock`
+planned in 0 to 2 s on 0.3.0 and 1 to 8 s on 0.3.2, across OSes on one
+PR. What a partial clone pays is the remote's response to a blob
+request, which varies by seconds, and only a full clone avoids it. So
+the batch is gone, and the README says when to clone the whole history.
 
-A read of a file unchanged since the merge base, as a narrower makes,
-reads the working tree: the file is the same there, and that needs no
-git at all. On a partial clone of sveast at that PR, the plan fetches
-once instead of twice; its wall time, 0.5 to 0.9 s, against 0.5 to
-7.7 s, is mostly GitHub's response time, which varies too much on one
-machine to say more.
-
+Two parts stay, since they cost nothing and save a process each: a file
+unchanged since the merge base is read from the working tree, and each
+path is read once, however many ask (the package diff and the setting
+files both read a changed `package.json`).
