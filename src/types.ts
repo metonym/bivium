@@ -133,6 +133,14 @@ export interface Config<Suite extends string = string> {
    * unknown, so a new unknown can't hide behind one that went away.
    */
   knownUnknowns?: readonly { file: string; reason: string }[];
+  /**
+   * GitHub Actions workflows (paths, not globs) whose path filters `bivium
+   * check` reads: a change to a file some test reaches, or that runs a
+   * suite, has to pass each trigger's `paths` or `paths-ignore`, and each
+   * `dorny/paths-filter` filter named after a suite it runs, or the run
+   * that would select those tests never starts.
+   */
+  workflows?: string | readonly string[];
   /** The default base ref. */
   base?: string;
   /** The extraction cache's directory, or `false` for none. Default: `node_modules/.cache/bivium`, or `.bivium/cache` without `node_modules`. */

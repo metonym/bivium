@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+**Features**
+
+- `workflows` names GitHub Actions workflows for `bivium check` to read.
+  It fails on a file a change to which runs tests that a trigger's
+  `paths` or `paths-ignore` keeps the workflow from starting for, or
+  that a `dorny/paths-filter` filter named after the suite keeps its job
+  from running for, with the entry to add. `check --json` has them as
+  `filtered`. On carbon-components-svelte, whose `roots` and three
+  hand-kept path lists gained the same docs file 15 times in three days,
+  it found 49 docs files a unit test reaches that the `unit` filter
+  leaves out, and `bivium.config.ts` in neither filter.
+- The YAML reader takes block scalars (`run: |`), plain scalars over
+  several lines, and a leading `---`, which workflows use.
+
 ## 0.4.0 — 2026-11-04
 
 **Features**

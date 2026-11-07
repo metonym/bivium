@@ -95,6 +95,7 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 | `deadGlobs` | Dead globs `check` allows, each `{ file, glob, reason }`, the glob as `file` spells it |
 | `knownUnknowns` | Nodes `check` allows to have unknown dependencies, each `{ file, reason }`. With it set, even to `[]` (which is `--max-unknown 0`), `check` fails on an unknown node some test reaches that it doesn't list, and on an entry that's no longer unknown, so a new unknown can't replace one that went away |
 | `narrowers` | See [Narrowers](#narrowers) |
+| `workflows` | GitHub Actions workflows (paths) whose path filters `check` checks against the graph: see [Workflow path filters](#workflow-path-filters) |
 | `base` | The default base ref. Otherwise the upstream default branch (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`) |
 | `cache` | The cache's directory, or `false`. Default: `node_modules/.cache/bivium`, or `.bivium/cache` |
 
@@ -187,7 +188,7 @@ unit tests: 4 of 12 files
 | `bivium plan [base] [--json] [--github]` | Prints each suite's selection (`none`, the files out of how many, `all` files when each reaches a change, or `all (full run)`) and why a suite runs in full. `--json` adds the base, merge base, changed files, narrower results, changed packages, each suite's test count (`totals`), and the reasons as data (`causes`, each a `FullRunCause`: `{ kind, suites, file?, package?, narrower?, message }`). `--github` also writes each suite's selection to `$GITHUB_OUTPUT` |
 | `bivium run [base] [--suite <name>]` | Runs the suite's `run` command with its selection (default: the first suite), or skips it when nothing is affected |
 | `bivium why <test> [file] [--format tree\|chain\|source\|json] [--all]` | The shortest chain of edges from a changed file, or from `file`, to the test, with what spells each edge and the line it's on, and how many other changes reach the test. `--format tree` (the default) draws it from the test; `chain` reads from the change to the test; `source` prints each hop's line of source; `json` (or `--json`) prints the chain as data. `--all` shows every change's chain. For a test that isn't selected, it says what the file's chains reach instead |
-| `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists the files under a suite's `root` that no test reaches, each with a fix (a change to one runs the whole suite; see [A change no test reaches](#a-change-no-test-reaches)), `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. Fails on a repository path a test spells that nothing declares (see [A change no test reaches](#a-change-no-test-reaches)). `--json` prints the report as data |
+| `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists the files under a suite's `root` that no test reaches, each with a fix (a change to one runs the whole suite; see [A change no test reaches](#a-change-no-test-reaches)), `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. Fails on a repository path a test spells that nothing declares (see [A change no test reaches](#a-change-no-test-reaches)), and on a file a `workflows` path filter keeps from running its tests (see [Workflow path filters](#workflow-path-filters)). `--json` prints the report as data |
 | `bivium graph [--suite <name>] [--top <n>] [--json]` | How many of each suite's tests a change to each file selects through the graph (leaving out the tests that run on any change, which it counts apart): the `n` files that reach the most, and how files spread from none to every test. A few hub files that reach most tests are what make plans wide. `--json` prints each suite's `total` and `everyChange` tests, and every node with its `imports` and `importers` (file edges), `fanIn` per suite and whether it's `unknown` |
 
 `--config`, `--cwd` and `--no-cache` work with every command, before or after it, and `why` and `check` take `--base <ref>`. `--help` (or `-h`) prints usage. An unknown command, option or `--format` is an error. Exit status: 0 when done, 1 when `check` finds problems, 2 for a usage or configuration error; `run` exits with its command's status.
@@ -296,6 +297,16 @@ jobs:
       # …install, then run all tests or the selected files:
       - run: bunx vitest run ${{ needs.plan.outputs.unit != 'all' && needs.plan.outputs.unit || '' }}
 ```
+
+### Workflow path filters
+
+A workflow that skips docs (`paths: ["**", "!docs/**"]`) has to add back each docs file a test reads, as `roots` does, and a job gated by `dorny/paths-filter` has a third list. Nothing fails when one misses a file: a change to only that file never starts the run that would select its tests. Name the workflows in `workflows`, and `check` fails on each file that a change to runs tests, but that one of their filters stops:
+
+```ts
+workflows: [".github/workflows/checks.yml"],
+```
+
+It reads each `pull_request`, `pull_request_target` and `push` trigger's `paths` (the last pattern that matches decides) or `paths-ignore`, and each `dorny/paths-filter` filter named after a suite, which gates that suite's job (`unit:` for the `unit` suite; other filters are left alone). A file runs tests when a test reaches it, it's a suite's `wiring` or the config's `self`, the orphan rule runs a suite for it, or it's outside `roots` and not ignored, which runs every suite; the last fix suggests making it `wiring` or `ignore`d instead. A workflow it can't read fails `check` too.
 
 ### The checkout
 

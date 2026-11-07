@@ -1301,3 +1301,32 @@ whatever `inert` says, the way the config file is always `self`. A file
 that imports it still selects the tests that reach it through the
 import; on carbon-components-svelte, whose narrower only imports its
 types, a bump now runs the 2 tests that declare `@depends-on bun.lock`.
+
+## 63. check reads a workflow's path filters
+
+`check` fails on a docs file a test imports that's outside `roots`, but
+a workflow's own path filters are a second list of the same files, and a
+`dorny/paths-filter` gating each suite's job is a third.
+carbon-components-svelte's `checks.yml` skips `docs/**` and adds back
+each docs file a test reads, in both triggers and in its `unit` and `e2e`
+filters; 15 commits in three days added one to all of them by hand, and
+nothing failed when one was missed. Its `unit` filter had missed 49: the
+framed DatePicker pages and `docs/src/code-view-height.ts`, which a unit
+test reaches through the e2e fixtures, so a change to only them skipped
+the unit job that bivium would have run them in.
+
+So `workflows` names the workflows to read, and `check` asks of every
+file git lists what `classify` would: whether a change to it alone runs
+some suite's tests (a test reaches it, it's `wiring` or `self`, the
+orphan rule, or it's outside the roots and not ignored), and whether each
+filter lets it through. Triggers gate every suite. A paths filter gates
+only the suite it's named after: which job a filter gates is the
+workflow's business, and matching names is the one link that needs no
+config. Printing the lists instead (`bivium paths --workflow`) would
+take a generator step to keep them in sync; failing in `check`, which CI
+already runs, catches the gap where the file is added.
+
+The YAML reader learned block scalars and plain scalars over several
+lines, which workflows are full of; a workflow it still can't read
+(anchors, multi-line flow collections) fails `check` rather than passing
+unread.

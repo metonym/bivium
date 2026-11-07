@@ -91,6 +91,7 @@ export interface ResolvedConfig {
   deadGlobs: readonly DeadGlobEntry[];
   // `undefined` when the config doesn't list them: `check` then counts.
   knownUnknowns?: readonly KnownUnknown[];
+  workflows: string[];
   base?: string;
   cache?: boolean | string;
   // The file it was loaded from, which `check` reports its dead globs under.
@@ -224,6 +225,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
     deadGlobs: config.deadGlobs ?? [],
     ...(config.knownUnknowns && { knownUnknowns: config.knownUnknowns }),
+    workflows: list(config.workflows, []).map(normalizeRoot),
     base: config.base,
     cache: config.cache,
   };
@@ -315,6 +317,7 @@ const CONFIG_KEYS = new Set([
   "extensions",
   "deadGlobs",
   "knownUnknowns",
+  "workflows",
   "base",
   "cache",
 ]);
@@ -521,6 +524,7 @@ export function checkConfig(value: unknown): Config {
     knownUnknowns: knownUnknowns?.map((entry: unknown, i) =>
       checkKnownUnknown(entry, `knownUnknowns[${i}]`),
     ),
+    workflows: paths(value, "workflows", ""),
     base: field(value, "base", isString, "", "a ref"),
     cache: field(value, "cache", isCache, "", "a directory or a boolean"),
   };

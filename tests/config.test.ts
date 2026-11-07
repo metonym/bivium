@@ -74,6 +74,10 @@ describe("checkConfig", () => {
       `roots takes paths, not globs: "src/*.ts" (the directory is "src")`,
     ],
     [
+      { suites: SUITES, workflows: [".github/workflows/*.yml"] },
+      `workflows takes paths, not globs: ".github/workflows/*.yml" (the directory is ".github/workflows")`,
+    ],
+    [
       { suites: SUITES, knownUnknowns: [{ file: "a.ts" }] },
       "knownUnknowns[0] needs a file and reason",
     ],

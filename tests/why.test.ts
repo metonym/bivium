@@ -1140,3 +1140,230 @@ describe("bivium check: undeclared paths", () => {
     expect(report.undeclaredPaths).toEqual([]);
   });
 });
+
+// A unit test reads docs/used.js, under the ignored docs/; playwright.config.js
+// is outside the roots, so it runs every suite. checks.yml leaves docs/ out
+// of its triggers, and gates each suite's job with a filter of its name.
+const CHECKS_YML = `on:
+  pull_request:
+    paths:
+      - "**"
+      - "!docs/**"
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**"]
+  workflow_dispatch:
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3 # pinned
+        id: filter
+        with:
+          filters: |
+            unit:
+              - 'src/**'
+              - 'test/**'
+              - '.github/**'
+              - 'bivium.config.json'
+            e2e:
+              - 'src/**'
+              - 'e2e/**'
+              - '.github/**'
+              - 'bivium.config.json'
+            docs:
+              - 'docs/**'
+      - run: |
+          # a comment in a script
+          echo "done"
+`;
+
+function workflowRepo(config: object = {}, files: Record<string, string> = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "bivium-workflow-"));
+  dirs.push(dir);
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "user.email", "t@example.com");
+  git(dir, "config", "user.name", "t");
+  git(dir, "config", "commit.gpgsign", "false");
+  write(dir, {
+    "bivium.config.json": JSON.stringify({
+      suites: {
+        unit: { tests: "test/**/*.test.js", root: "test" },
+        e2e: { tests: "e2e/**/*.test.js", root: "e2e" },
+      },
+      roots: ["src", "test", "e2e", "docs/used.js"],
+      ignore: ["docs/**"],
+      workflows: [".github/workflows/checks.yml"],
+      ...config,
+    }),
+    ".github/workflows/checks.yml": CHECKS_YML,
+    "src/a.js": "export const a = 1;",
+    "docs/used.js": "export const used = 1;",
+    "docs/page.md": "",
+    "test/a.test.js": `import { a } from "../src/a.js";\nimport { used } from "../docs/used.js";\n`,
+    "e2e/a.test.js": `import { a } from "../src/a.js";\n`,
+    "playwright.config.js": "export default {};",
+    ...files,
+  });
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "base");
+  return dir;
+}
+
+describe("bivium check: workflows", () => {
+  it("reports a file a trigger or a suite's filter keeps its tests from", async () => {
+    const dir = workflowRepo();
+    const { status, report } = await checkSpelled(dir);
+    expect(status).toBe(1);
+    expect(report.unreadableWorkflows).toEqual([]);
+    const outside =
+      "; it's outside `roots` and not ignored, so it runs every suite: name it in the `wiring` of the suites that read it, or `ignore` it if none does";
+    const at = (
+      where: string,
+      file: string,
+      suites: string[],
+      fix: string,
+    ) => ({
+      workflow: ".github/workflows/checks.yml",
+      where,
+      file,
+      suites,
+      fix,
+    });
+    expect(report.filtered).toEqual([
+      at(
+        'jobs.changes.steps[1] filter "e2e"',
+        "playwright.config.js",
+        ["e2e"],
+        `add "playwright.config.js" to it${outside}`,
+      ),
+      at(
+        'jobs.changes.steps[1] filter "unit"',
+        "docs/used.js",
+        ["unit"],
+        'add "docs/used.js" to it',
+      ),
+      at(
+        'jobs.changes.steps[1] filter "unit"',
+        "playwright.config.js",
+        ["unit"],
+        `add "playwright.config.js" to it${outside}`,
+      ),
+      at(
+        "on.pull_request.paths",
+        "docs/used.js",
+        ["unit"],
+        'add "docs/used.js" to on.pull_request.paths, after "!docs/**"',
+      ),
+      at(
+        "on.push.paths-ignore",
+        "docs/used.js",
+        ["unit"],
+        '"docs/**" in on.push.paths-ignore skips it: narrow it, or use `paths` with "!docs/**" and then "docs/used.js"',
+      ),
+    ]);
+    const { output } = await run(["check", "--cwd", dir]);
+    expect(output).toContain(
+      [
+        "Files a workflow's path filter keeps from running the tests a change to them selects:",
+        '  .github/workflows/checks.yml: jobs.changes.steps[1] filter "e2e"',
+        "    ✗ playwright.config.js (e2e)",
+        `      fix: add "playwright.config.js" to it${outside}`,
+      ].join("\n"),
+    );
+    expect(output.split("\n").at(-1)).toBe(
+      "5 files a workflow's path filter keeps from running their tests.",
+    );
+  });
+
+  it("passes once each filter lets them through, or the config narrows them", async () => {
+    const yml = CHECKS_YML.replace(
+      '      - "!docs/**"\n',
+      '      - "!docs/**"\n      - "docs/used.js"\n',
+    )
+      .replace('paths-ignore: ["docs/**"]', 'paths-ignore: ["docs/*.md"]')
+      .replace(
+        "              - 'test/**'\n",
+        "              - 'test/**'\n              - 'docs/used.js'\n",
+      );
+    const dir = workflowRepo(
+      {
+        suites: {
+          unit: { tests: "test/**/*.test.js", root: "test" },
+          e2e: {
+            tests: "e2e/**/*.test.js",
+            root: "e2e",
+            wiring: "playwright.config.js",
+          },
+        },
+      },
+      { ".github/workflows/checks.yml": yml },
+    );
+    const { status, report } = await checkSpelled(dir);
+    expect(report.filtered).toEqual([
+      expect.objectContaining({
+        file: "playwright.config.js",
+        suites: ["e2e"],
+      }),
+    ]);
+    expect(status).toBe(1);
+    write(dir, {
+      ".github/workflows/checks.yml": yml.replace(
+        "              - 'e2e/**'\n",
+        "              - 'e2e/**'\n              - 'playwright.config.js'\n",
+      ),
+    });
+    expect(await checkSpelled(dir)).toMatchObject({
+      status: 0,
+      report: { filtered: [] },
+    });
+  });
+
+  it("fails on a workflow it can't read", async () => {
+    const dir = workflowRepo(
+      {
+        workflows: [
+          ".github/workflows/checks.yml",
+          ".github/workflows/gone.yml",
+        ],
+      },
+      {
+        ".github/workflows/checks.yml": "on: &on\n  push:\n",
+      },
+    );
+    const { status, report } = await checkSpelled(dir);
+    expect(status).toBe(1);
+    expect(report.unreadableWorkflows.map(({ file }) => file)).toEqual([
+      ".github/workflows/checks.yml",
+      ".github/workflows/gone.yml",
+    ]);
+  });
+
+  it("reads GitHub's patterns: ** across directories, the last match decides", async () => {
+    const yml = `on:
+  pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+      - "!docs/**"
+      - "docs/[u]sed.js"
+      - "!test/**/*.snap"
+`;
+    const dir = workflowRepo(
+      { ignore: [] },
+      {
+        ".github/workflows/checks.yml": yml,
+        "test/a.test.js": `// @reads test/notes.md\n// @reads test/__snapshots__/a.snap\nimport { used } from "../docs/used.js";\n`,
+        "test/notes.md": "",
+        "test/__snapshots__/a.snap": "",
+      },
+    );
+    const { report } = await checkSpelled(dir);
+    expect(report.filtered.map(({ file }) => file)).toEqual([
+      "docs/page.md",
+      "test/__snapshots__/a.snap",
+      "test/notes.md",
+    ]);
+  });
+});

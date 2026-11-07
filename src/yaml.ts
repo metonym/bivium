@@ -1,9 +1,10 @@
-// The subset of YAML that `pnpm-lock.yaml` is written in: block mappings
-// and sequences by indentation, plain and quoted scalars, and comments.
+// The subset of YAML that `pnpm-lock.yaml` and GitHub Actions workflows are
+// written in: block mappings and sequences by indentation, plain (over
+// several lines too), quoted and block (`|`, `>`) scalars, and comments.
 // A flow collection (`{integrity: …}`, `[x64]`) is kept as its text, which
-// is all a lockfile diff compares. Anything else (anchors, tags, block
-// scalars, a flow collection over several lines) throws: the caller then
-// can't read the file, and fails closed.
+// is all a lockfile diff compares. Anything else (anchors, tags, a flow
+// collection over several lines) throws: the caller then can't read the
+// file, and fails closed.
 
 export type Yaml = string | Yaml[] | { [key: string]: Yaml };
 
@@ -11,6 +12,8 @@ interface Line {
   indent: number;
   text: string;
   number: number;
+  // A tab in its indentation, which only a block scalar's text may have.
+  tab: boolean;
 }
 
 const COMMENT = /\s+#.*$/;
@@ -18,6 +21,15 @@ const KEY_END = /:(?: |$)/;
 const EMPTY_MAP = /^\{\s*\}(?:\s+#.*)?$/;
 const EMPTY_LIST = /^\[\s*\](?:\s+#.*)?$/;
 const UNSUPPORTED = /^[&*!|>%@`]/;
+const BLOCK_SCALAR = /^([|>])([1-9]?)([-+]?)([1-9]?)(?:\s+#.*)?$/;
+const LEADING_SPACES = /^ */;
+const DOCUMENT_START = /^---(?:\s|$)/;
+const QUOTED_OR_FLOW = /^['"{[]/;
+// In a folded scalar, a line break between two lines of text is a space,
+// and a run of blank lines is that many newlines less one. More-indented
+// lines keep their breaks.
+const FOLDED_BREAK = /([^\n])\n(?=[^\n ])/g;
+const BLANK_RUN = /\n(\n+)/g;
 
 class YamlError extends Error {}
 
@@ -25,17 +37,22 @@ function fail(line: Line | undefined, message: string): never {
   throw new YamlError(`${message} at line ${line?.number ?? "end"}`);
 }
 
-function linesOf(text: string): Line[] {
+function sourceOf(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+}
+
+function linesOf(source: string[]): Line[] {
   const lines: Line[] = [];
-  for (const [i, raw] of text.split("\n").entries()) {
-    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+  for (const [i, line] of source.entries()) {
     const content = line.trimStart();
     if (content === "" || content.startsWith("#")) continue;
+    // A document's start marker, before its first line.
+    if (lines.length === 0 && DOCUMENT_START.test(content)) continue;
     const indent = line.length - content.length;
-    if (line.slice(0, indent).includes("\t")) {
-      fail({ indent, text: content, number: i + 1 }, "a tab in indentation");
-    }
-    lines.push({ indent, text: content.trimEnd(), number: i + 1 });
+    const tab = line.slice(0, indent).includes("\t");
+    lines.push({ indent, text: content.trimEnd(), number: i + 1, tab });
   }
   return lines;
 }
@@ -116,10 +133,73 @@ function keyOf(
 
 class Parser {
   at = 0;
+  readonly source: string[];
   readonly lines: Line[];
 
-  constructor(lines: Line[]) {
-    this.lines = lines;
+  constructor(source: string[]) {
+    this.source = source;
+    this.lines = linesOf(source);
+  }
+
+  // The next line, as a key or a sequence item: its indentation can't have
+  // a tab.
+  next(): Line | undefined {
+    const line = this.lines[this.at];
+    if (line?.tab) fail(line, "a tab in indentation");
+    return line;
+  }
+
+  // A `|` or `>` scalar's text: the source lines after `line` indented past
+  // `indent`, and the blank lines among them. Comments in it are text.
+  blockScalar(header: RegExpExecArray, indent: number, line: Line): string {
+    const [, style, before, chomp, after] = header;
+    const explicit = Number(before || after || 0);
+    let width = explicit === 0 ? 0 : indent + explicit;
+    const body: string[] = [];
+    let end = 0;
+    for (const raw of this.source.slice(line.number)) {
+      if (raw.trim() === "") {
+        body.push("");
+        continue;
+      }
+      const spaces = LEADING_SPACES.exec(raw)?.[0].length ?? 0;
+      if (spaces <= indent) break;
+      if (width === 0) width = spaces;
+      if (spaces < width) fail(line, "a block scalar line indented too little");
+      body.push(raw.slice(width));
+      end = body.length;
+    }
+    const last = line.number + end;
+    while ((this.lines[this.at]?.number ?? Number.POSITIVE_INFINITY) <= last)
+      this.at++;
+    const lines = body.slice(0, end);
+    const text =
+      style === "|"
+        ? lines.join("\n")
+        : lines
+            .join("\n")
+            .replace(FOLDED_BREAK, "$1 ")
+            .replace(BLANK_RUN, "$1");
+    if (end === 0 || chomp === "-") return text;
+    // `+` keeps the blank lines after the text; the default, one newline.
+    return `${text}\n${chomp === "+" ? "\n".repeat(body.length - end) : ""}`;
+  }
+
+  // A plain scalar, and the lines indented past `indent` that continue it,
+  // folded with spaces.
+  plain(text: string, indent: number, line: Line): string {
+    const value = scalar(text, line);
+    if (QUOTED_OR_FLOW.test(text)) return value;
+    const parts = [value];
+    for (
+      let next = this.lines[this.at];
+      next && next.indent > indent;
+      next = this.lines[this.at]
+    ) {
+      this.at++;
+      parts.push(next.text.replace(COMMENT, ""));
+    }
+    return parts.join(" ");
   }
 
   // The block whose lines are indented exactly `indent`.
@@ -137,7 +217,11 @@ class Parser {
     const text = rest.trim();
     if (EMPTY_MAP.test(text)) return {};
     if (EMPTY_LIST.test(text)) return [];
-    if (text !== "" && !text.startsWith("#")) return scalar(text, line);
+    const header = BLOCK_SCALAR.exec(text);
+    if (header) return this.blockScalar(header, indent, line);
+    if (text !== "" && !text.startsWith("#")) {
+      return this.plain(text, indent, line);
+    }
     const next = this.lines[this.at];
     return next && next.indent > indent ? this.block(next.indent) : "";
   }
@@ -146,7 +230,7 @@ class Parser {
     indent: number,
     into: { [key: string]: Yaml },
   ): { [key: string]: Yaml } {
-    for (let line = this.lines[this.at]; line; line = this.lines[this.at]) {
+    for (let line = this.next(); line; line = this.next()) {
       if (line.indent < indent) break;
       if (line.indent > indent) fail(line, "unexpected indentation");
       const entry = keyOf(line.text, line);
@@ -160,7 +244,7 @@ class Parser {
 
   sequence(indent: number): Yaml[] {
     const items: Yaml[] = [];
-    for (let line = this.lines[this.at]; line; line = this.lines[this.at]) {
+    for (let line = this.next(); line; line = this.next()) {
       if (line.indent < indent) break;
       if (line.indent > indent) fail(line, "unexpected indentation");
       if (line.text !== "-" && !line.text.startsWith("- ")) break;
@@ -179,9 +263,9 @@ class Parser {
   }
 }
 
-/** One YAML document in the subset `pnpm-lock.yaml` uses. Throws otherwise. */
+/** One YAML document in the subset above. Throws otherwise. */
 export function parseYaml(text: string): Yaml {
-  const parser = new Parser(linesOf(text));
+  const parser = new Parser(sourceOf(text));
   const value = parser.block(0);
   const left = parser.lines[parser.at];
   if (left) fail(left, "unexpected indentation");

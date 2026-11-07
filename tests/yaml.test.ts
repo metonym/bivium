@@ -74,7 +74,6 @@ describe("parseYaml", () => {
 
   it.each([
     ["an anchor", "a: &x 1"],
-    ["a block scalar", "a: |\n  text"],
     ["a flow collection over lines", "a: {b: 1,\n  c: 2}"],
     ["a tab in indentation", "a:\n\tb: 1"],
     ["a duplicate key", "a: 1\na: 2"],
@@ -82,5 +81,50 @@ describe("parseYaml", () => {
     ["an unterminated string", "a: 'open"],
   ])("throws on %s", (_, text) => {
     expect(() => parseYaml(text)).toThrow();
+  });
+
+  it("reads block scalars, with their comments and blank lines", () => {
+    const text = [
+      "a: |",
+      "  # a comment in the text",
+      "  line",
+      "",
+      "    indented",
+      "b: |-",
+      "  stripped",
+      "c: >",
+      "  folded",
+      "  text",
+      "",
+      "  paragraph",
+      "d: |+",
+      "  kept",
+      "",
+      "e:",
+      "  - |",
+      "    item",
+      "  - run: |",
+      "      echo\tx",
+      "\tsame",
+      "    name: after",
+    ].join("\n");
+    expect(() => parseYaml(text)).toThrow();
+    expect(parseYaml(text.replace("\tsame", "      same"))).toEqual({
+      a: "# a comment in the text\nline\n\n  indented\n",
+      b: "stripped",
+      c: "folded text\nparagraph\n",
+      d: "kept\n\n",
+      e: ["item\n", { run: "echo\tx\nsame\n", name: "after" }],
+    });
+  });
+
+  it("reads a plain scalar over several lines, and a document marker", () => {
+    expect(
+      parseYaml(
+        ["---", "if: a &&", "  b  # a comment", "list:", "  - c", "    d"].join(
+          "\n",
+        ),
+      ),
+    ).toEqual({ if: "a && b", list: ["c d"] });
   });
 });

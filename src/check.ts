@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Computed } from "./compute.ts";
-import type { ResolvedConfig } from "./config.ts";
+import { inRoot, type ResolvedConfig } from "./config.ts";
 import { fanIn } from "./fanin.ts";
 import { globToRegExp } from "./glob.ts";
 import { walksByTypes } from "./graph.ts";
@@ -19,6 +19,7 @@ import { sorted } from "./sorted.ts";
 import { type SpelledPath, spelledPaths } from "./spelled.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
 import { plural } from "./text.ts";
+import { readWorkflows } from "./workflow.ts";
 
 interface Unknown {
   node: string;
@@ -76,6 +77,25 @@ export interface Report {
   // select the tests that reach it: an input nothing declares. One the orphan rule covers, which
   // runs the suite in full, is left to `unreached`'s fix.
   undeclaredPaths: SpelledPath[];
+  // Files a change to which runs tests, which a `workflows` path filter
+  // keeps from running them, and the suites they run.
+  filtered: Filtered[];
+  // `workflows` that couldn't be read, so went unchecked.
+  unreadableWorkflows: { file: string; reason: string }[];
+}
+
+interface Runs {
+  suites: string[];
+  // Outside the roots, which runs every suite.
+  outside: boolean;
+}
+
+interface Filtered {
+  workflow: string;
+  where: string;
+  file: string;
+  suites: string[];
+  fix: string;
 }
 
 const EXAMPLES = 3;
@@ -411,6 +431,7 @@ function unreachedFix(
 function unreachedFiles(
   config: ResolvedConfig,
   { graph }: Computed,
+  reach: ReadonlyMap<string, ReadonlyMap<string, number>>,
   spelled: readonly SpelledPath[],
 ): Report["unreached"] {
   const found: Report["unreached"] = [];
@@ -418,7 +439,7 @@ function unreachedFiles(
     (node) => !node.startsWith("pkg:") && !node.includes("#"),
   );
   for (const suite of config.suites) {
-    const reached = fanIn(graph, suite);
+    const reached = reach.get(suite.name) ?? new Map<string, number>();
     const tests = files.filter(suite.isTest);
     for (const file of files) {
       if ((reached.get(file) ?? 0) > 0) continue;
@@ -434,6 +455,85 @@ function unreachedFiles(
     }
   }
   return found;
+}
+
+// The suites a change to each file alone runs tests of, as `classify`
+// sorts it: every suite for the config's `self`; the suites it's `wiring`
+// of; else those whose tests reach it, or whose root it's an unreached file
+// under (the orphan rule), or every suite for a file outside the roots
+// that isn't ignored. Only files git lists: nothing else is in a diff.
+function suitesRun(
+  config: ResolvedConfig,
+  { graph, listed }: Computed,
+  reach: ReadonlyMap<string, ReadonlyMap<string, number>>,
+  unreached: Report["unreached"],
+): Map<string, Runs> {
+  const all = config.suites.map((suite) => suite.name);
+  const orphans = new Map<string, string[]>();
+  for (const { suite, file } of unreached) {
+    orphans.set(file, [...(orphans.get(file) ?? []), suite]);
+  }
+  const runs = new Map<string, Runs>();
+  for (const file of listed) {
+    if (config.isSelf(file)) {
+      runs.set(file, { suites: all, outside: false });
+      continue;
+    }
+    const wired = config.suites.filter((suite) => suite.isWiring(file));
+    if (wired.length > 0) {
+      runs.set(file, { suites: wired.map(({ name }) => name), outside: false });
+      continue;
+    }
+    if (
+      !graph.has(file) &&
+      !config.isIgnored(file) &&
+      !config.roots.some((root) => inRoot(file, root))
+    ) {
+      runs.set(file, { suites: all, outside: true });
+      continue;
+    }
+    const suites = all.filter(
+      (name) =>
+        (reach.get(name)?.get(file) ?? 0) > 0 ||
+        orphans.get(file)?.includes(name),
+    );
+    if (suites.length > 0) runs.set(file, { suites, outside: false });
+  }
+  return runs;
+}
+
+const OUTSIDE =
+  "; it's outside `roots` and not ignored, so it runs every suite: name it in the `wiring` of the suites that read it, or `ignore` it if none does";
+
+function filteredFiles(
+  root: string,
+  config: ResolvedConfig,
+  runs: ReadonlyMap<string, Runs>,
+): Pick<Report, "filtered" | "unreadableWorkflows"> {
+  const names = config.suites.map((suite) => suite.name);
+  const { filters, unreadable } = readWorkflows(root, config.workflows, names);
+  const filtered: Filtered[] = [];
+  for (const filter of filters) {
+    for (const [file, { suites, outside }] of runs) {
+      const gated = suites.filter(
+        (suite) => filter.suite === undefined || filter.suite === suite,
+      );
+      if (gated.length === 0) continue;
+      const fix = filter.blocks(file);
+      if (fix === undefined) continue;
+      filtered.push({
+        workflow: filter.workflow,
+        where: filter.where,
+        file,
+        suites: gated,
+        fix: outside ? fix + OUTSIDE : fix,
+      });
+    }
+  }
+  const key = (entry: Filtered) =>
+    `${entry.workflow}\0${entry.where}\0${entry.file}`;
+  filtered.sort((a, b) => (key(a) < key(b) ? -1 : 1));
+  return { filtered, unreadableWorkflows: unreadable };
 }
 
 // Every node with unknown dependencies, with where and how to fix each
@@ -485,10 +585,21 @@ export async function check(
   }));
   const dead = await findDeadGlobs(root, config, computed);
   const spelled = await spelledPaths(root, config, computed);
-  const unreached = unreachedFiles(config, computed, [
+  const reach = new Map(
+    config.suites.map((suite) => [suite.name, fanIn(computed.graph, suite)]),
+  );
+  const unreached = unreachedFiles(config, computed, reach, [
     ...spelled.undeclared,
     ...spelled.orphaned,
   ]);
+  const workflows =
+    config.workflows.length === 0
+      ? { filtered: [], unreadableWorkflows: [] }
+      : filteredFiles(
+          root,
+          config,
+          suitesRun(config, computed, reach, unreached),
+        );
   const allows = (entry: { file: string; glob: string }, found: DeadGlob) =>
     entry.file === found.node && entry.glob === found.glob;
   return {
@@ -513,6 +624,7 @@ export async function check(
       })),
     unreached,
     undeclaredPaths: spelled.undeclared,
+    ...workflows,
     staleDeadGlobs: config.deadGlobs
       .filter((entry) => !dead.some((found) => allows(entry, found)))
       .map((entry) => ({
@@ -543,7 +655,9 @@ export function failed(report: Report, max: number | undefined): boolean {
     report.staleKnownUnknowns.length > 0 ||
     report.deadGlobs.length > 0 ||
     report.staleDeadGlobs.length > 0 ||
-    report.undeclaredPaths.length > 0
+    report.undeclaredPaths.length > 0 ||
+    report.filtered.length > 0 ||
+    report.unreadableWorkflows.length > 0
   );
 }
 
@@ -658,6 +772,16 @@ function summaryLines(report: Report): string[] {
       "paths spelled in code that nothing declares",
     ],
     [
+      report.filtered.length,
+      "file a workflow's path filter keeps from running its tests",
+      "files a workflow's path filter keeps from running their tests",
+    ],
+    [
+      report.unreadableWorkflows.length,
+      "workflow that can't be read",
+      "workflows that can't be read",
+    ],
+    [
       report.unreached.length,
       "file under a suite's root that no test reaches",
       "files under a suite's root that no test reaches",
@@ -719,6 +843,36 @@ function pushUndeclared(lines: string[], spelled: Report["undeclaredPaths"]) {
   }
 }
 
+// Listed one by one per filter; past that, counted.
+const FILTERED_SHOWN = 10;
+
+function pushFiltered(lines: string[], report: Report) {
+  if (report.unreadableWorkflows.length > 0) {
+    lines.push("", "Workflows whose path filters can't be read:");
+    for (const { file, reason } of report.unreadableWorkflows) {
+      lines.push(`  ${file}: ${reason}`);
+    }
+  }
+  if (report.filtered.length === 0) return;
+  lines.push(
+    "",
+    "Files a workflow's path filter keeps from running the tests a change to them selects:",
+  );
+  const groups = new Map<string, Filtered[]>();
+  for (const entry of report.filtered) {
+    const key = `${entry.workflow}: ${entry.where}`;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  for (const [key, entries] of groups) {
+    lines.push(`  ${key}`);
+    for (const { file, suites, fix } of entries.slice(0, FILTERED_SHOWN)) {
+      lines.push(`    ✗ ${file} (${suites.join(", ")})`, `      fix: ${fix}`);
+    }
+    const rest = entries.length - FILTERED_SHOWN;
+    if (rest > 0) lines.push(`    … ${rest} more (--json lists each)`);
+  }
+}
+
 export function formatReport(report: Report, max: number | undefined): string {
   const lines: string[] = summaryLines(report);
   const widen = widening(report);
@@ -742,6 +896,7 @@ export function formatReport(report: Report, max: number | undefined): string {
     }
   }
   pushUndeclared(lines, report.undeclaredPaths);
+  pushFiltered(lines, report);
   pushUnreached(lines, report.unreached);
   if (report.unparsedTsconfigs.length > 0) {
     lines.push(
@@ -804,6 +959,12 @@ export function formatReport(report: Report, max: number | undefined): string {
   if (undeclared > 0) {
     lines.push(
       `${plural(undeclared, "path", "paths")} spelled in code that nothing declares.`,
+    );
+  }
+  const filtered = report.filtered.length;
+  if (filtered > 0) {
+    lines.push(
+      `${plural(filtered, "file")} a workflow's path filter keeps from running ${filtered === 1 ? "its" : "their"} tests.`,
     );
   }
   const dead = report.deadGlobs.length;
