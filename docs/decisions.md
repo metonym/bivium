@@ -1311,9 +1311,10 @@ carbon-components-svelte's `checks.yml` skips `docs/**` and adds back
 each docs file a test reads, in both triggers and in its `unit` and `e2e`
 filters; 15 commits in three days added one to all of them by hand, and
 nothing failed when one was missed. Its `unit` filter had missed 49: the
-framed DatePicker pages and `docs/src/code-view-height.ts`, which a unit
-test reaches through the e2e fixtures, so a change to only them skipped
-the unit job that bivium would have run them in.
+framed DatePicker pages and `docs/src/code-view-height.ts`, which
+`v11-tokens.test.ts` reaches by `@depends-on docs/src/**` and
+`fixture-server.test.ts` through the e2e fixtures, so a change to only
+them skipped the unit job that bivium would have run those tests in.
 
 So `workflows` names the workflows to read, and `check` asks of every
 file git lists what `classify` would: whether a change to it alone runs

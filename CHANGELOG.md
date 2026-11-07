@@ -11,8 +11,10 @@
   from running for, with the entry to add. `check --json` has them as
   `filtered`. On carbon-components-svelte, whose `roots` and three
   hand-kept path lists gained the same docs file 15 times in three days,
-  it found 49 docs files a unit test reaches that the `unit` filter
-  leaves out, and `bivium.config.ts` in neither filter.
+  it found 49 docs files two unit tests reach that the `unit` filter
+  leaves out, `bivium.config.ts` in neither filter, and root configs
+  outside `roots` that belonged in a suite's `wiring`
+  (carbon-design-system/carbon-components-svelte#5567).
 - The YAML reader takes block scalars (`run: |`), plain scalars over
   several lines, and a leading `---`, which workflows use.
 
