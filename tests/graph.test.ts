@@ -180,11 +180,8 @@ describe("dependencies", () => {
   });
 
   it.each([
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
     "const m = await import(`./x/${name}.svelte`);",
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
     "const m = require(`./${name}`);",
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
     "vi.mock(`./${name}`);",
   ])("flags a templated module path as unreadable: %s", (source) => {
     expect(deps("tests/x.test.ts", source).unknown).toEqual([
@@ -218,7 +215,6 @@ describe("dependencies", () => {
     ],
     [
       "a template literal with an interpolated query",
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       "await page.goto(`/accordion.html?v=${v}`);",
       { files: ["e2e/fixtures/accordion.html"], unknown: [] },
     ],
@@ -229,9 +225,7 @@ describe("dependencies", () => {
     ],
     [
       "an interpolated page name",
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       "await page.goto(`/${name}.html?v=1`);",
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       { unknown: ["non-literal goto(`/${name}.html?v=1`)"] },
     ],
     [

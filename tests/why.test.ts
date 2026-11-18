@@ -1085,7 +1085,6 @@ describe("bivium check: undeclared paths", () => {
           `import { spawnSync } from "node:child_process";`,
           `const fixtures = new URL("fixtures", import.meta.url);`,
           `const cli = join(root, "src/cli.js");`,
-          // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
           "const data = `${root}/src/data.json`;",
           "",
         ].join("\n"),

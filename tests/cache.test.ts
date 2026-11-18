@@ -47,15 +47,15 @@ describe("ExtractionCache", () => {
     expect(extractions[1].barrel).toBeDefined();
     expect(extractions[2].fallback).toBeDefined();
     const cache = await ExtractionCache.open(dir);
-    extractions.forEach((e, i) => {
+    for (const [i, e] of extractions.entries()) {
       cache.set(String(i).repeat(40), "ts", e);
-    });
+    }
     await cache.save();
     const back = await ExtractionCache.open(dir);
     expect(back.size).toBe(4);
-    extractions.forEach((e, i) => {
+    for (const [i, e] of extractions.entries()) {
       expect(back.get(String(i).repeat(40), "ts")).toEqual(e);
-    });
+    }
     // The format is part of the key: a `.ts` file's blob isn't a `.svelte` one's.
     expect(back.get("0".repeat(40), "svelte")).toBeUndefined();
     // Written atomically, and ignored by git.

@@ -141,9 +141,7 @@ export interface Config<Suite extends string = string> {
 
 /** A suite's selected tests. */
 export type Selection =
-  | { mode: "all" }
-  | { mode: "none" }
-  | { mode: "some"; files: string[] };
+  { mode: "all" } | { mode: "none" } | { mode: "some"; files: string[] };
 
 /** Why some suites run in full, for a program to act on. */
 export interface FullRunCause<Suite extends string = string> {
@@ -247,8 +245,7 @@ export interface NarrowContext<Suite extends string = string> {
  * print, or why the narrower can't tell: its suites then run in full.
  */
 export type NarrowResult =
-  | { seeds: readonly string[]; note?: string }
-  | { all: string };
+  { seeds: readonly string[]; note?: string } | { all: string };
 
 /**
  * Replaces the coarse seeds of some changed files with finer ones from a

@@ -198,34 +198,26 @@ function nearMisses(
 function declaredGlobs(node: string, extraction: Extraction): Declared[] {
   const relative = finish(node, extraction).globs;
   return [
-    ...extraction.dependsOn.map(
-      (glob): Declared => ({
-        kind: "depends-on",
-        glob,
-        pattern: globToRegExp(glob),
-      }),
-    ),
-    ...extraction.reads.map(
-      (glob): Declared => ({
-        kind: "reads",
-        glob,
-        pattern: globToRegExp(glob),
-      }),
-    ),
-    ...extraction.lists.map(
-      (glob): Declared => ({
-        kind: "lists",
-        glob,
-        pattern: globToRegExp(glob),
-      }),
-    ),
-    ...extraction.globs.map(
-      (glob, i): Declared => ({
-        kind: "glob",
-        glob,
-        pattern: globToRegExp(relative[i]),
-      }),
-    ),
+    ...extraction.dependsOn.map((glob): Declared => ({
+      kind: "depends-on",
+      glob,
+      pattern: globToRegExp(glob),
+    })),
+    ...extraction.reads.map((glob): Declared => ({
+      kind: "reads",
+      glob,
+      pattern: globToRegExp(glob),
+    })),
+    ...extraction.lists.map((glob): Declared => ({
+      kind: "lists",
+      glob,
+      pattern: globToRegExp(glob),
+    })),
+    ...extraction.globs.map((glob, i): Declared => ({
+      kind: "glob",
+      glob,
+      pattern: globToRegExp(relative[i]),
+    })),
   ];
 }
 

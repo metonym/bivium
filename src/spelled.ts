@@ -136,7 +136,7 @@ export async function spelledPaths(
   for (const node of graph.keys()) {
     if (node.startsWith("pkg:") || node.includes("#")) continue;
     files.add(node);
-    for (let dir = posix.dirname(node); dir !== "."; ) {
+    for (let dir = posix.dirname(node); dir !== ".";) {
       const list = dirs.get(dir);
       list ? list.push(node) : dirs.set(dir, [node]);
       dir = posix.dirname(dir);

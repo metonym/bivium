@@ -43,7 +43,7 @@ export function repository(seed = 1, scale = 1): Map<string, string> {
       `${imports}export function util${u}(input: string): string {\n${lorem(next, 8)}\n  return input.slice(${u % 5});\n}\n`,
     );
   }
-  const exports: string[] = [];
+  const reexports: string[] = [];
   for (let c = 0; c < COMPONENTS; c++) {
     const name = `Component${c}`;
     const lines = [
@@ -57,7 +57,7 @@ export function repository(seed = 1, scale = 1): Map<string, string> {
       `src/components/${name}/${name}.svelte`,
       `<script lang="ts">\n${lines.join("\n")}\n  export let label = "${name}";\n${lorem(next, 20)}\n</script>\n\n<div class="bx--${name.toLowerCase()}">{label}</div>\n`,
     );
-    exports.push(
+    reexports.push(
       `export { default as ${name} } from "./components/${name}/${name}.svelte";`,
     );
     files.set(
@@ -65,7 +65,7 @@ export function repository(seed = 1, scale = 1): Map<string, string> {
       `import { ${name} } from "../src/index.js";\nimport { render } from "./render";\n\ntest("${name}", () => render(${name}));\n`,
     );
   }
-  files.set("src/index.js", `${exports.join("\n")}\n`);
+  files.set("src/index.js", `${reexports.join("\n")}\n`);
   files.set(
     "tests/render.ts",
     "export function render(component: unknown) { return component; }\n",

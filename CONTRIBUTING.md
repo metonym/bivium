@@ -4,13 +4,13 @@ This guide covers how bivium is built, the rules every change must keep, and how
 
 ## Setup
 
-[Bun](https://bun.sh/) is the package manager, test runner and bundler.
+[Bun](https://bun.sh/) is the package manager, test runner, bundler, formatter and linter. `bun fmt` and `bun lint` are in canary builds only until Bun 1.4.5 (`bun upgrade --canary`), so CI installs canary. Their options are the `[fmt]` and `[lint]` sections of [`bunfig.toml`](bunfig.toml): the extra rules there are errors, and warnings fail CI too.
 
 ```sh
 bun ci
 bun run test          # unit tests
 bun run typecheck     # bun check: tsc's errors, on every core
-bun run lint          # biome; `bun run lint:fix` formats and applies fixes
+bun fmt --check && bun lint  # format and lint (Bun canary); `bun run lint:all` fixes
 bun run knip          # unused files, exports and dependencies
 bun run build         # dist/: the library and the bin as ESM for Node, one index.d.ts
 bun run test:package  # build, pack, install, and use it as a consumer would
@@ -37,7 +37,7 @@ bun src/cli.ts plan   # the CLI from source
 - **Zero runtime dependencies.** `src/` imports only `node:` builtins and runs on Node ≥ 22 and Bun. It never reads `node_modules`.
 - **Keep the public API small.** `src/index.ts` is the public API, and `src/types.ts`, which imports nothing, holds its types: the build emits them as one `index.d.ts`.
 - **Bump `SCANNER_VERSION`** (`src/cache.ts`) when `extract` returns something different for some input. `tests/cache.test.ts` hashes the scanner's sources and fails on any change to them; update its fingerprint, and bump the version too unless the change can't alter an extraction.
-- **Types, not casts.** No `any`, `as`, non-null `!` or `@ts-ignore`: narrow with guards. Biome and `bun check` enforce most of it.
+- **Types, not casts.** No `any`, `as`, non-null `!` or `@ts-ignore`: narrow with guards. `bun lint` and `bun check` enforce most of it.
 - **Comments say why.** JSDoc is for the public API; elsewhere a comment states a reason or a constraint the code can't.
 
 ## Tests

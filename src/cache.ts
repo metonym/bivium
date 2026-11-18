@@ -251,11 +251,10 @@ function decode(row: Row, strings: unknown[]): Extraction {
   };
   const refs = row[1] === 0 ? [] : row[1];
   if (!Array.isArray(refs)) throw new Error("bad imports");
-  const imports = refs.map(
-    (item): ImportRef =>
-      Array.isArray(item)
-        ? { specifier: str(item[0]), names: item.slice(1).map(str) }
-        : { specifier: str(item) },
+  const imports = refs.map((item): ImportRef =>
+    Array.isArray(item)
+      ? { specifier: str(item[0]), names: item.slice(1).map(str) }
+      : { specifier: str(item) },
   );
   if (row[9] !== 0) {
     if (!Array.isArray(row[9])) throw new Error("bad types");

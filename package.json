@@ -28,11 +28,10 @@
     "bench": "ostia bench bench/bivium.bench.ts",
     "typecheck": "bun check",
     "knip": "knip-bun",
-    "lint": "biome ci --error-on-warnings",
-    "lint:fix": "biome check --write --unsafe ."
+    "lint:all": "bun fmt && bun lint --fix",
+    "lint:changed": "bun fmt --staged && bun lint --staged --fix"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
     "bun-types": "1.4.4",
     "knip": "^6.43.0",
     "ostia": "^0.2.12",
