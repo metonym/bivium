@@ -56,9 +56,7 @@ describe("regex literals and division", () => {
 describe("templates", () => {
   it("skips text and reads code in nested substitutions", () => {
     const source = [
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       'const t = `import("./fake") ${`b ${"c"} import("./fake2")`} ${{ a: 1 }.a}`;',
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       'const u = `${await import("./real")}`;',
     ].join("\n");
     expect(specifiers("a.ts", source)).toEqual(["./real"]);
@@ -68,10 +66,9 @@ describe("templates", () => {
     expect(lexed("a.ts", "await import(`./real.js`);").imports).toEqual([
       { specifier: "./real.js" },
     ]);
-    expect(
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
-      lexed("a.ts", "await import(`./x/${name}.js`);").unknown,
-    ).toEqual(["non-literal dynamic import"]);
+    expect(lexed("a.ts", "await import(`./x/${name}.js`);").unknown).toEqual([
+      "non-literal dynamic import",
+    ]);
   });
 });
 
@@ -405,7 +402,6 @@ describe("stringsOf", () => {
     const source = [
       `// "in/a/comment"`,
       `const a = join(root, "tests/fixtures", 'b');`,
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: source text
       "const t = `${root}/tests/x/${name}.json`;",
       `const data = ["in/an/array", { key: "in/an/array/object" }];`,
       `const v = map["an/index"];`,

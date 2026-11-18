@@ -309,13 +309,11 @@ async function chainOf(
   const last = edges.at(-1);
   const [links, causes] = await Promise.all([
     Promise.all(
-      edges.map(
-        async ([node, via]): Promise<Link> => ({
-          node,
-          kind: via.kind,
-          ...(await edgeAt(context, node, via)),
-        }),
-      ),
+      edges.map(async ([node, via]): Promise<Link> => ({
+        node,
+        kind: via.kind,
+        ...(await edgeAt(context, node, via)),
+      })),
     ),
     last?.[1].kind === "unknown"
       ? causesOf(context.root, context.computed, last[0])

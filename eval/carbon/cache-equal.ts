@@ -33,8 +33,9 @@ const { config } = await loadConfig(
 );
 
 let failed = false;
+// Each base fills and reuses one cache dir.
+/* eslint-disable no-await-in-loop */
 for (const base of bases) {
-  // biome-ignore lint/performance/noAwaitInLoops: each base fills and reuses one cache dir
   const revision = await readRevision(clone, base, config.roots);
   const sources = await readSources(clone, revision.files);
   const rootJson = readFileSync(`${clone}/package.json`, "utf-8");
@@ -71,5 +72,6 @@ for (const base of bases) {
     `${base}: ${reference.size} nodes, ${revision.changed.length} changed; ${report.join("; ")}; load ${loadavg()[0].toFixed(1)}`,
   );
 }
+/* eslint-enable no-await-in-loop */
 rmSync(dir, { recursive: true, force: true });
 process.exitCode = failed ? 1 : 0;
