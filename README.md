@@ -2,9 +2,23 @@
 
 > Run only the tests a change can affect, and never miss one.
 
-bivium builds a static, file-level dependency graph of a repository and walks it backwards from the files a change touches to the tests that reach them. It fails closed: anything it can't read (a non-literal `import()`, an unresolved specifier, a disk read with no declared inputs) counts as depending on everything, and a change it can't place runs the whole suite, with a reason. It picks the tests; your runner runs them.
+bivium builds a static, file-level dependency graph of a repository
+and walks it backwards from the files a change touches to the tests that
+reach them.
+It fails closed: anything it can't read
+(a non-literal `import()`, an unresolved specifier, a disk read with no
+declared inputs) counts as depending on everything,
+and a change it can't place runs the whole suite, with a reason.
+It picks the tests; your runner runs them.
 
-It has no dependencies and needs no install of the repository it plans: it reads the git index and the working tree, never `node_modules`. CI can plan in a job that skips the install, and skip the test jobs whose selection is `none`. It runs on Node ≥ 22 and Bun. It was extracted from [carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte)'s `test:changed`.
+It has no dependencies and needs no install of the repository it plans:
+it reads the git index and the working tree, never `node_modules`.
+CI can plan in a job that skips the install,
+and skip the test jobs whose selection is `none`.
+It runs on Node ≥ 22 and Bun.
+It was extracted from
+[carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte)'s
+`test:changed`.
 
 ```sh
 bun add -d bivium
@@ -41,7 +55,13 @@ $ bunx bivium run --suite unit     # vitest run tests/Button.test.ts …
 
 ## What it reads
 
-A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, and their `m`/`c` variants), the scripts and markup expressions of `.svelte`, the scripts of `.vue`, `.astro` and `.html`, and the `script[src]`, `link[href]` and `iframe[src]` of `.html`. Only code counts: an import spelled in a string or a comment adds no edge.
+A one-pass lexer reads JavaScript and TypeScript
+(`.js`, `.ts`, `.jsx`, `.tsx`, and their `m`/`c` variants),
+the scripts and markup expressions of `.svelte`, the scripts of `.vue`,
+`.astro` and `.html`, and the `script[src]`,
+`link[href]` and `iframe[src]` of `.html`.
+Only code counts: an import spelled in a string
+or a comment adds no edge.
 
 | It follows | As |
 |:---|:---|
@@ -57,15 +77,34 @@ A one-pass lexer reads JavaScript and TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, 
 | A file's own package and its ancestors' `package.json` dependencies, and builtins | `pkg:` nodes |
 | Anything else | Unknown: the file depends on every change |
 
-A root `bun.lock`, `package-lock.json` or `pnpm-lock.yaml` isn't a source file: a change to one seeds the packages it changed (see [Lockfiles](#lockfiles)).
+A root `bun.lock`, `package-lock.json` or `pnpm-lock.yaml` isn't a
+source file: a change to one seeds the packages it changed
+(see [Lockfiles](#lockfiles)).
 
-Nor is a `tsconfig.json` (or a file one `extends`) or a `package.json` under `roots`: their options, `paths`, `type` or `exports` change how the files under them resolve or run, which no import says. A change to one seeds the files it governs, those it's the nearest of its kind to. A change the parsed file doesn't show (formatting, comments), or to a `package.json`'s metadata alone (`version`, `description`, `repository` and the like), seeds nothing, and a dependency change is the lockfile's.
+Nor is a `tsconfig.json` (or a file one `extends`)
+or a `package.json` under `roots`: their options, `paths`,
+`type` or `exports` change how the files under them resolve or run,
+which no import says.
+A change to one seeds the files it governs,
+those it's the nearest of its kind to.
+A change the parsed file doesn't show (formatting, comments),
+or to a `package.json`'s metadata alone
+(`version`, `description`, `repository` and the like), seeds nothing,
+and a dependency change is the lockfile's.
 
-A file it can't lex cleanly is read by a regex extractor instead, which over-approximates. CSS isn't scanned: generated stylesheets reach their inputs through `edges`, and a [narrower](#narrowers) can do better.
+A file it can't lex cleanly is read by a regex extractor instead,
+which over-approximates.
+CSS isn't scanned: generated stylesheets reach their inputs through
+`edges`, and a [narrower](#narrowers) can do better.
 
 ## Config
 
-`bivium.config.ts` (or `.mts`, `.mjs`, `.js`, `.json`) in the repository root, or `--config <file>`. A `.ts` config needs Bun or Node ≥ 22.18. Every glob key takes one glob or a list. An unknown key is an error, since a misspelled one would quietly select less.
+`bivium.config.ts` (or `.mts`, `.mjs`, `.js`, `.json`) in the repository
+root, or `--config <file>`.
+A `.ts` config needs Bun or Node ≥ 22.18.
+Every glob key takes one glob or a list.
+An unknown key is an error, since a misspelled one would quietly select
+less.
 
 | Key | Meaning |
 |:---|:---|
@@ -100,7 +139,14 @@ A file it can't lex cleanly is read by a regex extractor instead, which over-app
 
 ## A change no test reaches
 
-A changed file under a suite's `root` that no test of the suite reaches is wired some other way (a runner config, a setup file), so the whole suite runs: the orphan rule. With the default `root`, the whole repository, any file bivium can't trace to a test runs the suite, which is sound and coarse. Set `root` on every suite to the directories its tests and sources live in, and say what the rest is:
+A changed file under a suite's `root` that no test of the suite reaches
+is wired some other way (a runner config, a setup file),
+so the whole suite runs: the orphan rule.
+With the default `root`, the whole repository,
+any file bivium can't trace to a test runs the suite,
+which is sound and coarse.
+Set `root` on every suite to the directories its tests
+and sources live in, and say what the rest is:
 
 | You changed… | and want… | Use |
 |:---|:---|:---|
@@ -114,15 +160,43 @@ A changed file under a suite's `root` that no test of the suite reaches is wired
 | a file a test lists but doesn't read (a route, a story) | the test, when one is added or deleted | `// @lists <glob>` in the test |
 | a file a build turns into what tests load | the tests that load the output | `edges` from the output to its inputs |
 
-A file outside `roots` that isn't ignored runs everything: it's the backstop for wiring the graph can't see, such as a CI workflow.
+A file outside `roots` that isn't ignored runs everything:
+it's the backstop for wiring the graph can't see, such as a CI workflow.
 
-`bivium check` lists every file under a suite's `root` that no test reaches and the config doesn't exempt, with a fix for each by what it looks like: a test's snapshot, a runner's config, or anything else. It's the list to work through when adopting bivium, and a new entry is a gap someone just added.
+`bivium check` lists every file under a suite's `root` that no test
+reaches and the config doesn't exempt,
+with a fix for each by what it looks like: a test's snapshot,
+a runner's config, or anything else.
+It's the list to work through when adopting bivium,
+and a new entry is a gap someone added.
 
-A file's own disk reads make it unknown, but a test that hands a path to the code under test (`typecheck({ workspace: "tests/fixtures" })`), or a `hermetic` one that reads it, reads nothing the graph can see. So `check` also reads the string literals in each test, and in what the tests reach under a suite's `root`, for repository paths: relative to the root when they have a slash (`join(root, "tests/fixtures")`), and relative to the file (`new URL("fixtures", import.meta.url)`). It fails on one a change to which wouldn't select the tests that reach the file, with the `reads`, `edges` or annotation that declares it. A path whose change runs the suite anyway, as `wiring`, `self` or by the orphan rule, doesn't fail, and an unreached file's fix names where it's spelled. Strings inside brackets are skipped as data (`["src/a.ts", …]`, `map["key"]`), as are the directories a file is in and paths outside the graph. A path a test only names, such as an expected output, takes `// @lists <path>`.
+A file's own disk reads make it unknown,
+but a test that hands a path to the code under test
+(`typecheck({ workspace: "tests/fixtures" })`),
+or a `hermetic` one that reads it, reads nothing the graph can see.
+So `check` also reads the string literals in each test,
+and in what the tests reach under a suite's `root`,
+for repository paths: relative to the root when they have a slash
+(`join(root, "tests/fixtures")`), and relative to the file
+(`new URL("fixtures", import.meta.url)`).
+It fails on one a change to which wouldn't select the tests that reach
+the file, with the `reads`, `edges` or annotation that declares it.
+A path whose change runs the suite anyway, as `wiring`,
+`self` or by the orphan rule, doesn't fail,
+and an unreached file's fix names where it's spelled.
+Strings inside brackets are skipped as data
+(`["src/a.ts", …]`, `map["key"]`), as are the directories a file is in
+and paths outside the graph.
+A path a test only names, such as an expected output,
+takes `// @lists <path>`.
 
 ## Recipes
 
-**Vitest or Jest.** Name the setup files the runner loads, mirror `resolve.alias` (a Vite key like `"@/"` works as written), give snapshots to their tests, and, for a suite that runs code, skip type-only edges:
+**Vitest or Jest.**
+Name the setup files the runner loads,
+mirror `resolve.alias` (a Vite key like `"@/"` works as written),
+give snapshots to their tests, and, for a suite that runs code,
+skip type-only edges:
 
 ```ts
 suites: {
@@ -140,11 +214,24 @@ alias: { "@/": "src/" },
 reads: { "src/**/*.test.{ts,tsx}": "src/$1__snapshots__/$2.test.$3.snap" },
 ```
 
-tsconfig `paths` (what `vite-tsconfig-paths` reads) are read without an `alias`. An extensionless `vi.mock("@/x")` resolves as an import does. A test environment the runner loads by name (`jsdom`, `happy-dom`) goes in `loadedByName` if you set it.
+tsconfig `paths` (what `vite-tsconfig-paths` reads) are read without an
+`alias`.
+An extensionless `vi.mock("@/x")` resolves as an import does.
+A test environment the runner loads by name (`jsdom`, `happy-dom`) goes
+in `loadedByName` if you set it.
 
-**pnpm workspaces.** Workspace packages resolve through their `package.json` `exports`, and a `.js` specifier into one (`@acme/ui/Button.js`) reaches its `.ts` source. A `pnpm-lock.yaml` change selects through the packages it changed. Set `roots` to the packages and apps whose changes the suites should see, and a suite per test runner.
+**pnpm workspaces.**
+Workspace packages resolve through their `package.json` `exports`,
+and a `.js` specifier into one (`@acme/ui/Button.js`) reaches its `.ts`
+source.
+A `pnpm-lock.yaml` change selects through the packages it changed.
+Set `roots` to the packages and apps whose changes the suites need to
+see, and a suite per test runner.
 
-**Playwright.** Map `page.goto()` URLs to the pages they open with `urls`, list pages only a `goto()` opens in `pages`, and name `playwright.config.ts` in `wiring`:
+**Playwright.**
+Map `page.goto()` URLs to the pages they open with `urls`,
+list pages only a `goto()` opens in `pages`,
+and name `playwright.config.ts` in `wiring`:
 
 ```ts
 e2e: {
@@ -155,13 +242,45 @@ e2e: {
 },
 ```
 
-**Generated code.** A content or type generator that writes into a gitignored directory (`.velite`, `.contentlayer/generated`) is an `edges` entry from what it writes to what it reads: `{ ".velite/*": ["content/**", "velite.config.ts"] }`. An import of `#velite` or `../.velite` then reaches the content, and not every change.
+**Generated code.**
+A content or type generator that writes into a gitignored directory
+(`.velite`, `.contentlayer/generated`) is an `edges` entry from what it
+writes to what it reads:
+`{ ".velite/*": ["content/**", "velite.config.ts"] }`.
+An import of `#velite` or `../.velite` then reaches the content,
+and not every change.
 
 ## Lockfiles
 
-A dependency bump changes a lockfile, which no file imports. When a root `bun.lock`, `package-lock.json` (v2 or v3) or `pnpm-lock.yaml` (v6 or v9) changes, bivium diffs it against the merge base and seeds the walk with the `pkg:` nodes of the packages whose entries changed, and of every package that depends on one, so a `svelte` bump selects what imports `svelte`, or a package built on it. A `package.json` whose only change is to dependencies the lockfile records the same way counts as those packages changing.
+A dependency bump changes a lockfile, which no file imports.
+When a root `bun.lock`, `package-lock.json` (v2 or v3)
+or `pnpm-lock.yaml` (v6 or v9) changes,
+bivium diffs it against the merge base and seeds the walk with the
+`pkg:` nodes of the packages whose entries changed,
+and of every package that depends on one,
+so a `svelte` bump selects what imports `svelte`,
+or a package built on it.
+A `package.json` whose only change is to dependencies the lockfile
+records the same way counts as those packages changing.
 
-A changed package can also be used in ways the graph can't see: a CLI a test spawns, a runner, a type package. So when a change reaches a package that a `package.json` declares, or that some file imports, and that no test imports, everything runs, with the reason (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`), unless the package is `inert` (bivium itself always is: a bump changes which tests later plans pick, not what a test does). With `loadedByName` set, only a package with a `bin` in the lockfile, or one it lists, counts as used that way: a bump that reaches a library only a CMS config imports selects nothing. Everything also runs for a lockfile bivium can't parse, one whose settings other than its packages changed (`overrides`, patches, pnpm's `settings`, `catalogs`, or the version of pnpm itself), and a `package.json` change the lockfile doesn't record. Other lockfiles (`yarn.lock`, `bun.lockb`) are files like any other: outside the roots, a change to one runs everything.
+A changed package can also be used in ways the graph can't see:
+a CLI a test spawns, a runner, a type package.
+So when a change reaches a package that a `package.json` declares,
+or that some file imports, and that no test imports, everything runs,
+with the reason
+(`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`),
+unless the package is `inert`
+(bivium itself always is: a bump changes which tests later plans pick,
+not what a test does).
+With `loadedByName` set, only a package with a `bin` in the lockfile,
+or one it lists, counts as used that way:
+a bump that reaches a library only a CMS config imports selects nothing.
+Everything also runs for a lockfile bivium can't parse,
+one whose settings other than its packages changed
+(`overrides`, patches, pnpm's `settings`, `catalogs`, or the version of
+pnpm itself), and a `package.json` change the lockfile doesn't record.
+Other lockfiles (`yarn.lock`, `bun.lockb`) are files like any other:
+outside the roots, a change to one runs everything.
 
 ```console
 $ bunx bivium plan
@@ -190,9 +309,25 @@ unit tests: 4 of 12 files
 | `bivium check [--max-unknown <n>] [--json]` | Counts what it found by cause first, then lists every node with unknown dependencies, with where and how to fix each cause, and fails when more than `n` of them reach a test, or on one `knownUnknowns` doesn't list. A node no test depends on is listed apart and not counted: plans only run tests, so it widens nothing. Also lists the files under a suite's `root` that no test reaches, each with a fix (a change to one runs the whole suite; see [A change no test reaches](#a-change-no-test-reaches)), `tsconfig.json` files that don't parse, and [dead globs](#dead-globs), and fails on one `deadGlobs` doesn't allow or on an entry that matches none. Fails on a repository path a test spells that nothing declares (see [A change no test reaches](#a-change-no-test-reaches)). `--json` prints the report as data |
 | `bivium graph [--suite <name>] [--top <n>] [--json]` | How many of each suite's tests a change to each file selects through the graph (leaving out the tests that run on any change, which it counts apart): the `n` files that reach the most, and how files spread from none to every test. A few hub files that reach most tests are what make plans wide. `--json` prints each suite's `total` and `everyChange` tests, and every node with its `imports` and `importers` (file edges), `fanIn` per suite and whether it's `unknown` |
 
-`--config`, `--cwd` and `--no-cache` work with every command, before or after it, and `why` and `check` take `--base <ref>`. `--help` (or `-h`) prints usage. An unknown command, option or `--format` is an error. Exit status: 0 when done, 1 when `check` finds problems, 2 for a usage or configuration error; `run` exits with its command's status.
+`--config`, `--cwd` and `--no-cache` work with every command,
+before or after it, and `why` and `check` take `--base <ref>`.
+`--help` (or `-h`) prints usage.
+An unknown command, option or `--format` is an error.
+Exit status: 0 when done, 1 when `check` finds problems,
+2 for a usage or configuration error;
+`run` exits with its command's status.
 
-`why` names each edge by what spells it: `import`, `type` (an `import type`, `export type … from`, JSDoc type, or an edge to or from a declaration file), `setup` (a suite's setup file), `goto` (a page `page.goto()` opens), `html` (a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import), `name` (a named import bound to a barrel name) and `export` (the file that exports it), `glob` (`import.meta.glob`), `depends-on`, `edges` (the config's), `reads` and `lists`.
+`why` names each edge by what spells it:
+`import`, `type`
+(an `import type`, `export type … from`, JSDoc type, or an edge to or
+from a declaration file), `setup` (a suite's setup file),
+`goto` (a page `page.goto()` opens),
+`html`
+(a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]`
+or an inline script's import), `name`
+(a named import bound to a barrel name)
+and `export` (the file that exports it), `glob` (`import.meta.glob`),
+`depends-on`, `edges` (the config's), `reads` and `lists`.
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts
@@ -231,7 +366,8 @@ selected: e2e/accordion.test.ts ← src/AccordionItem.svelte (5 hops)
 + 1 more change reaches this test: css/_accordion.scss (--all shows each chain)
 ```
 
-For a test that depends on every change, `chain` says why, where, and how to fix it, as `check` does:
+For a test that depends on every change, `chain` says why, where,
+and how to fix it, as `check` does:
 
 ```console
 $ bunx bivium why tests/e2e.test.ts --format chain
@@ -245,14 +381,25 @@ tests/e2e.test.ts runs on every change
 
 ## Dead globs
 
-A typo'd `@depends-on`, or one pointing only at files the planner skips, looks fine and never selects its file. `check` evaluates every `@depends-on`, `@reads`, `@lists` and `import.meta.glob` pattern, every `edges` and `reads` value, and every suite's `setup`, against every file git lists (tracked and untracked, inside the roots or not) and reports one that:
+A typo'd `@depends-on`, or one pointing only at files the planner skips,
+looks fine and never selects its file.
+`check` evaluates every `@depends-on`, `@reads`,
+`@lists` and `import.meta.glob` pattern,
+every `edges` and `reads` value, and every suite's `setup`,
+against every file git lists
+(tracked and untracked, inside the roots or not) and reports one that:
 
 | Problem | Means |
 |:---|:---|
 | matches nothing | No file matches: a typo or a stale path |
 | matches only ignored files, partly ignored | Some matches are ignored and not in the graph, so a change to one selects nothing |
 
-A config value with captures is dead only when it matches nothing for every file its key matches, and a key that matches no file the graph reads is reported too, under the config's file. An ignored file the graph reads still seeds a walk, and a change outside the roots runs everything, so neither is dead. A glob that's dead on purpose goes in `deadGlobs` with a reason:
+A config value with captures is dead only when it matches nothing for
+every file its key matches, and a key that matches no file the graph
+reads is reported too, under the config's file.
+An ignored file the graph reads still seeds a walk,
+and a change outside the roots runs everything, so neither is dead.
+A glob that's dead on purpose goes in `deadGlobs` with a reason:
 
 ```ts
 deadGlobs: [
@@ -262,7 +409,8 @@ deadGlobs: [
 
 ## CI
 
-Plan in a job of its own, before any install, and feed each suite's job its selection:
+Plan in a job of its own, before any install,
+and feed each suite's job its selection:
 
 ```yaml
 jobs:
@@ -299,41 +447,79 @@ jobs:
 
 ### The checkout
 
-A plan compares the branch with its merge base: the commit where it forked from the base branch. So the job needs the history back to that commit, not just the commit under test. `actions/checkout` fetches one commit by default (`fetch-depth: 1`), with no base branch, and the plan stops with what's missing:
+A plan compares the branch with its merge base:
+the commit where it forked from the base branch.
+So the job needs the history back to that commit,
+not only the commit under test.
+`actions/checkout` fetches one commit by default (`fetch-depth: 1`),
+with no base branch, and the plan stops with what's missing:
 
 ```
 bivium: origin/main and HEAD share no commit here, so there's no merge base to diff against. The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`).
 ```
 
-`fetch-depth: 0` fetches every commit. Only a job that plans needs it; one that runs every test anyway, such as a push to the default branch, can keep the default: `fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}`.
+`fetch-depth: 0` fetches every commit.
+Only a job that plans needs it; one that runs every test anyway,
+such as a push to the default branch, can keep the default:
+`fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}`.
 
-The history git fetches is three kinds of object: commits, trees (each directory's file names, each with the ID of its content) and blobs (the contents). A plan needs the commits, to find the merge base, and the trees, to list what changed. Of the blobs it needs the working tree's, which the checkout has, and the merge base's version of a few changed files only: a lockfile, a `package.json`, a `tsconfig.json`, a barrel, and what a narrower reads. So pick the clone by how big the history is:
+The history git fetches is three kinds of object:
+commits, trees
+(each directory's file names, each with the ID of its content)
+and blobs (the contents).
+A plan needs the commits, to find the merge base, and the trees,
+to list what changed.
+Of the blobs it needs the working tree's, which the checkout has,
+and the merge base's version of a few changed files only:
+a lockfile, a `package.json`, a `tsconfig.json`, a barrel,
+and what a narrower reads.
+So pick the clone by how big the history is:
 
 | History | Checkout | What a plan pays |
 | :--- | :--- | :--- |
 | Small: a full clone takes a second or two | `fetch-depth: 0` | Nothing more: every old version is already on disk |
 | Large: years of commits, big files | `fetch-depth: 0` and `filter: blob:none` | A fetch from the remote for the old versions it reads, when a change needs any: about a second, sometimes several |
 
-`filter: blob:none` makes a partial clone: every commit and tree, and only the blobs the checkout needs. Git fetches any other blob when something reads it, and fetches for reads made at once run in parallel. Without the filter, a large history's old contents are most of the download; with it, a small repository pays a round trip to the remote for contents it could have had for free.
+`filter: blob:none` makes a partial clone: every commit and tree,
+and only the blobs the checkout needs.
+Git fetches any other blob when something reads it,
+and fetches for reads made at once run in parallel.
+Without the filter, a large history's old contents are most of the
+download; with it, a small repository pays a round trip to the remote
+for contents it could have had for free.
 
 ### The cache
 
-The cache holds what bivium extracted from each file, keyed by git blob, so a warm plan reads only the files a branch changed. Key it on the merge base: a pull request can restore caches from the default branch, whose run at that commit is the one to hit. Without `node_modules`, the cache lives in `.bivium/cache`; it writes a `.gitignore` so it never shows up as a change.
+The cache holds what bivium extracted from each file, keyed by git blob,
+so a warm plan reads only the files a branch changed.
+Key it on the merge base: a pull request can restore caches from the
+default branch, whose run at that commit is the one to hit.
+Without `node_modules`, the cache lives in `.bivium/cache`;
+it writes a `.gitignore` so it never shows up as a change.
 
 ### What a plan costs
 
-Measured on an Apple M-series laptop under load (median of five, wall time):
+Measured on an Apple M-series laptop under load
+(median of five, wall time):
 
 | Repository | Files | Bun, no cache | Bun, warm | Node 24, no cache | Node 24, warm | Cache |
 |:---|---:|---:|---:|---:|---:|---:|
 | carbon-components-svelte | 4,680 | 0.15 s | 0.09 s | 0.27 s | 0.13 s | 452 KB |
 | generated TypeScript, 23 MB | 7,000 | 0.14 s | 0.08 s | 0.30 s | 0.12 s | 896 KB |
 
-So the cache is optional at this size, `bunx --bun` is worth it, and planning inside a test job (no extra job, no install) costs well under a second. A cold plan of the generated repository peaks at 88 MB of RSS on Bun and 124 MB on Node.
+So the cache is optional at this size, `bunx --bun` is worth it,
+and planning inside a test job (no extra job, no install) costs well
+under a second.
+A cold plan of the generated repository peaks at 88 MB of RSS on Bun
+and 124 MB on Node.
 
 ## Narrowers
 
-Some changes reach every test through a generated file: every page loads the compiled stylesheet, so any style edit selects every e2e test. A narrower replaces such a change's coarse seeds with finer ones from a semantic diff, such as the sources that render a changed CSS rule.
+Some changes reach every test through a generated file:
+every page loads the compiled stylesheet,
+so any style edit selects every e2e test.
+A narrower replaces such a change's coarse seeds with finer ones from a
+semantic diff, such as the sources that render a changed CSS rule.
 
 ```ts
 narrowers: [
@@ -351,7 +537,18 @@ narrowers: [
 ],
 ```
 
-The matched files still seed the walk, but it stops at the `opaque` nodes, and the seeds stand in for them. A narrower can only narrow: its suites' selection is cut to what the walk without it selects. One that returns `{ all: reason }`, throws, or returns anything else runs its suites in full with the reason. `narrow()` gets the repository `root`, the merge base and the working tree as `base` and `head` (each with `commit` and `read(path)`), the matched `changed` files, and a read-only `graph` (`nodes()`, `importers(node)`, `dependents(nodes)`, `tests(suite)`). [`eval/carbon/css-narrower.ts`](eval/carbon/css-narrower.ts) is carbon-components-svelte's, over crassus.
+The matched files still seed the walk,
+but it stops at the `opaque` nodes, and the seeds stand in for them.
+A narrower can only narrow: its suites' selection is cut to what the
+walk without it selects.
+One that returns `{ all: reason }`, throws,
+or returns anything else runs its suites in full with the reason.
+`narrow()` gets the repository `root`,
+the merge base and the working tree as `base`
+and `head` (each with `commit` and `read(path)`),
+the matched `changed` files, and a read-only `graph`
+(`nodes()`, `importers(node)`, `dependents(nodes)`, `tests(suite)`).
+carbon-components-svelte runs one over crassus.
 
 ## From code
 
@@ -363,7 +560,14 @@ const result = await plan({ config, base: "origin/main" });
 result.suites.unit; // { mode: "some", files: [...] }; result.suites.e2e is a type error
 ```
 
-`plan(options?)` takes `cwd`, `base`, `config` (default: the config file in `cwd`) and `cache`, and returns each suite's selection, its test count, the reasons as sentences and as data, the packages a lockfile change seeded or found inert, the base, merge base and changed files, and what each narrower returned. Given a config, the suite names carry through to the result's type. The package exports only `plan`, `defineConfig` and their types.
+`plan(options?)`
+takes `cwd`, `base`, `config` (default: the config file in `cwd`)
+and `cache`, and returns each suite's selection, its test count,
+the reasons as sentences and as data,
+the packages a lockfile change seeded or found inert, the base,
+merge base and changed files, and what each narrower returned.
+Given a config, the suite names carry through to the result's type.
+The package exports only `plan`, `defineConfig` and their types.
 
 ## Compared with
 
