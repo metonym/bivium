@@ -2,6 +2,7 @@ export { plan } from "./compute.ts";
 export { defineConfig } from "./config.ts";
 export type {
   Config,
+  FullRunCause,
   Globs,
   GraphView,
   NarrowContext,
