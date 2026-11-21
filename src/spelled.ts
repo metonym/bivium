@@ -115,6 +115,17 @@ function runsAnyway(
   return orphan ? "orphan" : undefined;
 }
 
+// A change to a barrel selects through the names it rebinds, which `plan`
+// seeds as `file#name`; a change `check` can't see may rebind any of them.
+function withNames(graph: Computed["graph"], targets: string[]): string[] {
+  return targets.flatMap((file) => [
+    file,
+    ...[...(graph.get(file)?.barrel?.keys() ?? [])].map(
+      (name) => `${file}#${name}`,
+    ),
+  ]);
+}
+
 export interface Spelled {
   // A change there selects nothing through the file: `check` fails.
   undeclared: SpelledPath[];
@@ -165,7 +176,7 @@ export async function spelledPaths(
         if (dir && node.startsWith(`${path}/`)) continue;
         const targets = dir ? dirs.get(path) : [path];
         if (!targets) continue;
-        const selected = affectedBy(graph, targets);
+        const selected = affectedBy(graph, withNames(graph, targets));
         if (through.every((test) => selected.has(test))) continue;
         const anyway = runsAnyway(config, computed, suites, targets);
         if (anyway === "wiring") continue;
