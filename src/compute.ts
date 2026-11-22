@@ -8,6 +8,7 @@ import {
   resolveConfig,
   type ResolvedConfig,
 } from "./config.ts";
+import { BiviumError } from "./errors.ts";
 import { defaultBase, readRevision, type Revision } from "./git.ts";
 import {
   affectedBy,
@@ -225,7 +226,9 @@ export function graphView(graph: Graph, config: ResolvedConfig): GraphView {
     dependents: (from) => affectedBy(graph, from, { includeUnknown: false }),
     tests: (name) => {
       const suite = config.suites.find((candidate) => candidate.name === name);
-      if (!suite) throw new Error(`bivium: no suite "${name}"`);
+      if (!suite) {
+        throw new BiviumError("BV_UNKNOWN_SUITE", `bivium: no suite "${name}"`);
+      }
       return nodes.filter(suite.isTest);
     },
   };

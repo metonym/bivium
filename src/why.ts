@@ -1,6 +1,7 @@
 import { fixFor } from "./check.ts";
 import type { Computed } from "./compute.ts";
 import type { PathMap, ResolvedConfig, ResolvedSuite } from "./config.ts";
+import { BiviumError } from "./errors.ts";
 import { globToRegExp } from "./glob.ts";
 import {
   affectedBy,
@@ -371,8 +372,15 @@ export async function explain(
   { all = false }: { all?: boolean } = {},
 ): Promise<Explanation> {
   const suite = config.suites.find((candidate) => candidate.isTest(test));
-  if (!suite) throw new Error(`bivium why: ${test} is no suite's test`);
-  if (!computed.graph.has(test)) throw new Error(`bivium why: no file ${test}`);
+  if (!suite) {
+    throw new BiviumError(
+      "BV_UNKNOWN_TEST",
+      `bivium why: ${test} is no suite's test`,
+    );
+  }
+  if (!computed.graph.has(test)) {
+    throw new BiviumError("BV_UNKNOWN_FILE", `bivium why: no file ${test}`);
+  }
   if (from === undefined && computed.plan.full.includes(suite.name)) {
     return { kind: "full", suite: suite.name, reasons: computed.plan.reasons };
   }

@@ -15,7 +15,7 @@ import { check, failed, formatReport, summarize } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
 import { githubOutputPath } from "./env.ts";
-import { BiviumError, didYouMean, type ErrorKind } from "./errors.ts";
+import { BiviumError, type BiviumErrorCode, didYouMean } from "./errors.ts";
 import { formatGraph, graphReport } from "./fanin.ts";
 import { formatSelection } from "./plan.ts";
 import type { Selection } from "./types.ts";
@@ -100,8 +100,8 @@ interface Args {
 // The JSON outputs' shape. A change that drops or retypes a field bumps it.
 const SCHEMA_VERSION = 1;
 
-function usageError(message: string): BiviumError {
-  return new BiviumError("usage", message);
+function usageError(code: BiviumErrorCode, message: string): BiviumError {
+  return new BiviumError(code, message);
 }
 
 // An unknown flag is an error: a misspelled --github would skip the outputs
@@ -115,7 +115,10 @@ function unknownOption(command: string, flag: string): BiviumError {
     others.length > 0
       ? ` (${others.join(" and ")} ${others.length === 1 ? "takes" : "take"} it)`
       : didYouMean(flag, known);
-  return usageError(`bivium ${command}: unknown option ${flag}${hint}`);
+  return usageError(
+    "BV_UNKNOWN_OPTION",
+    `bivium ${command}: unknown option ${flag}${hint}`,
+  );
 }
 
 function parseArgs(command: string, argv: string[]): Args {
@@ -140,6 +143,7 @@ function parseArgs(command: string, argv: string[]): Args {
       const on = equals === -1 ? "true" : arg.slice(equals + 1);
       if (on !== "true" && on !== "false") {
         throw usageError(
+          "BV_BAD_OPTION_VALUE",
           `bivium ${command}: ${flag} is a switch: give it alone, or as ${flag}=true or ${flag}=false`,
         );
       }
@@ -148,12 +152,15 @@ function parseArgs(command: string, argv: string[]): Args {
     }
     const value = equals === -1 ? argv[++i] : arg.slice(equals + 1);
     if (value === undefined || value === "" || value.startsWith("--")) {
-      throw usageError(`bivium: ${flag} needs a value`);
+      throw usageError("BV_BAD_OPTION_VALUE", `bivium: ${flag} needs a value`);
     }
     flags.set(flag, value);
   }
   if (positional.length > (POSITIONAL[command] ?? 0)) {
-    throw usageError(`bivium ${command}: unexpected ${positional.at(-1)}`);
+    throw usageError(
+      "BV_UNEXPECTED_ARGUMENT",
+      `bivium ${command}: unexpected ${positional.at(-1)}`,
+    );
   }
   return { flags, positional };
 }
@@ -219,6 +226,7 @@ function githubOutput(): string {
   const output = githubOutputPath();
   if (!output) {
     throw usageError(
+      "BV_NO_GITHUB_OUTPUT",
       "bivium plan: --github writes to $GITHUB_OUTPUT, which is not set (it is in a GitHub Actions step)",
     );
   }
@@ -233,7 +241,10 @@ function writeOutputs(
   const lines = config.suites.map((suite) => {
     const selection = plan.suites[suite.name];
     if (selection === undefined) {
-      throw new Error(`bivium: plan: no selection for suite "${suite.name}".`);
+      throw new BiviumError(
+        "BV_INTERNAL",
+        `bivium: plan: no selection for suite "${suite.name}".`,
+      );
     }
     return `${suite.output}=${formatSelection(selection)}\n`;
   });
@@ -250,6 +261,7 @@ function findSuite(config: ResolvedConfig, name: string | undefined) {
   if (suite) return suite;
   const names = config.suites.map((candidate) => candidate.name);
   throw usageError(
+    "BV_UNKNOWN_SUITE",
     `bivium: no suite "${name}"${didYouMean(name, names)}; the config has ${names.join(", ")}`,
   );
 }
@@ -299,17 +311,24 @@ async function inspect(
   const format = flags.get("--format") ?? "tree";
   if (format !== "json" && !isFormat(format)) {
     throw usageError(
+      "BV_BAD_OPTION_VALUE",
       `bivium why: --format takes tree, chain, source or json${didYouMean(format, ["tree", "chain", "source", "json"])}`,
     );
   }
   const maxFlag = flags.get("--max-unknown");
   const max = maxFlag === undefined ? undefined : Number(maxFlag);
   if (max !== undefined && !Number.isInteger(max)) {
-    throw usageError("bivium check: --max-unknown takes a whole number");
+    throw usageError(
+      "BV_BAD_OPTION_VALUE",
+      "bivium check: --max-unknown takes a whole number",
+    );
   }
   const [testArg, fileArg] = positional;
   if (command === "why" && testArg === undefined) {
-    throw usageError("bivium why: which test? bivium why <test> [file]");
+    throw usageError(
+      "BV_MISSING_ARGUMENT",
+      "bivium why: which test? bivium why <test> [file]",
+    );
   }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
@@ -343,6 +362,7 @@ async function inspect(
   if (!isTest(test) || !inGraph(test)) {
     const tests = [...computed.graph.keys()].filter(isTest);
     throw usageError(
+      inGraph(test) ? "BV_UNKNOWN_TEST" : "BV_UNKNOWN_FILE",
       inGraph(test)
         ? `bivium why: ${test} is no suite's test: name a test first, as in bivium why <test> ${test}`
         : `bivium why: no test ${test}${didYouMean(test, tests)}`,
@@ -350,6 +370,7 @@ async function inspect(
   }
   if (file !== undefined && !inGraph(file)) {
     throw usageError(
+      "BV_UNKNOWN_FILE",
       `bivium why: no file ${file}${didYouMean(file, computed.graph.keys())}`,
     );
   }
@@ -367,7 +388,10 @@ async function inspect(
 async function graphCommand({ flags }: Args): Promise<number> {
   const top = Number(flags.get("--top") ?? "10");
   if (!Number.isInteger(top) || top < 0) {
-    throw usageError("bivium graph: --top takes a whole number");
+    throw usageError(
+      "BV_BAD_OPTION_VALUE",
+      "bivium graph: --top takes a whole number",
+    );
   }
   const { root, base, config } = await prepare({
     cwd: flags.get("--cwd"),
@@ -398,9 +422,12 @@ async function runCommand(
   });
   // The config has at least one suite: loading it checks.
   const suite = findSuite(config, flags.get("--suite")) ?? config.suites[0];
-  if (suite === undefined) throw new BiviumError("config", "bivium: no suites");
+  if (suite === undefined) {
+    throw new BiviumError("BV_CONFIG_INVALID", "bivium config: no suites");
+  }
   if (command === "run" && !suite.run) {
     throw usageError(
+      "BV_NO_RUN_COMMAND",
       `bivium run: suite "${suite.name}" has no run command: add suites.${suite.name}.run to the config`,
     );
   }
@@ -454,6 +481,7 @@ async function runCommand(
   // A run of only whitespace names no program.
   if (program === undefined) {
     throw usageError(
+      "BV_NO_RUN_COMMAND",
       `bivium run: suite "${suite.name}" has no run command: add suites.${suite.name}.run to the config`,
     );
   }
@@ -486,9 +514,12 @@ function wantsJson(argv: string[]) {
   );
 }
 
-function fail(argv: string[], kind: ErrorKind, message: string): 2 {
-  console.error(message);
-  if (wantsJson(argv)) console.log(json({ error: { kind, message } }));
+function fail(argv: string[], error: BiviumError): 2 {
+  console.error(error.message);
+  if (wantsJson(argv)) {
+    const { kind, code, message } = error;
+    console.log(json({ error: { kind, code, message } }));
+  }
   return 2;
 }
 
@@ -510,15 +541,19 @@ export async function main(argv: string[]): Promise<number> {
   if (command === undefined) {
     return fail(
       argv,
-      "usage",
-      `bivium: which command? ${COMMANDS.join(", ")} (bivium --help for usage)`,
+      usageError(
+        "BV_MISSING_ARGUMENT",
+        `bivium: which command? ${COMMANDS.join(", ")} (bivium --help for usage)`,
+      ),
     );
   }
   if (!(command in FLAGS)) {
     return fail(
       argv,
-      "usage",
-      `bivium: unknown command "${command}"${didYouMean(command, COMMANDS)}; the commands are ${COMMANDS.join(", ")} (bivium --help for usage)`,
+      usageError(
+        "BV_UNKNOWN_COMMAND",
+        `bivium: unknown command "${command}"${didYouMean(command, COMMANDS)}; the commands are ${COMMANDS.join(", ")} (bivium --help for usage)`,
+      ),
     );
   }
   const rest = [...argv.slice(0, at), ...argv.slice(at + 1)];
@@ -529,11 +564,12 @@ export async function main(argv: string[]): Promise<number> {
     if (command === "graph") return await graphCommand(args);
     return await runCommand(command, args);
   } catch (error) {
-    if (error instanceof BiviumError) {
-      return fail(argv, error.kind, error.message);
-    }
+    if (error instanceof BiviumError) return fail(argv, error);
     // Anything else is a bug or an environment problem bivium didn't name.
     const message = error instanceof Error ? error.message : String(error);
-    return fail(argv, "other", message);
+    return fail(
+      argv,
+      new BiviumError("BV_INTERNAL", message, { cause: error }),
+    );
   }
 }

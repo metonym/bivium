@@ -37,7 +37,7 @@ async function gitOrThrow(cwd: string, ...args: string[]): Promise<string> {
     // git's own words say what's wrong (not a repository, a bad object).
     const said = result.stderr.trim().split("\n")[0];
     throw new BiviumError(
-      "git",
+      "BV_GIT_FAILED",
       `bivium: git ${args.join(" ")} failed${said ? `: ${said}` : ""}`,
     );
   }
@@ -105,13 +105,13 @@ async function missingHistory(
       : "";
   if (known.status !== 0) {
     return new BiviumError(
-      "git",
+      "BV_GIT_NO_BASE",
       `bivium: no commit ${base} here to diff against: fetch it.${fix}`,
     );
   }
   if (forked.status !== 0) {
     return new BiviumError(
-      "git",
+      "BV_GIT_NO_MERGE_BASE",
       `bivium: ${base} and HEAD share no commit here, so there's no merge base to diff against.${fix}`,
     );
   }
@@ -286,7 +286,7 @@ export async function defaultBase(cwd: string): Promise<string> {
   const branch = refs[found.findIndex((result) => result.status === 0)];
   if (branch) return branch;
   throw new BiviumError(
-    "git",
+    "BV_GIT_NO_BASE",
     `bivium: no base given and no default branch found (tried origin/HEAD, ${refs.join(", ")}): pass one, as in \`bivium plan origin/main\`, or set base in the config`,
   );
 }

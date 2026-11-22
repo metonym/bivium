@@ -1,5 +1,10 @@
 export { plan } from "./compute.ts";
 export { defineConfig } from "./config.ts";
+export {
+  BiviumError,
+  type BiviumErrorCode,
+  type BiviumErrorKind,
+} from "./errors.ts";
 export type {
   Config,
   FullRunCause,

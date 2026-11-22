@@ -328,7 +328,7 @@ With `--json`, an error is also printed to stdout as JSON,
 so a pipeline that parses stdout gets an object either way:
 
 ```json
-{ "schemaVersion": 1, "error": { "kind": "git", "message": "bivium: no commit nosuchref here to diff against: fetch it." } }
+{ "schemaVersion": 1, "error": { "kind": "git", "code": "BV_GIT_NO_BASE", "message": "bivium: no commit nosuchref here to diff against: fetch it." } }
 ```
 
 `kind` is `usage` (bivium was called wrong),
@@ -337,6 +337,11 @@ so a pipeline that parses stdout gets an object either way:
 lists every unknown key at once), `git`
 (the base or its history is missing, or git refused, in its own words)
 or `other`.
+`code` names the failure, such as `BV_UNKNOWN_OPTION`
+or `BV_CONFIG_INVALID`, and never changes meaning:
+the `BiviumErrorCode` type lists them all, each with what it means.
+From the library, `plan()` throws a `BiviumError` with the same `code`
+and `kind`.
 
 ### From an agent
 
@@ -349,7 +354,7 @@ or `other`.
 - `bivium check --json` gives `ok` and a `summary` of what widens plans,
   then each node with a `fix`.
 - Read the exit status first: 0 done, 1 `check` found problems,
-  2 an error, with `error.kind` in the JSON.
+  2 an error, with `error.kind` and `error.code` in the JSON.
 
 `why` names each edge by what spells it:
 `import`, `type`

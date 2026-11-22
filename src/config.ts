@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { BiviumError, didYouMean } from "./errors.ts";
+import { BiviumError, type BiviumErrorCode, didYouMean } from "./errors.ts";
 import {
   captureGlob,
   captureReferences,
@@ -625,7 +625,7 @@ export async function loadConfig(
       : resolve(process.cwd(), path);
   if (!file || !existsSync(file)) {
     throw new BiviumError(
-      "config",
+      "BV_CONFIG_NOT_FOUND",
       path
         ? `bivium: no config found at ${path}`
         : `bivium: no config found in ${root}: looked for ${CONFIG_FILES.join(", ")} (--config names another file, --cwd another repository)`,
@@ -633,19 +633,27 @@ export async function loadConfig(
   }
   const inside = relative(root, file);
   const shown = inside.startsWith("..") || isAbsolute(inside) ? file : inside;
-  let config: ResolvedConfig;
-  try {
-    config = resolveConfig(checkConfig(await readConfig(file)));
-  } catch (error) {
-    // Which file, since --config or a parent's config may not be the one
-    // the caller had in mind, and a parse error names none.
+  // Each error names the file, since --config or a parent's config may not
+  // be the one the caller had in mind, and a parse error names none.
+  const named = (code: BiviumErrorCode, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    // biome-ignore lint/style/useErrorCause: the cause is the third argument.
-    throw new BiviumError(
-      "config",
+    return new BiviumError(
+      code,
       `bivium config: ${shown}: ${message.replace(CONFIG_PREFIX, "")}`,
       { cause: error },
     );
+  };
+  let raw: unknown;
+  try {
+    raw = await readConfig(file);
+  } catch (error) {
+    throw named("BV_CONFIG_UNREADABLE", error);
+  }
+  let config: ResolvedConfig;
+  try {
+    config = resolveConfig(checkConfig(raw));
+  } catch (error) {
+    throw named("BV_CONFIG_INVALID", error);
   }
   return { config, file: shown };
 }

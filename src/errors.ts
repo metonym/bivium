@@ -1,14 +1,79 @@
-// What went wrong, for a caller that acts on it: the CLI was called wrong
-// (`usage`), the config can't be read or is invalid (`config`), or git
-// refused (`git`); `other` is anything bivium didn't name. Every one exits
-// 2; `--json` prints the kind.
-export type ErrorKind = "usage" | "config" | "git" | "other";
+/**
+ * What a caller does about an error: `usage`, bivium was called wrong;
+ * `config`, the config can't be found, read, or is invalid; `git`, git
+ * refused or the history is missing; `other`, a failure bivium didn't
+ * name. Every kind exits 2.
+ */
+export type BiviumErrorKind = "usage" | "config" | "git" | "other";
 
+/**
+ * Which failure it is, stable across releases: a code is never reused for
+ * another meaning, and `--json` prints it as `error.code`.
+ */
+export type BiviumErrorCode =
+  /** No command, or `why` without a test. */
+  | "BV_MISSING_ARGUMENT"
+  /** A command bivium doesn't have. */
+  | "BV_UNKNOWN_COMMAND"
+  /** An option the command doesn't take. */
+  | "BV_UNKNOWN_OPTION"
+  /** An option's value is missing or of the wrong form. */
+  | "BV_BAD_OPTION_VALUE"
+  /** More arguments than the command takes. */
+  | "BV_UNEXPECTED_ARGUMENT"
+  /** A suite the config doesn't define. */
+  | "BV_UNKNOWN_SUITE"
+  /** A path that is no suite's test. */
+  | "BV_UNKNOWN_TEST"
+  /** A path that names no file of the graph. */
+  | "BV_UNKNOWN_FILE"
+  /** `run` for a suite with no `run` command. */
+  | "BV_NO_RUN_COMMAND"
+  /** `plan --github` outside a GitHub Actions step. */
+  | "BV_NO_GITHUB_OUTPUT"
+  /** No config file where bivium looked. */
+  | "BV_CONFIG_NOT_FOUND"
+  /** The config file failed to load: a syntax error, or one it throws. */
+  | "BV_CONFIG_UNREADABLE"
+  /** The config loaded, but a key is unknown or a value is invalid. */
+  | "BV_CONFIG_INVALID"
+  /** The base to diff against isn't here, or there's no default branch. */
+  | "BV_GIT_NO_BASE"
+  /** The base and HEAD share no commit here. */
+  | "BV_GIT_NO_MERGE_BASE"
+  /** A git command failed; the message carries git's own words. */
+  | "BV_GIT_FAILED"
+  /** A failure bivium didn't anticipate: a bug, or the environment. */
+  | "BV_INTERNAL";
+
+const KINDS: Record<BiviumErrorCode, BiviumErrorKind> = {
+  BV_MISSING_ARGUMENT: "usage",
+  BV_UNKNOWN_COMMAND: "usage",
+  BV_UNKNOWN_OPTION: "usage",
+  BV_BAD_OPTION_VALUE: "usage",
+  BV_UNEXPECTED_ARGUMENT: "usage",
+  BV_UNKNOWN_SUITE: "usage",
+  BV_UNKNOWN_TEST: "usage",
+  BV_UNKNOWN_FILE: "usage",
+  BV_NO_RUN_COMMAND: "usage",
+  BV_NO_GITHUB_OUTPUT: "usage",
+  BV_CONFIG_NOT_FOUND: "config",
+  BV_CONFIG_UNREADABLE: "config",
+  BV_CONFIG_INVALID: "config",
+  BV_GIT_NO_BASE: "git",
+  BV_GIT_NO_MERGE_BASE: "git",
+  BV_GIT_FAILED: "git",
+  BV_INTERNAL: "other",
+};
+
+/** An error bivium names: its `code` says which failure, its `kind` what to do. */
 export class BiviumError extends Error {
-  readonly kind: ErrorKind;
-  constructor(kind: ErrorKind, message: string, options?: ErrorOptions) {
+  readonly code: BiviumErrorCode;
+  readonly kind: BiviumErrorKind;
+  constructor(code: BiviumErrorCode, message: string, options?: ErrorOptions) {
     super(message, options);
-    this.kind = kind;
+    this.code = code;
+    this.kind = KINDS[code];
   }
 }
 
