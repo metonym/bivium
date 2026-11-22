@@ -1,15 +1,12 @@
 # bivium
 
-> The tests a change reaches, from a file-level dependency graph.
+Run only the tests your change can reach.
 
-bivium walks the graph backwards from the files a change touches to the
-tests that reach them, across runners and file types: imports, mocks,
-pages a test opens, globs, and lockfile bumps.
-It fails closed: what it can't read counts as depending on everything,
-and a change it can't place runs the whole suite, with the reason.
-It has no dependencies, reads the git index instead of `node_modules`,
-and plans carbon-components-svelte's 4,680 files in 0.15 s
-(0.09 s with its cache).
+bivium reads your code's imports to work out which tests a change could
+break, and hands those to your test runner: Vitest, Jest, Playwright,
+`bun test`, or any other.
+When it can't tell what a change touches, it runs everything,
+and says why.
 
 ```console
 $ bunx bivium plan
@@ -21,8 +18,8 @@ e2e tests: none
 ```
 
 **Every selection has a reason.**
-`why` shows the chain from a change to a test,
-with the line that spells each link:
+`why` shows how a change reaches a test, file by file,
+with the line that connects each one:
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts
@@ -35,9 +32,10 @@ e2e/accordion.test.ts
                ● changed
 ```
 
-It was extracted from
+It has no dependencies and runs on Node ≥ 22 or Bun.
+It started as
 [carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte)'s
-`test:changed`, and runs on Node ≥ 22 and Bun.
+`test:changed`.
 
 ## Quick start
 
