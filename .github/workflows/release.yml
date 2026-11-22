@@ -15,10 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build with boatwright
-        run: npx -y bun@1.4.5-canary.20261121.1 x --bun boatwright@0.1.0
+        run: npx -y bun@1.4.5-canary.20261121.1 x --bun boatwright@0.2.0
       - name: Point npm at the token
         run: echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > ~/.npmrc
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish ./dist --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}

@@ -23,22 +23,18 @@
     "zero-dependency"
   ],
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./index.d.ts",
+      "default": "./index.js"
     },
     "./package.json": "./package.json"
   },
   "bin": {
-    "bivium": "./dist/cli.js"
+    "bivium": "cli.js"
   },
-  "files": [
-    "dist",
-    "docs"
-  ],
   "engines": {
     "node": ">=22"
   },
