@@ -78,8 +78,8 @@ export function fanIn(graph: Graph, suite: ResolvedSuite): Map<string, number> {
   return result;
 }
 
-// Every id indexes all of fanIn's per-node arrays, which have one entry per
-// node.
+// Every id indexes all of fanIn's per-node arrays, which have one entry
+// per node.
 function byId<T>(list: ArrayLike<T>, id: number): T {
   const value = list[id];
   if (value === undefined) {
@@ -153,7 +153,10 @@ function buckets(total: number): [number, number][] {
   return list;
 }
 
-/** `bivium graph`'s text: per suite, the files that reach the most tests, and how files spread. */
+/**
+ * `bivium graph`'s text: per suite, the files that reach the most tests,
+ * and how files spread.
+ */
 export function formatGraph(report: GraphReport, top: number): string {
   const lines: string[] = [];
   const files = report.nodes.filter(

@@ -57,9 +57,9 @@ export function toPackageJson(value: unknown): PackageJson {
 // Package directory (`.` for the root) → its `package.json`.
 export type Packages = Map<string, PackageJson>;
 
-// Files a specifier can load (a union: every condition, every extension that
-// exists), an external `pkg:<name>` node, or `undefined` when it can't be
-// resolved at all.
+// Files a specifier can load (a union: every condition, every extension
+// that exists), an external `pkg:<name>` node, or `undefined` when it
+// can't be resolved at all.
 type Resolution = { files: string[] } | { pkg: string } | undefined;
 
 export type Resolver = (from: string, specifier: string) => Resolution;
@@ -93,8 +93,8 @@ const TS_SOURCES: Record<string, readonly string[]> = {
 };
 const NODE_PREFIX = /^node:/;
 const INVALID_IMPORT_TARGET = /^[./#]/;
-// SvelteKit replaces it in `app.html` with the assets directory; the scanner
-// reads `href="%sveltekit.assets%/x"` as a relative reference.
+// SvelteKit replaces it in `app.html` with the assets directory; the
+// scanner reads `href="%sveltekit.assets%/x"` as a relative reference.
 const SVELTEKIT_ASSETS = "./%sveltekit.assets%/";
 const INDEX = "/index";
 const SVELTE_CONFIGS = ["js", "mjs", "cjs", "ts", "mts"].map(

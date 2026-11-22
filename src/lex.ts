@@ -9,7 +9,8 @@ import {
   READS,
 } from "./syntax.ts";
 
-// One-pass JavaScript/TypeScript lexer that reads only what the graph needs.
+// One-pass JavaScript/TypeScript lexer that reads only what the graph
+// needs.
 //
 // It tracks code, `//` and `/* *\/` comments, `'`/`"` strings, template
 // literals (with a stack for `${`), regular expressions, and JSX in
@@ -20,11 +21,12 @@ import {
 //
 // Anything that leaves the lexer in an inconsistent state (an unterminated
 // string, template, comment or regex, an unbalanced bracket) throws a
-// `LexError`, and the caller falls back to the regex extractor for the file.
+// `LexError`, and the caller falls back to the regex extractor for the
+// file.
 //
-// Keyword handlers are lookaheads: they record what follows the keyword and
-// never consume input, so the main loop still lexes every character once
-// as code and keeps its bracket stack and previous token right.
+// Keyword handlers are lookaheads: they record what follows the keyword
+// and never consume input, so the main loop still lexes every character
+// once as code and keeps its bracket stack and previous token right.
 
 export interface Lexed {
   imports: ImportRef[];
@@ -149,7 +151,8 @@ const PS = String.fromCharCode(0x2029);
 // Whether the file has line terminators other than `\n`.
 // eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let oddLines = false;
-// Set by `template()`: it stopped at `${` rather than the closing backtick.
+// Set by `template()`: it stopped at `${` rather than the closing
+// backtick.
 // eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let templateOpen = false;
 
@@ -168,8 +171,8 @@ export function openFile(source: string, sink: Lexed): void {
     source.includes("\r") || source.includes(LS) || source.includes(PS);
 }
 
-// Lexes `[start, stop)` of the open file as a whole program (a module, or a
-// `<script>` block's content). Throws `LexError`.
+// Lexes `[start, stop)` of the open file as a whole program (a module, or
+// a `<script>` block's content). Throws `LexError`.
 export function lexRange(
   start: number,
   stop: number,
@@ -309,8 +312,8 @@ function stringEnd(i: number) {
   return -1;
 }
 
-// Scans template text from `start` (after a backtick or a `${…}`'s `}`) to the
-// closing backtick or the next `${`, and returns the index after it.
+// Scans template text from `start` (after a backtick or a `${…}`'s `}`) to
+// the closing backtick or the next `${`, and returns the index after it.
 function template(start: number) {
   let j = start;
 
@@ -472,8 +475,9 @@ function keyword(c: number, i: number, j: number, property: boolean) {
   }
 }
 
-// The main loop. Lexes code from `start` to `end`; with `brace`, stops after the
-// `}` that closes an enclosing `{` and returns the index after it.
+// The main loop. Lexes code from `start` to `end`; with `brace`, stops
+// after the `}` that closes an enclosing `{` and returns the index after
+// it.
 function code(start: number, brace: boolean): number {
   let i = start;
 
@@ -926,7 +930,8 @@ function declaration(k: number) {
   }
 }
 
-// Named bindings of the clause `src[start, stop)`, as the regex reads them.
+// Named bindings of the clause `src[start, stop)`, as the regex reads
+// them.
 function clauseNames(start: number, stop: number) {
   const clause = src.slice(start, stop);
   if (!clause.includes("{")) return;
@@ -935,7 +940,8 @@ function clauseNames(start: number, stop: number) {
 
 const COMMENTS = /\/\/.*$|\/\*[\s\S]*?\*\//gm;
 
-// Index after the `}` matching the `{` at `open` (an import clause), or -1.
+// Index after the `}` matching the `{` at `open` (an import clause), or
+// -1.
 function braceEnd(open: number) {
   let p = open;
 

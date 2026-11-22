@@ -21,11 +21,11 @@ import {
   UNDECLARED_READS,
 } from "./syntax.ts";
 
-// Raw dependency extraction from source text, before resolution: a one-pass
-// lexer (`lex.ts`, with `host.ts` for files that embed scripts), which
-// falls back to the regex extractor (`scan-regex.ts`) for a file it can't
-// lex cleanly. Anything neither can read is reported as unknown, never
-// dropped.
+// Raw dependency extraction from source text, before resolution: a
+// one-pass lexer (`lex.ts`, with `host.ts` for files that embed scripts),
+// which falls back to the regex extractor (`scan-regex.ts`) for a file it
+// can't lex cleanly. Anything neither can read is reported as unknown,
+// never dropped.
 
 // Files whose source the scanner reads; any other file is a leaf.
 export const SCANNED: RegExp = /\.(?:svelte|vue|astro|html|[cm]?[jt]sx?)$/;
@@ -43,8 +43,8 @@ export function formatOf(path: string): Format {
   return dialect === JS ? "js" : "ts";
 }
 
-// A file's raw dependencies as its content and format alone determine them:
-// what the scan cache stores. `scan` adds what depends on the path.
+// A file's raw dependencies as its content and format alone determine
+// them: what the scan cache stores. `scan` adds what depends on the path.
 export type Extraction = Omit<Scan, "globs"> & {
   // `import.meta.glob` patterns as written, relative to the file.
   globs: string[];
@@ -197,8 +197,8 @@ function fromLexed(lexed: Lexed): Extraction {
 }
 
 const STRING_LITERAL = /^["'`]([^"'`$]*)["'`]$/;
-// A template literal that only interpolates after `?` or `#`, so the page is
-// still known: `/modal.html?variant=${variant}`.
+// A template literal that only interpolates after `?` or `#`, so the page
+// is still known: `/modal.html?variant=${variant}`.
 const STATIC_PATH_TEMPLATE = /^`([^`$?#]*)[?#][^`]*`$/;
 
 // The URL a `goto()` argument names, or `undefined` if it isn't static.

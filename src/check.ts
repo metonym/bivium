@@ -74,8 +74,9 @@ export interface Report {
   // config doesn't exempt: a change to one runs the whole suite.
   unreached: { suite: string; file: string; fix: string }[];
   // Repository paths a file spells in its code that a change to wouldn't
-  // select the tests that reach it: an input nothing declares. One the orphan rule covers, which
-  // runs the suite in full, is left to `unreached`'s fix.
+  // select the tests that reach it: an input nothing declares. One the
+  // orphan rule covers, which runs the suite in full, is left to
+  // `unreached`'s fix.
   undeclaredPaths: SpelledPath[];
 }
 
@@ -238,9 +239,9 @@ type Found = Omit<DeadGlob, "at">;
 
 // A glob is dead when a change it names can't select its node: it matches
 // no file, or a file the planner skips. `ignore` means "not a seed", never
-// "not a node" (`classify`), so a skipped file is an ignored one outside the
-// graph. A match outside the roots that isn't ignored runs everything, which
-// selects the node too.
+// "not a node" (`classify`), so a skipped file is an ignored one outside
+// the graph. A match outside the roots that isn't ignored runs everything,
+// which selects the node too.
 function deadOf(
   node: string,
   kind: GlobKind,
@@ -270,8 +271,8 @@ function deadOf(
 
 // The config's `edges` and `reads`, under the config's file. A key no node
 // matches applies to nothing. A value is dead as an annotation's glob is,
-// over what it matches for every node its key matches: a snapshot glob that
-// most tests' captures miss is alive while some test's hits.
+// over what it matches for every node its key matches: a snapshot glob
+// that most tests' captures miss is alive while some test's hits.
 function configDeadGlobs(
   config: ResolvedConfig,
   { graph, listed }: Computed,

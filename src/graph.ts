@@ -19,10 +19,10 @@ import { QUERY, type Scan, UNDECLARED_READS } from "./syntax.ts";
 import type { TsConfigs } from "./tsconfig.ts";
 
 // Static file-level dependency graph. A node is a repo-relative file, a
-// barrel name (`src/index.js#Button`), or an external package (`pkg:svelte`,
-// `pkg:node:fs`). The graph must never miss an edge, so a file whose
-// dependencies it can't read lists why in `unknown`, and counts as depending
-// on every change.
+// barrel name (`src/index.js#Button`), or an external package
+// (`pkg:svelte`, `pkg:node:fs`). The graph must never miss an edge, so a
+// file whose dependencies it can't read lists why in `unknown`, and counts
+// as depending on every change.
 export interface FileDeps {
   // Nodes this one imports.
   files: Set<string>;
@@ -86,8 +86,8 @@ function addPattern(
 
 const NON_LITERAL_GOTO = "non-literal goto(";
 
-// The causes a `hermetic` file vouches for: what it reads or imports this way
-// is never a file of the repository.
+// The causes a `hermetic` file vouches for: what it reads or imports this
+// way is never a file of the repository.
 const HERMETIC_CAUSES = new Set([
   UNDECLARED_READS,
   "non-literal dynamic import",
@@ -140,7 +140,8 @@ function mapUrl(suite: ResolvedSuite, url: string): string[] | undefined {
   return undefined;
 }
 
-// The files a `goto()` argument in `path` loads, when its suite maps the URL.
+// The files a `goto()` argument in `path` loads, when its suite maps the
+// URL.
 export function gotoPage(
   config: ResolvedConfig,
   path: string,
@@ -168,8 +169,8 @@ export function buildGraph(
 }
 
 // The graph of `files`, from the extractions of the ones the scanner reads
-// (`SCANNED`); the rest are leaves, never read. Resolution runs every time:
-// it depends on which files exist.
+// (`SCANNED`); the rest are leaves, never read. Resolution runs every
+// time: it depends on which files exist.
 export function graphFrom(
   files: Iterable<string>,
   extractions: Map<string, Extraction>,
@@ -437,8 +438,9 @@ export function baseBarrelNames(
   return names;
 }
 
-// The nodes that declare one pattern (an `import.meta.glob`, `@depends-on`,
-// `edges` input or text read), each with what spells it for that node.
+// The nodes that declare one pattern (an `import.meta.glob`,
+// `@depends-on`, `edges` input or text read), each with what spells it for
+// that node.
 interface PatternGroup {
   re: RegExp;
   nodes: string[];
@@ -594,11 +596,11 @@ export function importersOf(graph: Graph, node: string): readonly string[] {
   return reverseIndex(graph).dependents.get(node) ?? [];
 }
 
-// How the walk reached a node, by what spells the edge: an import, a page a
-// `goto()` opens, a module an HTML page loads (`script[src]`, `link[href]`,
-// `iframe[src]` or an inline script's import), a barrel name a named import
-// binds (`name`) and the file that exports it (`export`), an
-// `import.meta.glob`, an `@depends-on`, the config's `edges`, a file it
+// How the walk reached a node, by what spells the edge: an import, a page
+// a `goto()` opens, a module an HTML page loads (`script[src]`,
+// `link[href]`, `iframe[src]` or an inline script's import), a barrel name
+// a named import binds (`name`) and the file that exports it (`export`),
+// an `import.meta.glob`, an `@depends-on`, the config's `edges`, a file it
 // reads as text (`@reads` or the config's `reads`), or its unknown
 // dependencies, so it depends on any change. Only `why` reads the kind:
 // every kind is followed the same way.

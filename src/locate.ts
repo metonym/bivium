@@ -42,10 +42,10 @@ function lineOf(source: string, needle: string | RegExp): number | undefined {
 }
 
 // Where `source`'s comments are: `//`, `/* */` and `<!-- -->`, outside
-// strings. A sketch of the lexer, not the lexer: a regex literal with a quote
-// in it can throw it off until the end of its line, which costs a pointer at
-// worst. A quote doesn't span lines, so an apostrophe in markup prose can't
-// hide the rest of the file.
+// strings. A sketch of the lexer, not the lexer: a regex literal with a
+// quote in it can throw it off until the end of its line, which costs a
+// pointer at worst. A quote doesn't span lines, so an apostrophe in markup
+// prose can't hide the rest of the file.
 function commentRanges(source: string): [number, number][] {
   const ranges: [number, number][] = [];
   for (let i = 0; i < source.length; i++) {
@@ -121,8 +121,8 @@ export function specifierLine(
 }
 
 /**
- * The line of a `goto()` that opens a page: by its argument as written, else
- * by the page's file name.
+ * The line of a `goto()` that opens a page: by its argument as written,
+ * else by the page's file name.
  */
 export function gotoLine(
   source: string,

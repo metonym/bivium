@@ -46,8 +46,9 @@ async function readIfFile(path: string): Promise<string | undefined> {
   }
 }
 
-// Reads files in parallel: a third of the time on a warm disk and a tenth on
-// a cold one. Files the index lists but the working tree deleted are left out.
+// Reads files in parallel: a third of the time on a warm disk and a tenth
+// on a cold one. Files the index lists but the working tree deleted are
+// left out.
 export async function readSources(
   root: string,
   files: string[],
@@ -146,10 +147,10 @@ async function isFile(path: string): Promise<boolean> {
 }
 
 // The files of `revision` the working tree has, and the extractions of the
-// ones the scanner reads. A file the index vouches for (`blobs`) comes from
-// the cache when it can; other scanned files, and `package.json` files, are
-// read. Leaves are never read: one git doesn't vouch for is only checked to
-// exist.
+// ones the scanner reads. A file the index vouches for (`blobs`) comes
+// from the cache when it can; other scanned files, and `package.json`
+// files, are read. Leaves are never read: one git doesn't vouch for is
+// only checked to exist.
 export async function extractRevision(
   root: string,
   revision: Revision,
@@ -474,7 +475,10 @@ export function plan<Suite extends string>(
   options: PlanOptions<Suite> & { config: Config<Suite> },
 ): Promise<PlanResult<Suite>>;
 export function plan(options?: PlanOptions): Promise<PlanResult>;
-/** Picks the tests of each suite that the changes against `base` can affect. */
+/**
+ * Picks the tests of each suite that the changes against `base` can
+ * affect.
+ */
 export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   const { root, base, config } = await prepare(options);
   const computed = await computePlan(root, base, config, {

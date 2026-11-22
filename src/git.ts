@@ -87,9 +87,9 @@ const INDEX_ENTRY = /^(\S) (\d{6}) ([0-9a-f]+) (\d)\t(.*)$/;
 // base's side first.
 const RAW_ENTRY = /^:(\d{6}) \d{6} ([0-9a-f]+) [0-9a-f]+ ([A-Z])\d*\t(.*)$/;
 
-// Why the diffs against `base` failed, when the clone lacks what they need:
-// the base itself, or the history back to where HEAD forked from it. A
-// CI checkout fetches one commit by default.
+// Why the diffs against `base` failed, when the clone lacks what they
+// need: the base itself, or the history back to where HEAD forked from it.
+// A CI checkout fetches one commit by default.
 async function missingHistory(
   cwd: string,
   base: string,

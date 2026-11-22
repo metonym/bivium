@@ -97,15 +97,16 @@ interface Args {
   positional: string[];
 }
 
-// The JSON outputs' shape. A change that drops or retypes a field bumps it.
+// The JSON outputs' shape. A change that drops or retypes a field bumps
+// it.
 const SCHEMA_VERSION = 1;
 
 function usageError(code: BiviumErrorCode, message: string): BiviumError {
   return new BiviumError(code, message);
 }
 
-// An unknown flag is an error: a misspelled --github would skip the outputs
-// CI reads, and a step that reads none runs nothing.
+// An unknown flag is an error: a misspelled --github would skip the
+// outputs CI reads, and a step that reads none runs nothing.
 function unknownOption(command: string, flag: string): BiviumError {
   const known = FLAGS[command] ?? [];
   const others = Object.keys(FLAGS).filter(
@@ -165,7 +166,8 @@ function parseArgs(command: string, argv: string[]): Args {
   return { flags, positional };
 }
 
-// Splits a `run` command and puts the files where `{files}` is, or at the end.
+// Splits a `run` command and puts the files where `{files}` is, or at the
+// end.
 export function commandFor(run: string, files: string[]): string[] {
   const words = run.split(WHITESPACE).filter(Boolean);
   const at = words.indexOf("{files}");

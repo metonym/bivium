@@ -16,9 +16,9 @@ import {
 } from "./syntax.ts";
 
 // The regex extractor, ported from carbon-components-svelte's selector. It
-// reads every pattern anywhere in the text, comments and strings included, so
-// it over-approximates; the lexer (`lex.ts`) falls back to it for a file it
-// can't lex cleanly, and so never drops an edge this keeps.
+// reads every pattern anywhere in the text, comments and strings included,
+// so it over-approximates; the lexer (`lex.ts`) falls back to it for a
+// file it can't lex cleanly, and so never drops an edge this keeps.
 
 const COMMENTS = /\/\/.*$|\/\*[\s\S]*?\*\//gm;
 const QUOTED = /["']([^"']+)["']/g;

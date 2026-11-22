@@ -32,11 +32,12 @@ const LEADING_SLASHES = /^\/+/;
 const TRAILING_SLASHES = /\/+$/;
 const DOT_RELATIVE = /^\.\.?\//;
 
-// The repository paths `text` may name from `file`. A path with a slash may
-// be relative to the root, as `join(root, "tests/fixtures")` spells it, or
-// to the file; a bare name only to the file, as `join(import.meta.dir,
-// "fixtures")` spells it. A leading slash is a template's static part after
-// `${root}`, or a URL: only a path with a further slash counts.
+// The repository paths `text` may name from `file`. A path with a slash
+// may be relative to the root, as `join(root, "tests/fixtures")` spells
+// it, or to the file; a bare name only to the file, as
+// `join(import.meta.dir, "fixtures")` spells it. A leading slash is a
+// template's static part after `${root}`, or a URL: only a path with a
+// further slash counts.
 function candidates(file: string, text: string): string[] {
   let path = text.replace(TRAILING_SLASHES, "");
   const rooted = path.startsWith("/");

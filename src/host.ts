@@ -16,7 +16,8 @@ import { captured, RELATIVE, URL_REF } from "./syntax.ts";
 // - `.svelte`: scripts and markup expressions.
 // - `.vue`: scripts (template expressions can't import).
 // - `.astro`: the `---` frontmatter and scripts.
-// - `.html`: inline scripts, and `script[src]`, `link[href]`, `iframe[src]`.
+// - `.html`: inline scripts, and `script[src]`, `link[href]`,
+//   `iframe[src]`.
 //
 // The file must already be open (`openFile`). Throws `LexError`.
 export type Host = "svelte" | "vue" | "astro" | "html";

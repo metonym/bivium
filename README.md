@@ -33,9 +33,8 @@ e2e/accordion.test.ts
 ```
 
 It has no dependencies and runs on Node ≥ 22 or Bun.
-It started as
-[carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte)'s
-`test:changed`.
+It started as the `test:changed` script in
+[carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte).
 
 ## Quick start
 

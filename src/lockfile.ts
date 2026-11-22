@@ -5,9 +5,9 @@ import { type Graph, reaches } from "./graph.ts";
 import { byCodeUnit, sorted } from "./sorted.ts";
 import { parseYaml } from "./yaml.ts";
 
-// What a change to a lockfile, or to a `package.json`'s dependencies, did to
-// the installed packages, so a dependency bump seeds the `pkg:` nodes of
-// what it changed instead of running everything.
+// What a change to a lockfile, or to a `package.json`'s dependencies, did
+// to the installed packages, so a dependency bump seeds the `pkg:` nodes
+// of what it changed instead of running everything.
 
 const DEP_FIELDS = [
   "dependencies",
@@ -420,8 +420,8 @@ function parseManifest(text: string | undefined) {
 
 /**
  * Diffs the changed root lockfiles and `package.json` dependency fields
- * between the merge base (`base`) and the working tree (`head`), or returns
- * `undefined` when no such file changed.
+ * between the merge base (`base`) and the working tree (`head`), or
+ * returns `undefined` when no such file changed.
  */
 export async function readPackageDiff(
   changed: readonly string[],

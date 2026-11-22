@@ -9,10 +9,10 @@ interface Compiled {
   wildcards: number;
 }
 
-// With `capture`, each wildcard is a group, numbered by where it starts. With
-// `captures`, `$1`, `$2`… are what those groups matched, literally; one that
-// matched nothing (inside an alternative not taken) matches anything, so a
-// reference can only widen.
+// With `capture`, each wildcard is a group, numbered by where it starts.
+// With `captures`, `$1`, `$2`… are what those groups matched, literally;
+// one that matched nothing (inside an alternative not taken) matches
+// anything, so a reference can only widen.
 function compile(
   glob: string,
   {

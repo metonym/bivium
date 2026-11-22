@@ -61,14 +61,16 @@ type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
 type KnownUnknown = NonNullable<Config["knownUnknowns"]>[number];
 
 // An `edges` or `reads` entry: a file glob and the globs a file it matches
-// depends on or reads, where `$1`… stand for what the key's wildcards matched.
+// depends on or reads, where `$1`… stand for what the key's wildcards
+// matched.
 export interface PathMap {
   key: string;
   // The key names one file: it has no wildcard.
   exact: boolean;
   pattern: RegExp;
   values: string[];
-  // The values' patterns for `path`, or `undefined` if the key doesn't match.
+  // The values' patterns for `path`, or `undefined` if the key doesn't
+  // match.
   targets: (path: string) => RegExp[] | undefined;
 }
 
@@ -161,8 +163,8 @@ function isInertOf(inert: Globs | undefined): Matcher {
   return (name) => name === "bivium" || listed(name);
 }
 
-// `{ [key]: value }`, or `{}` when the value is missing: an optional key is
-// left out rather than set to `undefined`.
+// `{ [key]: value }`, or `{}` when the value is missing: an optional key
+// is left out rather than set to `undefined`.
 function optional<K extends string, V>(
   key: K,
   value: V | undefined,
@@ -459,7 +461,8 @@ function checkNarrower(value: unknown, at: string): Narrower {
   };
 }
 
-// A reason is required: an entry without one is a dead glob nobody looked at.
+// A reason is required: an entry without one is a dead glob nobody looked
+// at.
 function checkDeadGlob(value: unknown, at: string): DeadGlobEntry {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);
@@ -614,7 +617,8 @@ async function readConfig(file: string): Promise<unknown> {
 
 const CONFIG_PREFIX = /^bivium config: /;
 
-// A `.ts` config loads natively on Bun and on Node ≥ 22.18 (type stripping).
+// A `.ts` config loads natively on Bun and on Node ≥ 22.18 (type
+// stripping).
 export async function loadConfig(
   root: string,
   path?: string,

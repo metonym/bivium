@@ -250,8 +250,8 @@ function walks(
 }
 
 // The edges from `test` back to the seed the first walk that reaches it
-// started from. A file with unknown dependencies ends the chain: it depends
-// on every change, whichever one the walk started from.
+// started from. A file with unknown dependencies ends the chain: it
+// depends on every change, whichever one the walk started from.
 function shortestChain(
   computed: Computed,
   candidates: Walk[],
@@ -273,9 +273,9 @@ function shortestChain(
   return undefined;
 }
 
-// The seeds other than `except` whose walk alone reaches `test`. A walk from
-// several seeds reaches what the walks from each reach, so this is every
-// change that would select the test by itself.
+// The seeds other than `except` whose walk alone reaches `test`. A walk
+// from several seeds reaches what the walks from each reach, so this is
+// every change that would select the test by itself.
 function reachers(
   computed: Computed,
   candidates: Walk[],

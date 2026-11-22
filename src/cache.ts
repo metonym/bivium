@@ -14,14 +14,14 @@ import type { ImportRef } from "./syntax.ts";
 // depends on which other files exist.
 //
 // One JSON file: `[header, strings, rows]`. Every string is an index into
-// `strings` (specifiers repeat across files), and a row is decoded only when
-// a file asks for it. A file that doesn't parse, or whose header doesn't
-// match this bivium, is ignored, never fatal.
+// `strings` (specifiers repeat across files), and a row is decoded only
+// when a file asks for it. A file that doesn't parse, or whose header
+// doesn't match this bivium, is ignored, never fatal.
 
-// Bump on any change to what `extract` returns for some input (lexer,
-// host formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
+// Bump on any change to what `extract` returns for some input (lexer, host
+// formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 7;
+export const SCANNER_VERSION = 8;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 
@@ -49,14 +49,16 @@ function isHeader(value: unknown): value is Header {
     typeof value.strings === "number"
   );
 }
-// `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback, barrel,
-// types, lists]`, where `types` lists the indexes of the type-only imports.
+// `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback,
+// barrel, types, lists]`, where `types` lists the indexes of the type-only
+// imports.
 type Row = unknown[];
 
 type CacheOption = boolean | string | undefined;
 
 // Where the cache lives: `cache` when it's a path (relative to `root`),
-// else `node_modules/.cache/bivium`, else `.bivium/cache`. `false`: nowhere.
+// else `node_modules/.cache/bivium`, else `.bivium/cache`. `false`:
+// nowhere.
 export function cacheDir(root: string, cache: CacheOption): string | undefined {
   if (cache === false) return undefined;
   if (typeof cache === "string") {

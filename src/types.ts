@@ -8,7 +8,10 @@ export type Globs = string | readonly string[];
 export interface SuiteConfig {
   /** The suite's test files. */
   tests: Globs;
-  /** The command `bivium run` runs. `{files}` is replaced by the selected files, or nothing for all of them; without it, they're appended. */
+  /**
+   * The command `bivium run` runs. `{files}` is replaced by the selected
+   * files, or nothing for all of them; without it, they're appended.
+   */
   run?: string;
   /**
    * Where the orphan rule applies: a changed file under one of these paths
@@ -24,9 +27,15 @@ export interface SuiteConfig {
    * exist, and the rest are edges where they do.
    */
   urls?: Readonly<Record<string, string | readonly string[]>>;
-  /** Pages only a `goto()` opens. A changed file that only such pages load, and that no test opens, is wired to no test. */
+  /**
+   * Pages only a `goto()` opens. A changed file that only such pages load,
+   * and that no test opens, is wired to no test.
+   */
   pages?: Globs;
-  /** Files whose change runs the whole suite: a second harness, a runner config. */
+  /**
+   * Files whose change runs the whole suite: a second harness, a runner
+   * config.
+   */
   wiring?: Globs;
   /**
    * Files the runner loads before every test (Vitest and Jest `setupFiles`,
@@ -34,7 +43,10 @@ export interface SuiteConfig {
    * depends on them, and on what they import.
    */
   setup?: Globs;
-  /** Files under `root` the runner never reads, such as type-check inputs: exempt from the orphan rule. */
+  /**
+   * Files under `root` the runner never reads, such as type-check inputs:
+   * exempt from the orphan rule.
+   */
   nonInputs?: Globs;
   /**
    * Whether the suite's tests can observe types. `false` for a suite that
@@ -46,7 +58,10 @@ export interface SuiteConfig {
    * `true`, for a type-checking suite (`tsc`, `vitest --typecheck`).
    */
   types?: boolean;
-  /** The step output `bivium plan --github` writes the selection to. Default: `<name>-tests`. */
+  /**
+   * The step output `bivium plan --github` writes the selection to. Default:
+   * `<name>-tests`.
+   */
   output?: string;
 }
 
@@ -55,7 +70,11 @@ export interface Config<Suite extends string = string> {
   suites: Readonly<Record<Suite, SuiteConfig>>;
   /** Plugins that narrow what a change to some files selects. */
   narrowers?: readonly Narrower<NoInfer<Suite>>[];
-  /** Paths (directories or files, not globs) the graph reads. A changed file outside them that isn't ignored runs everything. Default: the whole repository. */
+  /**
+   * Paths (directories or files, not globs) the graph reads. A changed file
+   * outside them that isn't ignored runs everything. Default: the whole
+   * repository.
+   */
   roots?: string | readonly string[];
   /**
    * Files no test can observe except through an edge (docs, stories). A
@@ -64,7 +83,10 @@ export interface Config<Suite extends string = string> {
    * dependencies are unknown.
    */
   ignore?: Globs;
-  /** Specifier prefix → path, as the bundler aliases it: `{ "my-package": "src" }`. Tried before `package.json` `exports`. */
+  /**
+   * Specifier prefix → path, as the bundler aliases it: `{ "my-package":
+   * "src" }`. Tried before `package.json` `exports`.
+   */
   alias?: Readonly<Record<string, string>>;
   /**
    * Generated file glob → its inputs, which it depends on transitively, as
@@ -80,9 +102,15 @@ export interface Config<Suite extends string = string> {
    * `edges`: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }`.
    */
   reads?: Readonly<Record<string, Globs>>;
-  /** The selector's own files, which can't be trusted to select themselves. The config file is always one. */
+  /**
+   * The selector's own files, which can't be trusted to select themselves.
+   * The config file is always one.
+   */
   self?: Globs;
-  /** Files only an import reaches. Deleting one never orphans a suite: an importer left pointing at it doesn't resolve, so it runs anyway. */
+  /**
+   * Files only an import reaches. Deleting one never orphans a suite: an
+   * importer left pointing at it doesn't resolve, so it runs anyway.
+   */
   importOnly?: Globs;
   /**
    * Files whose disk reads and non-literal imports reach no file of the
@@ -91,9 +119,16 @@ export interface Config<Suite extends string = string> {
    * unknown; an `@depends-on` or `@reads` still declares what one does read.
    */
   hermetic?: Globs;
-  /** Modules that may bind named imports as barrels. Default: every module made only of re-exports. */
+  /**
+   * Modules that may bind named imports as barrels. Default: every module
+   * made only of re-exports.
+   */
   barrels?: Globs;
-  /** Packages to treat as external though no `package.json` declares them: ones a dependency installs. Any other undeclared bare specifier is unknown. */
+  /**
+   * Packages to treat as external though no `package.json` declares them:
+   * ones a dependency installs. Any other undeclared bare specifier is
+   * unknown.
+   */
   external?: readonly string[];
   /**
    * Packages no test uses except by importing them: linters, formatters,
@@ -109,10 +144,10 @@ export interface Config<Suite extends string = string> {
    * Packages a test may load other than by an import bivium sees: a test
    * environment, a plugin a config names by string (`jsdom`, `happy-dom`,
    * `ts-jest`). Globs over package names. Setting it, even to `[]`, says
-   * every other package without an executable is loaded only by imports, so a lockfile
-   * change that reaches one no test imports selects nothing beyond its
-   * importers. A package with a `bin` in the lockfile is always taken to
-   * be one a test may run. Default: unset, and any package may be.
+   * every other package without an executable is loaded only by imports, so
+   * a lockfile change that reaches one no test imports selects nothing
+   * beyond its importers. A package with a `bin` in the lockfile is always
+   * taken to be one a test may run. Default: unset, and any package may be.
    */
   loadedByName?: Globs;
   /** Suffixes tried after a specifier, in order. */
@@ -120,22 +155,26 @@ export interface Config<Suite extends string = string> {
   /**
    * Globs `bivium check` allows to be dead: an `@depends-on`, `@reads`,
    * `@lists` or `import.meta.glob` pattern in `file`, or an `edges` or
-   * `reads` key or value or a suite's `setup` when `file` is the config's, as written there, that matches no
-   * file or matches files a change to which selects nothing (ignored, and
-   * not in the graph). Each needs a reason, and an entry that matches no
-   * dead glob fails the check, so the list stays current.
+   * `reads` key or value or a suite's `setup` when `file` is the config's,
+   * as written there, that matches no file or matches files a change to
+   * which selects nothing (ignored, and not in the graph). Each needs a
+   * reason, and an entry that matches no dead glob fails the check, so the
+   * list stays current.
    */
   deadGlobs?: readonly { file: string; glob: string; reason: string }[];
   /**
    * Nodes `bivium check` allows to have unknown dependencies, each with a
-   * reason. With this set, even to `[]`, `check` fails on an unknown node some test
-   * reaches that isn't listed, and on a listed node that's no longer
-   * unknown, so a new unknown can't hide behind one that went away.
+   * reason. With this set, even to `[]`, `check` fails on an unknown node
+   * some test reaches that isn't listed, and on a listed node that's no
+   * longer unknown, so a new unknown can't hide behind one that went away.
    */
   knownUnknowns?: readonly { file: string; reason: string }[];
   /** The default base ref. */
   base?: string;
-  /** The extraction cache's directory, or `false` for none. Default: `node_modules/.cache/bivium`, or `.bivium/cache` without `node_modules`. */
+  /**
+   * The extraction cache's directory, or `false` for none. Default:
+   * `node_modules/.cache/bivium`, or `.bivium/cache` without `node_modules`.
+   */
   cache?: boolean | string;
 }
 
@@ -177,7 +216,10 @@ export interface FullRunCause<Suite extends string = string> {
 export interface PlanOptions<Suite extends string = string> {
   /** The repository. Default: the current directory. */
   cwd?: string;
-  /** The ref to compare the working tree with. Default: the config's `base`, else the upstream default branch. */
+  /**
+   * The ref to compare the working tree with. Default: the config's `base`,
+   * else the upstream default branch.
+   */
   base?: string;
   /** The config. Default: the `bivium.config.*` file in `cwd`. */
   config?: Config<Suite>;
@@ -195,11 +237,18 @@ export interface PlanResult<Suite extends string = string> {
   causes: FullRunCause<Suite>[];
   /** How many test files each suite has. */
   totals: Record<Suite, number>;
-  /** A line per package a lockfile or `package.json` change changed, and that selects through its importers or nothing: `bun.lock: svelte 5.1.0 → 5.2.0`. */
+  /**
+   * A line per package a lockfile or `package.json` change changed, and that
+   * selects through its importers or nothing: `bun.lock: svelte 5.1.0 →
+   * 5.2.0`.
+   */
   packages: string[];
   /** The base ref. */
   base: string;
-  /** The merge base of `base` and `HEAD`, which the working tree is compared with. */
+  /**
+   * The merge base of `base` and `HEAD`, which the working tree is compared
+   * with.
+   */
   mergeBase: string;
   /** The files changed since the merge base, untracked ones included. */
   changed: string[];
@@ -217,11 +266,17 @@ export interface Tree {
 
 /** The working tree's dependency graph, read-only. */
 export interface GraphView<Suite extends string = string> {
-  /** Every node: repository files, barrel names (`src/index.js#Button`) and packages (`pkg:svelte`). */
+  /**
+   * Every node: repository files, barrel names (`src/index.js#Button`) and
+   * packages (`pkg:svelte`).
+   */
   nodes(): readonly string[];
   /** The nodes that import `node` directly. */
   importers(node: string): readonly string[];
-  /** Every node that depends on one of `nodes`, transitively and including them, not counting files whose dependencies are unknown. */
+  /**
+   * Every node that depends on one of `nodes`, transitively and including
+   * them, not counting files whose dependencies are unknown.
+   */
   dependents(nodes: Iterable<string>): ReadonlySet<string>;
   /** A suite's test files. */
   tests(suite: Suite): readonly string[];
@@ -255,8 +310,8 @@ export type NarrowResult =
  * The matched files still seed the walk, but it stops at the `opaque`
  * nodes they reach the tests through; the narrower's seeds stand in for
  * those. A narrower can only narrow: its selection is cut to what the
- * coarse walk selects. One that can't decide returns `{ all: reason }`, and
- * one that throws counts as that.
+ * coarse walk selects. One that can't decide returns `{ all: reason }`,
+ * and one that throws counts as that.
  */
 export interface Narrower<Suite extends string = string> {
   /** Names it in reasons: `css/: …`. */

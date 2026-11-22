@@ -156,9 +156,10 @@ export function classify(
   return { relevant, quiet, packageFiles, settingFiles, causes };
 }
 
-// What a suite's narrowers select: the walk from the matched files stops at
-// their opaque nodes, which their seeds stand in for, and the other seeds
-// walk as usual. Cut to the coarse walk, so a narrower can only narrow.
+// What a suite's narrowers select: the walk from the matched files stops
+// at their opaque nodes, which their seeds stand in for, and the other
+// seeds walk as usual. Cut to the coarse walk, so a narrower can only
+// narrow.
 function narrowedWalk(
   graph: Graph,
   seeds: string[],
