@@ -57,7 +57,8 @@ interface PlanTestsOptions {
   settings?: ReadonlyMap<string, SettingChange>;
 }
 
-// `all`, `none`, or the space-separated files, as CI step outputs.
+// A CI step output is one string, so a selection is `all`, `none`, or its
+// files joined by spaces.
 export function formatSelection(selection: Selection): string {
   return selection.mode === "some" ? selection.files.join(" ") : selection.mode;
 }
@@ -90,7 +91,6 @@ interface Changes {
   // files they govern: they seed those, and aren't subject to the orphan
   // rule either.
   settingFiles: string[];
-  // Why suites run in full.
   causes: FullRunCause[];
 }
 
@@ -227,8 +227,8 @@ export function orphanOf(
   return { typed };
 }
 
-// Picks the tests of each suite that `changed` can affect. `graph` is the
-// head revision.
+// `graph` must be the head revision's: a changed file it lacks counts as
+// deleted.
 export function planTests(
   graph: Graph,
   changed: string[],

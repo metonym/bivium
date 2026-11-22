@@ -16,7 +16,7 @@ const DEP_FIELDS = [
   "optionalDependencies",
 ] as const;
 
-// Each dependency field a workspace declares: name → spec.
+// invariant: dependency field (`dependencies`…) → name → spec.
 type Specs = Map<string, Map<string, string>>;
 
 interface Installed {
@@ -55,7 +55,8 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 // A string, or a comma before a closing bracket, which JSON doesn't allow.
 const STRING_OR_TRAILING_COMMA = /"(?:[^"\\]|\\.)*"|,(\s*[}\]])/g;
 
-// JSON with trailing commas, as Bun writes `bun.lock`.
+// compat: Bun writes `bun.lock` with trailing commas, which `JSON.parse`
+// rejects.
 function parseLenient(text: string): unknown {
   return JSON.parse(
     text.replace(
@@ -119,7 +120,7 @@ function install(
   packages.set(name, installed);
 }
 
-// The last package name in a `bun.lock` key: `@scope/a/b` is `b` installed
+// A `bun.lock` key is an install path, so `@scope/a/b` is `b` installed
 // under `@scope/a`.
 function installedName(key: string): string {
   // A split has at least one part, so `name` is always there.
@@ -127,8 +128,8 @@ function installedName(key: string): string {
   return scope?.startsWith("@") ? `${scope}/${name}` : name;
 }
 
-// `bun.lock`: `packages` maps an install path to `["name@version", …]`,
-// with the dependencies in the entry's one object.
+// spec: `bun.lock`'s `packages` maps an install path to
+// `["name@version", …]`, with the dependencies in the entry's one object.
 function parseBunLock(text: string): Lockfile | undefined {
   const value = parseLenient(text);
   if (!isRecord(value)) return undefined;
@@ -162,9 +163,9 @@ function parseBunLock(text: string): Lockfile | undefined {
 
 const NODE_MODULES = "node_modules/";
 
-// `package-lock.json` v2 and v3: `packages` maps an install path to its
-// entry, and a workspace's directory (`""` for the root) to its manifest.
-// v1 has no `packages`.
+// spec: in `package-lock.json` v2 and v3, `packages` maps an install path
+// to its entry, and a workspace's directory (`""` for the root) to its
+// manifest. v1 has no `packages`, so it isn't read.
 function parsePackageLock(text: string): Lockfile | undefined {
   const value: unknown = JSON.parse(text);
   if (!isRecord(value) || !isRecord(value.packages)) return undefined;
@@ -193,8 +194,8 @@ function parsePackageLock(text: string): Lockfile | undefined {
   return lockfile;
 }
 
-// A `pnpm-lock.yaml` key's name and version: `name@version`, with a peer
-// suffix (`(react@18.0.0)`) in `snapshots`, and a leading `/` before v9.
+// spec: a `pnpm-lock.yaml` key is `name@version`, with a peer suffix
+// (`(react@18.0.0)`) in `snapshots`, and a leading `/` before v9.
 function pnpmKey(key: string): { name: string; version: string } | undefined {
   const bare = key.startsWith("/") ? key.slice(1) : key;
   const at = bare.indexOf("@", 1);
@@ -202,7 +203,7 @@ function pnpmKey(key: string): { name: string; version: string } | undefined {
   return { name: bare.slice(0, at), version: withoutPeers(bare.slice(at + 1)) };
 }
 
-// `5.1.0(react@18.0.0)` is 5.1.0, for a peer set.
+// A peer set doesn't change the version: `5.1.0(react@18.0.0)` is 5.1.0.
 function withoutPeers(version: string): string {
   const paren = version.indexOf("(");
   return paren === -1 ? version : version.slice(0, paren);
@@ -216,17 +217,18 @@ const PNPM_DEP_FIELDS = [
   "optionalDependencies",
 ] as const;
 
-// `pnpm-lock.yaml` v6 and v9. `importers` maps a workspace directory to
-// its dependencies, each `{ specifier, version }`; `packages` (and, in v9,
-// `snapshots`) maps `name@version` to its entry. A single-project v6 file
-// has the root's dependencies at the top. Another document (pnpm's
+// spec: `pnpm-lock.yaml` v6 and v9. `importers` maps a workspace directory
+// to its dependencies, each `{ specifier, version }`; `packages` (and, in
+// v9, `snapshots`) maps `name@version` to its entry. A single-project v6
+// file has the root's dependencies at the top. Another document (pnpm's
 // config dependencies) counts as settings.
 function parsePnpmLock(text: string): Lockfile | undefined {
   const docs = text
     .split(YAML_DOCUMENT)
     .filter((doc) => doc.trim() !== "")
     .map(parseYaml);
-  // pnpm 10 writes its config dependencies' lockfile first.
+  // compat: pnpm 10 writes its config dependencies' lockfile first, so the
+  // main one is the last.
   const main = docs.findLast(
     (doc) => isRecord(doc) && typeof doc.lockfileVersion === "string",
   );
@@ -259,8 +261,9 @@ function parsePnpmLock(text: string): Lockfile | undefined {
           return undefined;
         }
         declared.set(name, dep.specifier);
-        // The version a workspace resolves a name to: switching to another
-        // version already installed changes nothing under `packages`.
+        // A workspace switching to another version already installed
+        // changes nothing under `packages`, so its resolved version is an
+        // entry too.
         const version = typeof dep.version === "string" ? dep.version : "";
         install(
           lockfile.packages,
@@ -299,7 +302,6 @@ function parsePnpmLock(text: string): Lockfile | undefined {
   return lockfile;
 }
 
-// The root lockfiles bivium reads, by name.
 const FORMATS = new Map<string, (text: string) => Lockfile | undefined>([
   ["bun.lock", parseBunLock],
   ["package-lock.json", parsePackageLock],
@@ -353,8 +355,8 @@ function versions(installed: Installed | undefined) {
   return installed && sorted(installed.versions).join(", ");
 }
 
-// Names whose specs differ between two declarations, with the spec each
-// side gives the first field that differs.
+// A name declared in several fields is reported only once, with the specs
+// of the first field (in `DEP_FIELDS` order) that differs.
 function specChanges(before: Specs | undefined, after: Specs | undefined) {
   const changed = new Map<string, [string | undefined, string | undefined]>();
   for (const field of DEP_FIELDS) {
@@ -418,9 +420,8 @@ function parseManifest(text: string | undefined) {
   }
 }
 
-// Diffs the changed root lockfiles and `package.json` dependency fields
-// between the merge base (`base`) and the working tree (`head`), or
-// returns `undefined` when no such file changed.
+// `undefined` only when no root lockfile or `package.json` changed. `base`
+// reads the merge base, `head` the working tree.
 export async function readPackageDiff(
   changed: readonly string[],
   listed: readonly string[],
@@ -432,7 +433,7 @@ export async function readPackageDiff(
   if (lockfiles.length === 0 && manifests.length === 0) return undefined;
   const read = (path: string) => Promise.all([base(path), head(path)]);
   const known = [...FORMATS.keys()];
-  // An unchanged lockfile is the same in both trees.
+  // An unchanged lockfile is the same in both trees, so it's read once.
   const [lockTexts, manifestTexts] = await Promise.all([
     Promise.all(
       known.map(async (file) => {
@@ -582,7 +583,8 @@ export function packageSeeds(
   const changes = diff.changes
     .filter((change) => files.includes(change.file))
     .sort((a, b) => byCodeUnit(a.name, b.name));
-  // Each package no test imports → the changes that reach it, its own first.
+  // invariant: package no test imports → the changes that reach it, its
+  // own first.
   const unused = new Map<string, PackageChange[]>();
   const seen = new Set<string>();
   for (const change of changes) {

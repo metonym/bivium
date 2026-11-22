@@ -1,12 +1,10 @@
 // The public types, in one module that imports nothing, so the build can
 // emit them as one declaration file.
 
-/** One glob, or several. */
 export type Globs = string | readonly string[];
 
 /** A test suite: its files, how to run them, and how they're wired. */
 export interface SuiteConfig {
-  /** The suite's test files. */
   tests: Globs;
   /**
    * The command `bivium run` runs. `{files}` is replaced by the selected
@@ -243,7 +241,6 @@ export interface PlanResult<Suite extends string = string> {
    * 5.2.0`.
    */
   packages: string[];
-  /** The base ref. */
   base: string;
   /**
    * The merge base of `base` and `HEAD`, which the working tree is compared
@@ -278,7 +275,6 @@ export interface GraphView<Suite extends string = string> {
    * them, not counting files whose dependencies are unknown.
    */
   dependents(nodes: Iterable<string>): ReadonlySet<string>;
-  /** A suite's test files. */
   tests(suite: Suite): readonly string[];
 }
 

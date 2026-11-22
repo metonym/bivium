@@ -40,7 +40,6 @@ function linesOf(text: string): Line[] {
   return lines;
 }
 
-// The index after the quoted scalar opening at `start`, or -1.
 function quoteEnd(text: string, start: number): number {
   const quote = text[start];
   for (let i = start + 1; i < text.length; i++) {
@@ -60,7 +59,7 @@ function unquote(quoted: string): string {
   return value;
 }
 
-// A flow collection's text, which must close on its line.
+// A flow collection must close on the line it opens on.
 function flowEnd(text: string, line: Line): number {
   let depth = 0;
   for (let i = 0; i < text.length; i++) {
@@ -97,8 +96,6 @@ function scalar(text: string, line: Line): string {
   return text.replace(COMMENT, "");
 }
 
-// A mapping line's key and the text after its `:`, or `undefined` if the
-// line isn't one.
 function keyOf(
   text: string,
   line: Line,
@@ -119,7 +116,6 @@ export function parseYaml(text: string): Yaml {
   const lines = linesOf(text);
   let at = 0;
 
-  // The block whose lines are indented exactly `indent`.
   function block(indent: number): Yaml {
     const first = lines[at];
     if (!first || first.indent !== indent) return "";
@@ -128,8 +124,8 @@ export function parseYaml(text: string): Yaml {
       : mapping(indent, {});
   }
 
-  // A value after a key or a `-`: inline, or the block indented under it.
-  // An empty flow collection is an empty one; any other is its text.
+  // Only an empty flow collection (`{}`, `[]`) parses as a collection; any
+  // other stays its text.
   function value(rest: string, indent: number, line: Line): Yaml {
     const text = rest.trim();
     if (EMPTY_MAP.test(text)) return {};

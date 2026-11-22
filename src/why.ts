@@ -26,7 +26,8 @@ import { extract, finish, formatOf, SCANNED } from "./scan.ts";
 import { sorted } from "./sorted.ts";
 import { plural } from "./text.ts";
 
-// One edge of a chain: `node` depends on the next link's node.
+// invariant: `node` depends on the next link's node, so a chain's links
+// run from the test toward the change.
 interface Link {
   node: string;
   kind: Via["kind"];
@@ -84,14 +85,13 @@ interface Context {
 
 const CONFIG_EDGES = "edges in the config";
 const CONFIG_SETUP = "setup in the config";
-// Edges the config spells, which no line of the file does.
+// These kinds come from the config, so no line of the file spells them.
 const CONFIGURED: Partial<Record<Via["kind"], string>> = {
   edges: CONFIG_EDGES,
   setup: CONFIG_SETUP,
 };
 const CONFIG_READS = "reads in the config";
 
-// Where `node` spells its edge to `via.from`, and the line.
 async function edgeAt(
   context: Context,
   node: string,
@@ -175,7 +175,8 @@ function edgeLine(
   if (via.kind === "export") {
     const barrel = extraction.barrel;
     if (!barrel) return undefined;
-    // The name's own re-export, or one with side effects any import runs.
+    // The name's own re-export first; failing that, any other, since one
+    // with side effects runs on any import from the barrel.
     const own = barrel.names.get(node.slice(node.indexOf("#") + 1));
     const specifier = [
       ...(own === undefined ? [] : [own]),
@@ -217,7 +218,8 @@ type Walk = { seeds: string[]; quiet?: string[] } & Pick<
   "layout" | "opaque" | "types"
 >;
 
-// The walks that selected the suite's tests, as planTests ran them.
+// The walks `planTests` ran for the suite, rebuilt: a change to how it
+// walks must change this too.
 function walks(
   computed: Computed,
   { name, types }: ResolvedSuite,
@@ -249,9 +251,8 @@ function walks(
   ];
 }
 
-// The edges from `test` back to the seed the first walk that reaches it
-// started from. A file with unknown dependencies ends the chain: it
-// depends on every change, whichever one the walk started from.
+// A file with unknown dependencies ends the chain, since it depends on
+// every change, whichever one the walk started from.
 function shortestChain(
   computed: Computed,
   candidates: Walk[],
@@ -358,9 +359,6 @@ function unselected(
   };
 }
 
-// Why `test` is selected: the shortest chain of edges from it to a changed
-// file (or to `from`), with where each edge is spelled, and the other
-// changes that reach it (with `all`, their chains too).
 export async function explain(
   root: string,
   config: ResolvedConfig,
@@ -437,7 +435,8 @@ export function isFormat(value: string): value is Format {
   return FORMATS.some((format) => format === value);
 }
 
-// How a node is reached, in a chain read from the change to the test.
+// Each reads from the change toward the test (`a` imported by `b`), so
+// `steps` lists the links reversed.
 const VERBS: Record<Exclude<Via["kind"], "export">, string> = {
   import: "imported by",
   type: "type-imported by",
@@ -459,7 +458,6 @@ function nameOf(node: string) {
   return node.slice(node.indexOf("#") + 1);
 }
 
-// Rows of text with an optional location, the locations in one column.
 function aligned(rows: [string, string | undefined][]): string[] {
   const width = Math.max(
     0,
@@ -510,7 +508,6 @@ function whereOf(link: Link) {
   return link.at ?? link.node;
 }
 
-// Steps from the change to the test: each one reached, and where.
 function steps(links: Link[]): string[] {
   const rows = [...links]
     .reverse()

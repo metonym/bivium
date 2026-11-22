@@ -55,7 +55,6 @@ function within(file: string, dir: string): boolean {
   return dir === "." || file.startsWith(`${dir}/`);
 }
 
-// The files whose nearest directory among `dirs` is `dir`.
 function governed(
   files: readonly string[],
   dirs: readonly string[],
@@ -126,7 +125,8 @@ export async function settingChanges({
     );
     const counted = keys?.filter((key) => !(manifest && METADATA.has(key)));
     // A `tsconfig.json` claims its directory, as a `package.json` does,
-    // whether it's there now or was at the merge base.
+    // even one only the merge base has: `tsconfigs` lists the working
+    // tree's.
     const own = posix.dirname(file);
     const dirs = manifest
       ? [own]

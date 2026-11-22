@@ -30,8 +30,8 @@ export function hostOf(path: string): Host | undefined {
     : undefined;
 }
 
-// `^<tag … src="…"`: the regex extractor's HTML_REF, on one tag, plus
-// unquoted values.
+// The regex extractor's HTML_REF, on one tag, plus the unquoted values it
+// doesn't read.
 const TAG_REF =
   /^<(?:script|link|iframe)\b[^>]*\b(?:src|href)=(?:"([^"]+)"|'([^']+)'|([^\s"'=<>`]+))/;
 const GENERICS = /\sgenerics=(["'])/;
@@ -40,7 +40,8 @@ const LOWERCASE = /[a-z]/;
 const FENCE_OPEN = /^\s*---[ \t]*\r?\n/;
 const FENCE_CLOSE = /^---[ \t]*$/m;
 
-// Is `src[i…]` `<name` followed by the end of the tag name?
+// `name` must be lowercase; the match ignores case and needs the tag name
+// to end there, so `<scripts` isn't `<script`.
 function isTag(src: string, i: number, name: string) {
   for (let k = 0; k < name.length; k++) {
     if ((src.charCodeAt(i + 1 + k) | 0x20) !== name.charCodeAt(k)) return false;
@@ -49,7 +50,7 @@ function isTag(src: string, i: number, name: string) {
   return c === 62 || c === 47 || c === 32 || (c >= 9 && c <= 13);
 }
 
-// Index after the `>` of the tag opening at `i`, skipping quoted values.
+// A `>` inside a quoted value doesn't end the tag.
 function tagEnd(src: string, i: number) {
   let j = i + 1;
   while (j < src.length) {
@@ -66,7 +67,6 @@ function tagEnd(src: string, i: number) {
   throw new LexError(`unterminated tag at ${i}`);
 }
 
-// Index of `</name` from `from` (any case), or throws.
 function closeTag(src: string, from: number, name: string) {
   const lower = src.indexOf(`</${name}`, from);
   if (lower !== -1) return lower;
@@ -84,7 +84,8 @@ export function lexHost(src: string, out: Lexed, host: Host): void {
   const n = src.length;
   let i = 0;
   if (host === "astro") i = frontmatter(src);
-  // Markup is skipped by jumping to the next `<` (and `{` in Svelte).
+  // Code starts only at a `<` (or, in Svelte, a `{`), so the markup between
+  // is skipped in one jump.
   let nextTag = -1;
   let nextBrace = host === "svelte" ? -1 : n;
   while (i < n) {
@@ -118,7 +119,8 @@ export function lexHost(src: string, out: Lexed, host: Host): void {
       if (host === "html" || host === "vue") ref(tag, out);
       const generics = tag.match(GENERICS);
       if (generics?.index !== undefined) {
-        // `<script lang="ts" generics="T extends Item">`: type parameters.
+        // `generics="T extends Item"` holds type parameters, so it's lexed as
+        // TypeScript too.
         const start = i + generics.index + generics[0].length;
         const stop = src.indexOf(captured(generics, 1), start);
         if (stop !== -1 && stop < open) lexRange(start, stop, TS);
@@ -153,7 +155,6 @@ function ref(tag: string, out: Lexed) {
   }
 }
 
-// Lexes Astro's leading `---` fence; returns where markup starts.
 function frontmatter(src: string) {
   const start = FENCE_OPEN.exec(src);
   if (!start) return 0;

@@ -60,17 +60,11 @@ export interface ResolvedNarrower {
 type DeadGlobEntry = NonNullable<Config["deadGlobs"]>[number];
 type KnownUnknown = NonNullable<Config["knownUnknowns"]>[number];
 
-// An `edges` or `reads` entry: a file glob and the globs a file it matches
-// depends on or reads, where `$1`… stand for what the key's wildcards
-// matched.
 export interface PathMap {
   key: string;
-  // The key names one file: it has no wildcard.
   exact: boolean;
   pattern: RegExp;
   values: string[];
-  // The values' patterns for `path`, or `undefined` if the key doesn't
-  // match.
   targets: (path: string) => RegExp[] | undefined;
 }
 
@@ -124,7 +118,8 @@ function list(value: Globs | undefined, fallback: readonly string[]) {
 const LEADING_DOT_SLASH = /^\.\//;
 const TRAILING_SLASHES = /\/+$/;
 
-// `src/` and `./src` both mean `src`; `.` and `./` mean the whole repo.
+// `inRoot` compares a root as a prefix, so `src/` and `./src` must become
+// `src`, and `./` the whole repo's `.`.
 function normalizeRoot(root: string) {
   return (
     root.replace(LEADING_DOT_SLASH, "").replace(TRAILING_SLASHES, "") || "."
@@ -135,7 +130,8 @@ function pathMaps(record: Readonly<Record<string, Globs>> = {}): PathMap[] {
   return Object.entries(record).map(([key, globs]) => {
     const { pattern, wildcards } = captureGlob(key);
     const values = list(globs, []);
-    // A value without references is the same for every match.
+    // A value without references is the same for every match, so it
+    // compiles once.
     const fixed = values.map((value) =>
       captureReferences(value).length === 0 ? globToRegExp(value) : undefined,
     );
@@ -163,8 +159,8 @@ function isInertOf(inert: Globs | undefined): Matcher {
   return (name) => name === "bivium" || listed(name);
 }
 
-// `{ [key]: value }`, or `{}` when the value is missing: an optional key
-// is left out rather than set to `undefined`.
+// An optional key is left out, never set to `undefined`, which
+// `exactOptionalPropertyTypes` rejects.
 function optional<K extends string, V>(
   key: K,
   value: V | undefined,
@@ -428,7 +424,8 @@ function isResult(value: unknown): value is NarrowResult {
   );
 }
 
-// A narrower is code from the config: what it returns is checked too.
+// A narrower is code from the config, which nothing type-checked, so what
+// it returns is checked too.
 function checkResult(value: unknown): NarrowResult {
   if (isResult(value)) return value;
   throw new Error("returned neither { seeds: string[] } nor { all: string }");
@@ -508,7 +505,8 @@ function checkCaptures(
   }
 }
 
-// Checks a config read from a file, which nothing has type-checked.
+// Nothing type-checks a config as it loads, a `.ts` one included (its
+// types are stripped), so every key is checked here.
 export function checkConfig(value: unknown): Config {
   if (!isRecord(value)) throw new Error("bivium config: not an object");
   if (!isRecord(value.suites)) {
@@ -617,8 +615,8 @@ async function readConfig(file: string): Promise<unknown> {
 
 const CONFIG_PREFIX = /^bivium config: /;
 
-// A `.ts` config loads natively on Bun and on Node ≥ 22.18 (type
-// stripping).
+// compat: a `.ts` config loads natively only on Bun and on Node ≥ 22.18
+// (type stripping).
 export async function loadConfig(
   root: string,
   path?: string,

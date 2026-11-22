@@ -54,9 +54,7 @@ export type Graph = Map<string, FileDeps>;
 
 interface BuildOptions {
   config: ResolvedConfig;
-  // `package.json` files by directory, the root's at `.`.
   packages: Packages;
-  // `tsconfig.json` paths by directory.
   tsconfigs?: TsConfigs | undefined;
 }
 
@@ -69,8 +67,9 @@ const leaf = (): FileDeps => ({
 
 const LEADING_DOT_SLASH = /^\.\//;
 const JS_SPECIFIER = /\.[cm]?jsx?$/;
-// A declaration file: `x.d.ts`, `x.d.mts`, `x.d.cts`, and `x.d.css.ts`
-// for an arbitrary extension. Nothing that runs loads one.
+// Nothing that runs loads a declaration file (`x.d.ts`, `x.d.mts`,
+// `x.d.cts`, or `x.d.css.ts` for any extension), so an edge to or from one
+// is type-only.
 export const DECLARATION: RegExp = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
 
 function addPattern(
@@ -84,13 +83,10 @@ function addPattern(
   deps.patternKinds.set(pattern, kind);
 }
 
-// A cause is listed once, however many imports or mocks name it.
 function addCause(deps: FileDeps, cause: string): void {
   if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
 }
 
-// Pages a test opens: each is a file it depends on, and one no import
-// reaches is a page too.
 function addPages(deps: FileDeps, pages: readonly string[]): void {
   for (const page of pages) {
     if (!deps.files.has(page)) {
@@ -138,8 +134,6 @@ function gotoSuite(
   );
 }
 
-// The files a URL loads by the first pattern that matches it, `*` in each
-// replaced by what the key's `*` matched.
 function mapUrl(suite: ResolvedSuite, url: string): string[] | undefined {
   for (const { key, targets } of suite.urls) {
     const star = key.indexOf("*");
@@ -157,8 +151,6 @@ function mapUrl(suite: ResolvedSuite, url: string): string[] | undefined {
   return undefined;
 }
 
-// The files a `goto()` argument in `path` loads, when its suite maps the
-// URL.
 export function gotoPage(
   config: ResolvedConfig,
   path: string,
@@ -171,7 +163,6 @@ export function gotoPage(
     : mapUrl(suite, url.replace(QUERY, ""));
 }
 
-// Parses every source file; non-code files become leaves.
 export function buildGraph(
   sources: Map<string, string>,
   options: BuildOptions,
@@ -226,7 +217,8 @@ export function graphFrom(
       const resolved = resolve(path, specifier);
       return resolved && "files" in resolved ? resolved.files : undefined;
     };
-    // Re-exported modules with side effects run on any import from it.
+    // A re-exported module with side effects runs on any import from the
+    // barrel, so every name's node depends on it.
     const always: string[] = [];
     for (const specifier of [...barrel.names.values(), ...barrel.stars]) {
       for (const file of resolveTarget(specifier) ?? []) {
@@ -446,9 +438,6 @@ export function baseBarrelNames(
   return names;
 }
 
-// The nodes that declare one pattern (an `import.meta.glob`,
-// `@depends-on`, `edges` input or text read), each with what spells it for
-// that node.
 interface PatternGroup {
   re: RegExp;
   nodes: string[];
@@ -477,8 +466,6 @@ const indexes = new WeakMap<Graph, ReverseIndex>();
 
 const REGEX_SYNTAX = "[](){}|*+?.^$";
 
-// The one path a compiled glob matches, or `undefined` if it has a
-// wildcard.
 function literalOf(re: RegExp): string | undefined {
   const { source } = re;
   if (!source.startsWith("^") || !source.endsWith("$")) return undefined;
@@ -629,7 +616,6 @@ export interface Via {
     | "unknown";
 }
 
-// What spells the edge from `dependent` to `node`, one of its `files`.
 function fileKind(graph: Graph, dependent: string, node: string): Via["kind"] {
   if (dependent.includes("#")) return "export";
   const deps = graph.get(dependent);

@@ -21,17 +21,14 @@ import {
   UNDECLARED_READS,
 } from "./syntax.ts";
 
-// Raw dependency extraction from source text, before resolution: a
-// one-pass lexer (`lex.ts`, with `host.ts` for files that embed scripts),
-// which falls back to the regex extractor (`scan-regex.ts`) for a file it
-// can't lex cleanly. Anything neither can read is reported as unknown,
-// never dropped.
+// invariant: the lexer (`lex.ts`, `host.ts`) falls back to the regex
+// extractor (`scan-regex.ts`) for a file it can't lex cleanly, and
+// anything neither can read is reported as unknown, never dropped.
 
-// Files whose source the scanner reads; any other file is a leaf.
+// Any other file is a leaf: its source is never read.
 export const SCANNED: RegExp = /\.(?:svelte|vue|astro|html|[cm]?[jt]sx?)$/;
 
-// How a file is read, from its name alone: a host format (`svelte`, `vue`,
-// `astro`, `html`) or a script dialect (`ts`, `tsx`, `js`). Two files with
+// invariant: a format comes from the file's name alone, and two files with
 // the same content and format extract the same.
 export type Format = Host | "ts" | "tsx" | "js";
 
@@ -43,8 +40,8 @@ export function formatOf(path: string): Format {
   return dialect === JS ? "js" : "ts";
 }
 
-// A file's raw dependencies as its content and format alone determine
-// them: what the scan cache stores. `scan` adds what depends on the path.
+// invariant: only what content and format alone determine, since the scan
+// cache stores it; `finish` adds what depends on the path.
 export type Extraction = Omit<Scan, "globs"> & {
   // `import.meta.glob` patterns as written, relative to the file.
   globs: string[];
@@ -137,7 +134,6 @@ function detach(extraction: Extraction): Extraction {
   return detached;
 }
 
-// The path-dependent part of a scan: globs are made root-relative.
 export function finish(
   path: string,
   extraction: Extraction,

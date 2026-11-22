@@ -13,15 +13,11 @@ export type BiviumErrorKind = "usage" | "config" | "git" | "other";
 export type BiviumErrorCode =
   /** No command, or `why` without a test. */
   | "BV_MISSING_ARGUMENT"
-  /** A command bivium doesn't have. */
   | "BV_UNKNOWN_COMMAND"
-  /** An option the command doesn't take. */
   | "BV_UNKNOWN_OPTION"
   /** An option's value is missing or of the wrong form. */
   | "BV_BAD_OPTION_VALUE"
-  /** More arguments than the command takes. */
   | "BV_UNEXPECTED_ARGUMENT"
-  /** A suite the config doesn't define. */
   | "BV_UNKNOWN_SUITE"
   /** A path that is no suite's test. */
   | "BV_UNKNOWN_TEST"
@@ -80,10 +76,11 @@ export class BiviumError extends Error {
   }
 }
 
-// Edits from one to the other, a swap of two neighbors counting as one
-// (optimal string alignment): "plna" is one edit from "plan".
+// A swap of two neighbors counts as one edit (optimal string alignment),
+// so "plna" is one edit from "plan".
 function distance(a: string, b: string): number {
-  // d(i, j): edits from a's first i characters to b's first j.
+  // invariant: d(i, j) is the edits from a's first i characters to b's
+  // first j.
   const width = b.length + 1;
   const cells = new Uint32Array((a.length + 1) * width);
   const d = (i: number, j: number) => cells[i * width + j] ?? 0;
@@ -106,8 +103,6 @@ function distance(a: string, b: string): number {
   return d(a.length, b.length);
 }
 
-// The candidate a typo most likely meant, if one is close: a third of the
-// input's length in edits, at least one.
 function closest(
   input: string,
   candidates: Iterable<string>,

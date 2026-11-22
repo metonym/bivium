@@ -70,7 +70,8 @@ export function createLexed(): Lexed {
 // The file can't be lexed cleanly; `message` says why.
 export class LexError extends Error {}
 
-// `jsx`: JSX may appear (JavaScript, `.tsx`). `tsx`: `<T,>` is a generic.
+// invariant: `jsx` is set for JavaScript too, since a `.js` file may hold
+// JSX; `tsx` means `<T,>` opens a generic instead of an element.
 export interface Dialect {
   jsx: boolean;
   tsx: boolean;
@@ -88,7 +89,8 @@ export function dialectOf(path: string): Dialect {
   return TS;
 }
 
-// Previous significant token.
+// What `/`, `{` and `<` mean depends on the previous significant token, so
+// the main loop keeps its kind.
 const T_START = 0; // start of input: a regex or a block may follow
 const T_PUNCT = 1; // an operator, `(`, `[`: a regex or an object may follow
 const T_OPERAND = 2; // a value ended: `/` divides
@@ -101,7 +103,8 @@ const T_ARROW = 8;
 const T_SEMI = 9;
 const T_LBRACE = 10;
 
-// Bracket stack entries.
+// What each open bracket opened, so its closer can set the previous token
+// (or resume a template).
 const M_PAREN = 0;
 const M_PAREN_KW = 1;
 const M_BRACKET = 2;
@@ -126,7 +129,6 @@ const VI_CALLS = new Set([
   "importMock",
 ]);
 
-// How a call's literal path counts.
 const CALL_IMPORT = 0; // `import()`, `require()`: unknown if not literal
 const CALL_PROPERTY = 1; // `x.require()`: a literal counts, nothing else
 const CALL_MOCK = 2; // `vi.mock()`: unknown if not literal, never a disk read
@@ -148,7 +150,8 @@ let nextAt = -1;
 let nextImport = -1;
 const LS = String.fromCharCode(0x2028);
 const PS = String.fromCharCode(0x2029);
-// Whether the file has line terminators other than `\n`.
+// Only a file with `\r`, U+2028 or U+2029 needs `lineEnd`'s slow scan;
+// any other takes `indexOf("\n")`.
 // eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let oddLines = false;
 // Set by `template()`: it stopped at `${` rather than the closing
@@ -171,8 +174,6 @@ export function openFile(source: string, sink: Lexed): void {
     source.includes("\r") || source.includes(LS) || source.includes(PS);
 }
 
-// Lexes `[start, stop)` of the open file as a whole program (a module, or
-// a `<script>` block's content). Throws `LexError`.
 export function lexRange(
   start: number,
   stop: number,
@@ -189,9 +190,8 @@ export function lexRange(
   code(i, false);
 }
 
-// Lexes one `{…}` expression of the open file from after its `{` (Svelte
-// markup), up to `stop`. Returns the index after its closing `}`. Throws
-// `LexError`.
+// `start` must be just after the `{` (Svelte markup); the result is the
+// index after its closing `}`.
 export function lexExpression(start: number, stop: number): number {
   dialect = TS;
   end = stop;
@@ -205,7 +205,8 @@ export function lexSource(source: string, language: Dialect = TS): Lexed {
   return sink;
 }
 
-// Whitespace other than line ends, which the main loop also skips.
+// Non-ASCII whitespace is never part of an identifier, so the main loop
+// skips it as it does ASCII space.
 function isUnicodeSpace(c: number) {
   return (
     c === 0xa0 ||
@@ -220,7 +221,8 @@ function isUnicodeSpace(c: number) {
   );
 }
 
-// ASCII identifier characters: 1 = may start one, 2 = may continue one.
+// invariant: bit 1 means a character may start an identifier, bit 2 that
+// it may continue one, so a letter is 3 and a digit 2.
 const IDENT = new Uint8Array(128);
 for (let c = 0; c < 128; c++) {
   const letter =
@@ -229,7 +231,8 @@ for (let c = 0; c < 128; c++) {
   else if (c >= 48 && c <= 57) IDENT[c] = 2;
 }
 
-// `charCodeAt` past the end is NaN: neither.
+// `charCodeAt` past the end is NaN, which fails both tests, so this needs
+// no bounds check.
 function isIdentStart(c: number) {
   return c < 128 ? ((IDENT[c] ?? 0) & 1) !== 0 : c >= 128 && !isUnicodeSpace(c);
 }
@@ -274,7 +277,6 @@ function lineEnd(start: number) {
   return e === -1 || e > end ? end : e;
 }
 
-// After whitespace and comments from `start`.
 function skipTrivia(start: number) {
   let i = start;
 
@@ -295,7 +297,7 @@ function skipTrivia(start: number) {
   return i;
 }
 
-// Index after the string literal opening at `i`, or -1.
+// -1 unless the string closes before a line end.
 function stringEnd(i: number) {
   const quote = src.charCodeAt(i);
   let j = i + 1;
@@ -312,8 +314,8 @@ function stringEnd(i: number) {
   return -1;
 }
 
-// Scans template text from `start` (after a backtick or a `${…}`'s `}`) to
-// the closing backtick or the next `${`, and returns the index after it.
+// `start` must be after a backtick or a `${…}`'s `}`; `templateOpen` says
+// whether it stopped at a `${` instead of the closing backtick.
 function template(start: number) {
   let j = start;
 
@@ -336,7 +338,6 @@ function template(start: number) {
   return fail("unterminated template", j);
 }
 
-// `template()`, recording the text it scanned when strings are wanted.
 function templatePart(start: number, stack: number[]) {
   const e = template(start);
   if (out.strings && !stack.includes(M_BRACKET)) {
@@ -345,7 +346,6 @@ function templatePart(start: number, stack: number[]) {
   return e;
 }
 
-// Index after the regex literal opening at `i`.
 function regex(i: number) {
   let j = i + 1;
   let inClass = false;
@@ -369,7 +369,7 @@ function regex(i: number) {
   return identEnd(j + 1);
 }
 
-// Is the word `src[start, stop)` one of `words` (all of one length)?
+// `words` must all have one length: only the first's is checked.
 function isOneOf(start: number, stop: number, words: readonly string[]) {
   const [first] = words;
   if (first === undefined || stop - start !== first.length) return false;
@@ -451,7 +451,6 @@ for (const word of ["vi", "Bun", "goto", "import", "export", "require"]) {
   KEYWORD_SHAPE[(word.length << 7) | word.charCodeAt(0)] = 1;
 }
 
-// The word `src[i, j)`, starting with `c`, may be a handler's keyword.
 function keyword(c: number, i: number, j: number, property: boolean) {
   switch (j - i) {
     case 2:
@@ -475,9 +474,9 @@ function keyword(c: number, i: number, j: number, property: boolean) {
   }
 }
 
-// The main loop. Lexes code from `start` to `end`; with `brace`, stops
-// after the `}` that closes an enclosing `{` and returns the index after
-// it.
+// With `brace`, it stops after the `}` that closes an enclosing `{` and
+// returns the index after it; without, it must reach `end` with every
+// bracket closed.
 function code(start: number, brace: boolean): number {
   let i = start;
 
@@ -773,8 +772,9 @@ function indexOrEnd(text: string, from: number) {
 
 const BLANK = /^[ \t]*$/;
 
-// Annotations in one comment, read as the regex extractor reads them: on a
-// line that starts with the comment (or with `*` inside a block comment).
+// An annotation counts only on a line that starts with the comment (or
+// with `*` inside a block comment), as the regex extractor reads it, so
+// the two agree.
 function annotations(start: number, stop: number) {
   const lineStart = src.lastIndexOf("\n", start - 1) + 1;
   const prefix = src.slice(lineStart, start);
@@ -798,8 +798,8 @@ const JSDOC_IMPORT_TYPE = /import\s*\(\s*(["'`])([^"'`\n]+)\1\s*\)/y;
 const JSDOC_IMPORT_TAG = /@import\s+([^;"'`]*?)\s*from\s*(["'])([^"'\n]+)\2/y;
 const JSDOC_LINE_STAR = /\n\s*\*/g;
 
-// Is `at` inside a tag's type, `@type {…}`, in the comment that starts at
-// `start`? Prose and `@example` code aren't types.
+// Only an `import(…)` in a tag's type (`@type {…}`) counts: prose and
+// `@example` code aren't types.
 function inTagType(start: number, at: number) {
   let depth = 0;
   let outer = -1;
@@ -864,7 +864,6 @@ function isQuote(c: number) {
   return c === 39 || c === 34;
 }
 
-// `import` (not a property) ends at `j`.
 function importAt(j: number) {
   const k = skipTrivia(j);
   const c = src.charCodeAt(k);
@@ -880,7 +879,6 @@ function importAt(j: number) {
   }
 }
 
-// `import <clause> from "x"`: reads up to the specifier, if it is one.
 function declaration(k: number) {
   let clauseStart = k;
   let type = false;
@@ -930,8 +928,8 @@ function declaration(k: number) {
   }
 }
 
-// Named bindings of the clause `src[start, stop)`, as the regex reads
-// them.
+// Comments are stripped as the regex extractor strips them, so the two
+// read the same names.
 function clauseNames(start: number, stop: number) {
   const clause = src.slice(start, stop);
   if (!clause.includes("{")) return;
@@ -940,8 +938,7 @@ function clauseNames(start: number, stop: number) {
 
 const COMMENTS = /\/\/.*$|\/\*[\s\S]*?\*\//gm;
 
-// Index after the `}` matching the `{` at `open` (an import clause), or
-// -1.
+// -1 at a `;`, `(` or backtick, which an import clause can't hold.
 function braceEnd(open: number) {
   let p = open;
 
@@ -972,7 +969,8 @@ function braceEnd(open: number) {
   return -1;
 }
 
-// `export {…} from "x"`, `export * [as n] from "x"`.
+// Only a re-export (`export {…} from "x"`, `export * [as n] from "x"`)
+// loads a module.
 function exportAt(j: number) {
   let p = skipTrivia(j);
   let type = false;
@@ -1012,7 +1010,6 @@ function exportAt(j: number) {
   record(src.slice(r + 1, e - 1), clauseNames(clauseStart, q), true, type);
 }
 
-// The literal first argument of the call whose `(` is at `k`.
 function call(k: number, kind: number) {
   const a = skipTrivia(k + 1);
   const c = src.charCodeAt(a);
@@ -1038,8 +1035,9 @@ function call(k: number, kind: number) {
   }
 }
 
-// The `(` at `k` (first argument at `a`) opens parameters, not arguments:
-// `import(node) {…}` (a method), `require(id: string)` (a declaration).
+// A `(` that opens parameters, as in `import(node) {…}` (a method) or
+// `require(id: string)` (a declaration), isn't a call, so its non-literal
+// argument isn't an unknown import.
 function isSignature(k: number, a: number) {
   if (isIdentStart(src.charCodeAt(a))) {
     const p = skipTrivia(identEnd(a + 1));
@@ -1052,7 +1050,6 @@ function isSignature(k: number, a: number) {
   return close !== -1 && src.charCodeAt(skipTrivia(close)) === 123;
 }
 
-// Index after the `)` matching the `(` at `k`, or -1.
 function parenEnd(k: number) {
   let depth = 0;
   let p = k;
@@ -1078,13 +1075,11 @@ function parenEnd(k: number) {
   return -1;
 }
 
-// `require` ends at `j`; `property` for `module.require`.
 function requireAt(j: number, property: boolean) {
   const k = skipTrivia(j);
   if (src.charCodeAt(k) === 40) call(k, property ? CALL_PROPERTY : CALL_IMPORT);
 }
 
-// `vi` ends at `j`: `vi.mock(…)` and the rest of the family.
 function vi(j: number) {
   const p = skipTrivia(j);
   if (src.charCodeAt(p) !== 46) return;
@@ -1106,7 +1101,6 @@ function vi(j: number) {
   }
 }
 
-// `import` is followed by `.` at `k`: `import.meta.glob(…)`.
 function meta(k: number) {
   const m = skipTrivia(k + 1);
   if (!isWord(m, "meta")) return;
@@ -1127,7 +1121,7 @@ function meta(k: number) {
   if (src.charCodeAt(s) === 40) globArgument(s);
 }
 
-// Index after the type arguments `<…>` opening at `start`, or -1.
+// -1 at a top-level `;`, which type arguments can't hold.
 function genericEnd(start: number) {
   let p = start;
   let depth = 0;
@@ -1153,7 +1147,7 @@ function genericEnd(start: number) {
   return -1;
 }
 
-// Index after a no-substitution string or template at `a`, or -1.
+// -1 for a template with a `${`, whose value isn't known.
 function literalEnd(a: number) {
   const c = src.charCodeAt(a);
   if (isQuote(c)) return stringEnd(a);
@@ -1164,7 +1158,8 @@ function literalEnd(a: number) {
   return -1;
 }
 
-// `import.meta.glob(` at `k`: a literal pattern or an array of them.
+// Only a literal pattern, or an array of literal ones, is read; anything
+// else makes the glob non-literal.
 function globArgument(k: number) {
   let a = skipTrivia(k + 1);
   const patterns: string[] = [];
@@ -1200,7 +1195,6 @@ function globArgument(k: number) {
   else out.nonLiteralGlob = true;
 }
 
-// `.goto` ends at `j`: the raw text of its first argument.
 function goto(j: number) {
   const k = skipTrivia(j);
   if (src.charCodeAt(k) !== 40) return;
@@ -1225,7 +1219,8 @@ function goto(j: number) {
   out.gotos.push(src.slice(a, p).trim());
 }
 
-// Index after the template literal at `p`, `${…}` and all, or -1.
+// `template()` stops at a `${`; this doesn't, so it ends past the closing
+// backtick (or is -1).
 function templateEnd(p: number) {
   let q = template(p + 1);
   while (templateOpen) {
@@ -1251,7 +1246,6 @@ function templateEnd(p: number) {
   return q;
 }
 
-// `Bun` ends at `j`: `Bun.file`, `Bun.Glob`, `Bun.spawn…` read the disk.
 function bun(j: number) {
   if (src.charCodeAt(j) !== 46) return;
   if (
@@ -1263,13 +1257,15 @@ function bun(j: number) {
   }
 }
 
-// `<` at `i`, where an expression starts, opens an element.
+// Asked only where an expression can start, so a `<` before a name or `>`
+// opens an element.
 function isJsxStart(i: number) {
   const c = src.charCodeAt(i + 1);
   if (c === 62) return true;
   if (!isIdentStart(c)) return false;
   if (!dialect.tsx) return true;
-  // `<T,>(…) =>` and `<T extends U>(…) =>` are type parameters in `.tsx`.
+  // In `.tsx`, `<T,>(…) =>` and `<T extends U>(…) =>` open type parameters
+  // instead.
   const p = skipTrivia(identEnd(i + 2));
   return src.charCodeAt(p) !== 44 && !isWord(p, "extends");
 }
@@ -1285,7 +1281,6 @@ function jsxNameEnd(start: number) {
   return p;
 }
 
-// Index after the JSX element opening at `i`.
 function jsxElement(i: number): number {
   let p = i + 1;
   if (src.charCodeAt(p) === 62) return jsxChildren(p + 1);
@@ -1327,7 +1322,6 @@ function jsxElement(i: number): number {
   }
 }
 
-// JSX children from `start` through the closing tag.
 function jsxChildren(start: number): number {
   let p = start;
 

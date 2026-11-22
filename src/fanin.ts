@@ -16,7 +16,8 @@ export function fanIn(graph: Graph, suite: ResolvedSuite): Map<string, number> {
   const ids = new Map<string, number>();
   const nodes = [...graph.keys()];
   for (const [i, node] of nodes.entries()) ids.set(node, i);
-  // The nodes a pattern matches, once per pattern source.
+  // Cached by pattern source, so a pattern many nodes share is tested
+  // against every node only once.
   const matches = new Map<string, number[]>();
   const matching = (re: RegExp) => {
     let found = matches.get(re.source);
@@ -78,8 +79,8 @@ export function fanIn(graph: Graph, suite: ResolvedSuite): Map<string, number> {
   return result;
 }
 
-// Every id indexes all of fanIn's per-node arrays, which have one entry
-// per node.
+// invariant: every id indexes all of fanIn's per-node arrays, which have
+// one entry per node, so the throw is unreachable.
 function byId<T>(list: ArrayLike<T>, id: number): T {
   const value = list[id];
   if (value === undefined) {
@@ -140,7 +141,6 @@ export function graphReport(
   };
 }
 
-// Bucket bounds for the histogram: 0, 1, then up to each power of ten.
 function buckets(total: number): [number, number][] {
   const list: [number, number][] = [
     [0, 0],

@@ -31,13 +31,13 @@ export const QUERY: RegExp = /[?#].*$/;
 
 export const UNDECLARED_READS = "reads the disk without @depends-on";
 
-// A relative specifier, as Node and TypeScript read one: `.`, `..`, or one
-// that starts with `./` or `../`. `.velite` is bare.
+// spec: Node and TypeScript read a specifier as relative only when it is
+// `.`, `..`, or starts with `./` or `../`, so `.velite` is bare.
 export const RELATIVE: RegExp = /^\.\.?(?:\/|$)/;
 
 export const URL_REF: RegExp = /^[a-z]+:|^\/\//;
 
-// Commas inside `{a,b}` belong to the glob.
+// Never split at a comma inside `{a,b}`: it belongs to the glob.
 export const LIST_SEPARATOR: RegExp = /[\s,]+(?![^{]*\})/;
 
 export const DEPENDS_ON: RegExp =
@@ -56,7 +56,8 @@ const TYPE_PREFIX = /^type\s+/;
 const NAMED_CLAUSE = /\{([^}]*)\}/;
 const DEFAULT_OR_NAMESPACE = /^\s*[\w$*]/;
 
-// Names in `{ … }`, or `undefined` for default/namespace imports.
+// `undefined` when the clause also binds a default or a namespace, since
+// those need the whole module.
 export function namedBindings(clause: string): string[] | undefined {
   const named = NAMED_CLAUSE.exec(clause);
   if (!named || DEFAULT_OR_NAMESPACE.test(clause.replace(NAMED_CLAUSE, ""))) {
@@ -70,8 +71,8 @@ export function namedBindings(clause: string): string[] | undefined {
     .filter(Boolean);
 }
 
-// Capture group `index` of a match, for a group the pattern always fills:
-// one that's unset means the pattern changed, not the input.
+// invariant: only for a group the pattern always fills, so an unset one
+// means the pattern changed, not the input.
 export function captured(match: RegExpMatchArray, index: number): string {
   const value = match[index];
   if (value === undefined) {

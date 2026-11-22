@@ -134,8 +134,8 @@ function isFile(path: string): boolean {
   return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
-// The name a path's file has before its first dot: `u.d.ts` and `u.js`
-// are both `u`.
+// Cut at the first dot, so `u.d.ts` and `u.js` share a stem and count as
+// siblings.
 function stemOf(path: string): string {
   const slash = path.lastIndexOf("/");
   const dot = path.indexOf(".", slash + 2);
@@ -215,7 +215,8 @@ function declaredGlobs(node: string, extraction: Extraction): Declared[] {
       pattern: globToRegExp(glob),
     })),
     ...extraction.globs.map((glob, i): Declared => {
-      // finish maps each glob to one path, in order.
+      // invariant: `finish` maps each glob to one path, in order, so
+      // `relative[i]` is this glob's.
       const path = relative[i];
       if (path === undefined) {
         throw new Error(`bivium: check: no resolved path for glob ${glob}.`);
@@ -268,10 +269,10 @@ function deadOf(
   };
 }
 
-// The config's `edges` and `reads`, under the config's file. A key no node
-// matches applies to nothing. A value is dead as an annotation's glob is,
-// over what it matches for every node its key matches: a snapshot glob
-// that most tests' captures miss is alive while some test's hits.
+// A key no node matches is dead, since it applies to nothing. A value is
+// dead as an annotation's glob is, over what it matches for every node its
+// key matches: a snapshot glob that most tests' captures miss is alive
+// while some test's hits.
 function configDeadGlobs(
   config: ResolvedConfig,
   { graph, listed }: Computed,
@@ -284,7 +285,7 @@ function configDeadGlobs(
     ...config.reads.map((map) => ["reads", map] as const),
   ];
   for (const [kind, map] of entries) {
-    // Each value's patterns, once per distinct expansion.
+    // Keyed by source, so an expansion many nodes share is matched once.
     const patterns = map.values.map(() => new Map<string, RegExp>());
     let matched = false;
     for (const node of graph.keys()) {
@@ -432,8 +433,6 @@ function unreachedFiles(
   return found;
 }
 
-// Every node with unknown dependencies, with where and how to fix each
-// cause, and every dead glob `deadGlobs` doesn't allow.
 export async function check(
   root: string,
   config: ResolvedConfig,
@@ -526,12 +525,10 @@ function summary({ problem, matches, ignored, examples }: DeadGlob) {
   return `${problem} (${count}: ${shown.join(", ")})`;
 }
 
-// The unknown nodes some test depends on: the ones `--max-unknown` counts.
 function widening(report: Report): Unknown[] {
   return report.unknown.filter((node) => node.tests.length > 0);
 }
 
-// Whether `check` fails: past `--max-unknown`, or on a list it keeps.
 export function failed(report: Report, max: number | undefined): boolean {
   return (
     (max !== undefined && widening(report).length > max) ||
@@ -596,7 +593,8 @@ function counted(counts: Record<string, number>): string[] {
   return Object.entries(counts).map(([what, count]) => `${count} ${what}`);
 }
 
-// The counts `check` leads with, which `--json` prints as `summary`.
+// `--json` prints this as `summary`, so dropping or retyping a field bumps
+// `SCHEMA_VERSION`.
 interface Summary {
   // Nodes with unknown dependencies that some test reaches, the tests they
   // make run on any change, and how many nodes each cause accounts for.
@@ -710,7 +708,6 @@ function summaryLines(report: Report): string[] {
     : ["Summary:", ...lines.map((line) => `  ${line}`), ""];
 }
 
-// Files listed one by one per suite; past that, counted by directory.
 const UNREACHED_SHOWN = 10;
 
 function pushUnreached(lines: string[], unreached: Report["unreached"]) {

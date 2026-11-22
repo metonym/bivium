@@ -24,8 +24,9 @@ export interface SpelledPath {
   fix: string;
 }
 
-// A relative path, maybe with SvelteKit's `[param]` and `(group)`: no
-// spaces, globs, schemes or escapes.
+// `[`, `]`, `(` and `)` are allowed for SvelteKit's `[param]` and
+// `(group)` directories; a string with spaces, globs, schemes or escapes
+// isn't a path.
 const PATH_LIKE = /^[\w@.+~()[\]-]+(?:\/[\w@.+~()[\]-]+)*$/;
 const LETTER = /[a-z]/i;
 const LEADING_SLASHES = /^\/+/;
@@ -63,10 +64,9 @@ function fixFor(file: string, path: string, dir: boolean): string {
   return `if it reads it, add \`reads: { "${file}": "${path}" }\` (or \`// @reads ${path}\`), \`@lists\` if it only names it`;
 }
 
-// The files `check` reads for paths, with the suites whose tests reach
-// them: each suite's tests, and what they reach under its roots, such as a
-// helper that names the fixtures. A file with unknown dependencies runs on
-// any change already.
+// The files read for paths: a suite's tests, and what they reach under its
+// roots, such as a helper that names the fixtures. A file with unknown
+// dependencies isn't one, since it runs on any change already.
 function spellers(
   config: ResolvedConfig,
   { graph }: Computed,
@@ -136,14 +136,12 @@ interface Spelled {
   orphaned: SpelledPath[];
 }
 
-// The paths files spell that no edge from them declares.
 export async function spelledPaths(
   root: string,
   config: ResolvedConfig,
   computed: Computed,
 ): Promise<Spelled> {
   const { graph } = computed;
-  // Each file of the graph, and each directory by the files under it.
   const files = new Set<string>();
   const dirs = new Map<string, string[]>();
   for (const node of graph.keys()) {

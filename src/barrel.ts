@@ -18,14 +18,16 @@ const STAR_EXPORT =
   /export\s+(?:type\s+)?\*(?:\s+as\s+([\w$]+))?\s+from\s*["']([^"']+)["']\s*;?/g;
 const BARREL_FILE = /\.[cm]?[jt]sx?$/;
 const ONLY_SEPARATORS = /^[\s;]*$/;
-// The first statement, after any comments, has to be an export.
+// A barrel's first statement, after any comments, must be an export:
+// most modules fail this test before the full parse runs.
 const STARTS_WITH_EXPORT = /^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*export\b/;
 
 export function parseBarrel(path: string, source: string): Barrel | undefined {
   return BARREL_FILE.test(path) ? parseReExports(source) : undefined;
 }
 
-// `parseBarrel` for a script, whatever its name.
+// Only for a caller that already knows the file is a script:
+// it skips `parseBarrel`'s extension test.
 export function parseReExports(source: string): Barrel | undefined {
   if (!STARTS_WITH_EXPORT.test(source)) return undefined;
   const code = source.replace(COMMENTS, "");

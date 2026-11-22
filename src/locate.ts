@@ -17,8 +17,6 @@ const NON_LITERAL_IMPORT =
   /\b(?:import|require|vi\.(?:mock|doMock|unmock|importActual|importMock))\s*(?:<[^>]*>)?\(\s*(?!["'][^"'`$]*["']\s*[,)])/;
 const GLOB_CALL = /\bimport\.meta\.glob/;
 const QUOTED_CAUSE = /"([^"]+)"/;
-// A line that loads a module: an import, re-export, `require`, mock, or an
-// HTML tag's `src` or `href`.
 const LOADS =
   /\b(?:import|export|from|require|mock|doMock|unmock|importActual|importMock)\b|\b(?:src|href)\s*=/;
 const GOTO_CALL = /\bgoto\s*\(/;
@@ -111,7 +109,6 @@ function bestLine(
   return found === undefined ? undefined : lineAt(source, found);
 }
 
-// Quoted any way.
 export function specifierLine(
   source: string,
   specifier: string,
@@ -120,7 +117,6 @@ export function specifierLine(
   return bestLine(source, quoted, LOADS) ?? bestLine(source, [specifier]);
 }
 
-// By the goto()'s argument as written, else by the page's file name.
 export function gotoLine(
   source: string,
   argument: string | undefined,
@@ -134,7 +130,6 @@ export function gotoLine(
   );
 }
 
-// In code if it can be.
 export function callLine(source: string, call: string): number | undefined {
   return bestLine(source, [call]);
 }
@@ -174,7 +169,8 @@ export function annotationLine(
   return index === -1 ? undefined : index + 1;
 }
 
-// line is 1-based; the text comes back trimmed.
+// invariant: `line` counts from 1, as the other `*Line` functions here
+// return it.
 export function lineText(source: string, line: number): string {
   let start = 0;
   for (let n = 1; n < line; n++) {
@@ -198,7 +194,7 @@ export async function sourceOf(
   }
 }
 
-// A barrel name's file is its barrel.
+// A barrel name is the node `<barrel>#<name>`, so its file is the barrel.
 export function fileOf(node: string): string {
   const hash = node.indexOf("#");
   return hash === -1 ? node : node.slice(0, hash);

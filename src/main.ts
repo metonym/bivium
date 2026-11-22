@@ -97,8 +97,8 @@ interface Args {
   positional: string[];
 }
 
-// The JSON outputs' shape. A change that drops or retypes a field bumps
-// it.
+// invariant: a change that drops or retypes a field of a JSON output must
+// bump this.
 const SCHEMA_VERSION = 1;
 
 function usageError(code: BiviumErrorCode, message: string): BiviumError {
@@ -135,12 +135,13 @@ function parseArgs(command: string, argv: string[]): Args {
       continue;
     }
     // A single-dash option other than -h and -v (handled before this) is
-    // unknown, not a base ref.
+    // unknown, never a base ref.
     const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
     const flag = equals === -1 ? arg : arg.slice(0, equals);
     if (!known.includes(flag)) throw unknownOption(command, flag);
     if (!VALUED.has(flag)) {
-      // A switch takes =true or =false, which some callers always send.
+      // A switch also takes =true or =false, since some callers always send
+      // a value.
       const on = equals === -1 ? "true" : arg.slice(equals + 1);
       if (on !== "true" && on !== "false") {
         throw usageError(
@@ -166,8 +167,8 @@ function parseArgs(command: string, argv: string[]): Args {
   return { flags, positional };
 }
 
-// Splits a `run` command and puts the files where `{files}` is, or at the
-// end.
+// The files go where `{files}` is, else at the end. The command splits on
+// whitespace only: quotes don't group words.
 export function commandFor(run: string, files: string[]): string[] {
   const words = run.split(WHITESPACE).filter(Boolean);
   const at = words.indexOf("{files}");
@@ -175,8 +176,8 @@ export function commandFor(run: string, files: string[]): string[] {
   return [...words.slice(0, at), ...files, ...words.slice(at + 1)];
 }
 
-// The selection with its scale, and a full run told apart from every test
-// being reached.
+// A full run must read differently from every test being reached: both
+// select all.
 function logSelection(
   label: string,
   selection: Selection,
@@ -196,7 +197,6 @@ function logSelection(
   }
 }
 
-// What the plan was made against, which `--json` gives as fields.
 async function logContext(
   base: string,
   config: ResolvedConfig,
@@ -268,10 +268,9 @@ function findSuite(config: ResolvedConfig, name: string | undefined) {
   );
 }
 
-// `path` with its symlinks resolved, as far as it exists. The root is
-// resolved (it comes from the working directory), and a path a shell built
-// from $PWD may go through a link: /tmp and /var on macOS, a linked
-// checkout.
+// Resolves symlinks as far as the path exists, since the root is resolved
+// (it comes from the working directory) and a path a shell built from $PWD
+// may go through a link: /tmp and /var on macOS, a linked checkout.
 function real(path: string): string {
   try {
     return realpathSync(path);
@@ -422,7 +421,8 @@ async function runCommand(
     base: positional[0],
     configFile: flags.get("--config"),
   });
-  // The config has at least one suite: loading it checks.
+  // invariant: loading checks the config has a suite, so the throw below
+  // is only for the type checker.
   const suite = findSuite(config, flags.get("--suite")) ?? config.suites[0];
   if (suite === undefined) {
     throw new BiviumError("BV_CONFIG_INVALID", "bivium config: no suites");

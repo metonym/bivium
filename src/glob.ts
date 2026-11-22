@@ -50,7 +50,8 @@ function compile(
   return { source: `^${source}$`, wildcards };
 }
 
-// Compiles a root-relative glob (`**`, `*`, `?`, `{a,b}`) to a RegExp.
+// Only `**`, `*`, `?` and `{a,b}` are wildcards: any other character,
+// `[` included, matches itself.
 export function globToRegExp(glob: string): RegExp {
   return new RegExp(compile(glob).source);
 }
@@ -65,12 +66,10 @@ export function captureGlob(glob: string): {
   return { pattern: new RegExp(source), wildcards };
 }
 
-// The capture numbers a config value refers to, in order.
 export function captureReferences(glob: string): number[] {
   return [...glob.matchAll(CAPTURE_REFERENCE)].map((match) => Number(match[1]));
 }
 
-// A config value, with `$1`… replaced by what its key's wildcards matched.
 export function expandGlob(
   glob: string,
   captures: readonly (string | undefined)[],
@@ -80,7 +79,7 @@ export function expandGlob(
 
 export type Matcher = (path: string) => boolean;
 
-// One test for a list of globs; an empty list matches nothing.
+// An empty or missing list matches nothing, never everything.
 export function matcher(globs: string | readonly string[] = []): Matcher {
   const list = typeof globs === "string" ? [globs] : globs;
   if (list.length === 0) return () => false;

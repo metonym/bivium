@@ -35,8 +35,9 @@ function hasCode(error: unknown, codes: readonly string[]): boolean {
   );
 }
 
-// The index can list a file the working tree deleted, or a directory where
-// a submodule's checkout is missing.
+// invariant: the index can list a file the working tree deleted, or a
+// directory where a submodule's checkout is missing, so ENOENT and EISDIR
+// mean "not a file" rather than an error.
 async function readIfFile(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf-8");
@@ -46,9 +47,9 @@ async function readIfFile(path: string): Promise<string | undefined> {
   }
 }
 
-// Reads files in parallel: a third of the time on a warm disk and a tenth
-// on a cold one. Files the index lists but the working tree deleted are
-// left out.
+// perf: reading in parallel takes 1/3 of the time on a warm disk and
+// 1/10 on a cold one. A file the index lists but the working tree
+// deleted is left out.
 export async function readSources(
   root: string,
   files: string[],
@@ -64,7 +65,8 @@ export async function readSources(
   return sources;
 }
 
-// The root `package.json` and every one under the roots.
+// The root `package.json` comes apart from `sources`, since a root other
+// than `.` leaves it out of them.
 export function collectPackages(
   rootJson: string | undefined,
   sources: Map<string, string>,
@@ -136,7 +138,7 @@ async function inParallel(
   );
 }
 
-// Whether the working tree has `path` as a file (or a link to one).
+// A link to a file counts, since `stat` follows links.
 async function isFile(path: string): Promise<boolean> {
   try {
     return (await stat(path)).isFile();
@@ -205,7 +207,7 @@ export async function extractRevision(
   }
   await inParallel(tasks, READS_IN_FLIGHT);
   const files = revision.files.filter((file) => !missing.has(file));
-  // In file order, as reads finish in any.
+  // Rebuilt in file order, since reads finish in any.
   const manifests = new Map<string, string>();
   for (const file of files) {
     const text = texts.get(file);

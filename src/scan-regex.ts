@@ -23,7 +23,8 @@ import {
 const COMMENTS = /\/\/.*$|\/\*[\s\S]*?\*\//gm;
 const QUOTED = /["']([^"']+)["']/g;
 
-// `>` lets a one-line `<script>import …</script>` through.
+// `>` starts a statement too, so a one-line `<script>import …</script>`
+// matches.
 const STATIC_IMPORT =
   /(?:^|[\n;>])\s*(?:import|export)\s+(?:type\s+)?([^;"'`]*?)\s*from\s*["']([^"'\n]+)["']/g;
 const SIDE_EFFECT_IMPORT = /(?:^|[\n;>])\s*import\s*["']([^"'\n]+)["']/g;
@@ -32,7 +33,8 @@ const CALL_WITH_LITERAL =
 const NON_LITERAL_CALL = /(?<![.\w])(?:import|require)\(\s*(?!["'`])[^)\s]/;
 const TEMPLATE_CALL =
   /(?<![.\w])(?:import|require|vi\.(?:mock|doMock|unmock|importActual|importMock))\(\s*`[^`]*\$\{/;
-// One level of nested generics: `glob<Record<string, string>>(…)`.
+// Only one level of nested generics (`glob<Record<string, string>>(…)`):
+// a deeper one doesn't match, so the glob counts as non-literal.
 const GLOB_CALL =
   /\bimport\.meta\.glob(?:<(?:[^<>]|<[^<>]*>)*>)?\(\s*(\[[^\]]*\]|["'][^"']*["'])/g;
 const GLOB_CALL_ANY = /\bimport\.meta\.glob[<(]/g;
@@ -54,8 +56,8 @@ export function scanRegex(
   return result;
 }
 
-// `scanRegex` before the path is known: globs as written (relative to the
-// file), and every `goto()` argument.
+// Path-free, since the scan cache stores what it returns: globs stay
+// relative to the file, and every `goto()` argument is kept.
 export function extractRegex(source: string, html: boolean): Scan {
   const result: Scan = {
     imports: [],

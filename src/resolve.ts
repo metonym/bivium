@@ -54,7 +54,8 @@ export function toPackageJson(value: unknown): PackageJson {
   return json;
 }
 
-// Package directory (`.` for the root) → its `package.json`.
+// invariant: keyed by the package's directory, and the root's is `.`,
+// which `owner` takes as above every file.
 export type Packages = Map<string, PackageJson>;
 
 // Files a specifier can load (a union: every condition, every extension
@@ -82,9 +83,9 @@ interface Directory {
 
 const BUILTINS = new Set(builtinModules);
 const RUNTIME_BUILTIN = /^(?:node:|bun(?:$|:))/;
-// TypeScript's sources for an emitted JavaScript name, in the order it
-// tries them: `./x.js` may be `x.ts`, `x.tsx` or `x.d.ts`.
 const JS_EXTENSION = /\.(?:js|jsx|mjs|cjs)$/;
+// compat: TypeScript resolves an emitted JavaScript name to its sources in
+// this order: `./x.js` may be `x.ts`, `x.tsx` or `x.d.ts`.
 const TS_SOURCES: Record<string, readonly string[]> = {
   ".js": [".ts", ".tsx", ".d.ts"],
   ".jsx": [".tsx", ".ts", ".d.ts"],
@@ -93,8 +94,9 @@ const TS_SOURCES: Record<string, readonly string[]> = {
 };
 const NODE_PREFIX = /^node:/;
 const INVALID_IMPORT_TARGET = /^[./#]/;
-// SvelteKit replaces it in `app.html` with the assets directory; the
-// scanner reads `href="%sveltekit.assets%/x"` as a relative reference.
+// compat: SvelteKit replaces `%sveltekit.assets%` in `app.html` with the
+// assets directory. The scanner reads `href="%sveltekit.assets%/x"` as a
+// relative reference, so it arrives with a `./`.
 const SVELTEKIT_ASSETS = "./%sveltekit.assets%/";
 const INDEX = "/index";
 const SVELTE_CONFIGS = ["js", "mjs", "cjs", "ts", "mts"].map(
@@ -115,7 +117,6 @@ function packageName(specifier: string): string {
     : (parts[0] ?? "");
 }
 
-// `pkg:` node name for a builtin, or `undefined` if it isn't one.
 function builtin(specifier: string): string | undefined {
   if (RUNTIME_BUILTIN.test(specifier)) {
     const name = specifier.replace(NODE_PREFIX, "");
@@ -129,7 +130,6 @@ function builtin(specifier: string): string | undefined {
     : undefined;
 }
 
-// Every string target in an `exports` value: the union of all conditions.
 function targets(value: unknown, out: string[] = []): string[] {
   if (typeof value === "string") out.push(value);
   else if (Array.isArray(value)) for (const item of value) targets(item, out);
@@ -139,7 +139,8 @@ function targets(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-// `exports` keyed by subpath: a bare target or a conditions object is `.`.
+// spec: Node reads a bare `exports` target, or a conditions object with no
+// key that starts with `.`, as the `.` subpath.
 function subpathMap(exports: unknown): Record<string, unknown> | undefined {
   if (typeof exports === "string" || Array.isArray(exports)) {
     return { ".": exports };
@@ -183,7 +184,7 @@ function mapTargets(
   return targets(map[best.key]).map((target) => target.replaceAll("*", match));
 }
 
-// The targets `exports` maps `subpath` (`.` or `./x`) to.
+// `subpath` must be `.` or `./x`, as `exports` keys spell it.
 export function exportTargets(
   exports: unknown,
   subpath: string,
@@ -192,12 +193,11 @@ export function exportTargets(
   return map && mapTargets(map, subpath);
 }
 
-// Package directories from the deepest, for owner lookups.
+// Deepest first, so the first directory that contains a file owns it.
 function byDepth(packages: Packages): [string, PackageJson][] {
   return [...packages].sort(([a], [b]) => b.length - a.length);
 }
 
-// The package that owns `file`: the nearest `package.json` above it.
 export function owner(
   packages: Packages,
   file: string,
@@ -284,7 +284,6 @@ export function createResolver({
   for (const [dir, json] of deepestFirst) {
     if (json.name && !local.has(json.name)) local.set(json.name, dir);
   }
-  // Names a package can import: its own dependencies and its ancestors'.
   const declaredIn = (dir: string): Set<string> => {
     const names = new Set<string>();
     for (const [pkgDir, json] of deepestFirst) {
@@ -297,7 +296,6 @@ export function createResolver({
     return names;
   };
 
-  // The TypeScript sources of a missing `.js` file that exist.
   const tsSources = (path: string): string[] => {
     const js = JS_EXTENSION.exec(path);
     if (!js) return [];
@@ -320,7 +318,6 @@ export function createResolver({
     const found: string[] = [];
     if (exists(base)) found.push(base);
     for (const [, file] of suffixed.get(base) ?? []) found.push(file);
-    // TypeScript's `./x.js` → `./x.ts`, `./x.tsx` or `./x.d.ts`.
     if (found.length === 0) found.push(...tsSources(base));
     for (const [, file] of indexes.get(base) ?? []) found.push(file);
     if (found.length === 0 && !guess && config.generated.length > 0) {
@@ -337,9 +334,9 @@ export function createResolver({
     return found;
   };
 
-  // A file's scope: the package that owns it and the nearest
-  // `tsconfig.json`, all a bare specifier's resolution reads of where it is.
-  // Every directory under the same two shares one, with its resolutions.
+  // invariant: of where it is, a bare specifier's resolution reads only the
+  // owning package and the nearest `tsconfig.json`, so every directory under
+  // the same two shares one scope and its resolutions.
   const tsDeepestFirst = [...tsconfigs].sort(([a], [b]) => b.length - a.length);
   const scopes = new Map<string, Scope>();
   const scopeOf = (from: string): Scope => {
@@ -362,8 +359,6 @@ export function createResolver({
     return scope;
   };
 
-  // A SvelteKit project's directory: the nearest one above `dir` with a
-  // `svelte.config.*` or a `package.json`.
   const svelteKitRoot = (dir: string): string => {
     for (let at = dir; ; at = posix.dirname(at)) {
       if (at === "." || packages.has(at)) return at;
@@ -374,7 +369,6 @@ export function createResolver({
   const inPackage = (dir: string, path: string) =>
     dir === "." ? path : posix.join(dir, path);
 
-  // A specifier naming a package in the repo, through its `exports`.
   const resolveLocal = (dir: string, json: PackageJson, subpath: string) => {
     if (json.exports !== undefined) {
       const list = exportTargets(json.exports, subpath);
@@ -432,7 +426,8 @@ export function createResolver({
 
   const resolveRelative = (fromDir: string, bare: string): Resolution => {
     if (bare.startsWith(SVELTEKIT_ASSETS)) {
-      // The default `kit.files.assets`: `static/` in the project.
+      // compat: SvelteKit's default `kit.files.assets` is `static/` in the
+      // project; a config that moves it isn't read.
       const rest = bare.slice(SVELTEKIT_ASSETS.length);
       const found = probe(posix.join(svelteKitRoot(fromDir), "static", rest));
       return found.length > 0 ? { files: found } : undefined;
@@ -441,7 +436,6 @@ export function createResolver({
     return found.length > 0 ? { files: found } : undefined;
   };
 
-  // Any other specifier, the same from every file in `scope`.
   const resolveBare = (scope: Scope, bare: string): Resolution => {
     for (const alias of config.alias) {
       const path = aliasPath(alias, bare);
@@ -452,7 +446,8 @@ export function createResolver({
     const { ts } = scope;
     const mapped = ts && mapTargets(ts.paths, bare);
     if (mapped) {
-      // Every target that exists, where TypeScript takes the first.
+      // TypeScript takes only the first target that exists, but keeping
+      // every one never misses the one it takes.
       const found = [
         ...new Set(mapped.flatMap((path) => probe(posix.normalize(path)))),
       ];
@@ -478,9 +473,10 @@ export function createResolver({
     return;
   };
 
-  // A relative specifier resolves the same from every file in a directory,
-  // any other the same from every file in a scope, and a file's imports
-  // resolve one after another.
+  // invariant: a relative specifier resolves the same from every file in a
+  // directory, and any other from every file in a scope, so each is memoized
+  // there; a file's imports resolve one after another, so the last
+  // directory is kept.
   const dirs = new Map<string, Directory>();
   const directoryOf = (from: string): Directory => {
     const dir = posix.dirname(from);

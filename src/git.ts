@@ -34,7 +34,8 @@ function git(cwd: string, ...args: string[]): Promise<GitResult> {
 async function gitOrThrow(cwd: string, ...args: string[]): Promise<string> {
   const result = await git(cwd, ...args);
   if (result.status !== 0) {
-    // git's own words say what's wrong (not a repository, a bad object).
+    // git's own words say what's wrong (not a repository, a bad object),
+    // so the error quotes their first line.
     const said = result.stderr.trim().split("\n")[0];
     throw new BiviumError(
       "BV_GIT_FAILED",
@@ -78,13 +79,13 @@ export interface Revision {
   present: Set<string>;
 }
 
-// `ls-files -s -v -o`: `<tag> <mode> <oid> <stage>\t<path>` per index
-// entry, `? <path>` per untracked file. Tag `H` is a plain cached file;
-// lowercase marks assume-unchanged, `S` skip-worktree.
+// spec: `ls-files -s -v -o`: `<tag> <mode> <oid> <stage>\t<path>` per
+// index entry, `? <path>` per untracked file. Tag `H` is a plain cached
+// file; lowercase marks assume-unchanged, `S` skip-worktree.
 const INDEX_ENTRY = /^(\S) (\d{6}) ([0-9a-f]+) (\d)\t(.*)$/;
 
-// `diff --raw`: `:<mode> <mode> <oid> <oid> <status>\t<path>`, the merge
-// base's side first.
+// spec: `diff --raw`: `:<mode> <mode> <oid> <oid> <status>\t<path>`, the
+// merge base's side first.
 const RAW_ENTRY = /^:(\d{6}) \d{6} ([0-9a-f]+) [0-9a-f]+ ([A-Z])\d*\t(.*)$/;
 
 // Why the diffs against `base` failed, when the clone lacks what they
@@ -154,8 +155,9 @@ export async function readRevision(
   // The call handles its own rejection (see mergeBaseOf).
   if (eager) void mergeBase();
   const diffArgs = ["--no-renames", "--merge-base", base];
-  // One listing of the whole repo: the index, and untracked files, which
-  // count as changed anywhere (outside the roots, they run everything).
+  // The listing covers the whole repo, not only the roots, since an
+  // untracked file anywhere counts as changed (outside the roots, it runs
+  // everything).
   const [listing, diff, staged] = await Promise.all([
     gitOrThrow(cwd, "ls-files", "-s", "-v", "-o", "--exclude-standard"),
     gitOrThrow(cwd, "diff", "--raw", "--no-abbrev", ...diffArgs),
@@ -190,8 +192,8 @@ export async function readRevision(
       before.set(path, oid);
     }
   }
-  // Each path is read once, whoever asks: the package diff and the
-  // setting files can both want a changed `package.json`.
+  // Reads are shared, since the package diff and the setting files can
+  // both want a changed `package.json`.
   const reads = new Map<string, Promise<string | undefined>>();
   const readBase = (path: string) => {
     let read = reads.get(path);
@@ -219,7 +221,7 @@ export async function readRevision(
   const dirty = new Set([...changed, ...lines(staged)]);
   const underRoots = (path: string) => roots.some((root) => inRoot(path, root));
   const files = new Set<string>();
-  // A conflicted path has an entry per stage.
+  // A set, since a conflicted path has an entry per stage.
   const tracked = new Set<string>();
   const present = new Set<string>();
   const oids = new Map<string, string>();
@@ -264,8 +266,6 @@ export async function readRevision(
   };
 }
 
-// An object's content (a blob, or `<commit>:<path>`), or `undefined` if
-// there's none.
 async function show(cwd: string, object: string): Promise<string | undefined> {
   const result = await git(cwd, "show", object);
   return result.status === 0 ? result.stdout : undefined;

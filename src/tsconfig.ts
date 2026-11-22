@@ -3,15 +3,15 @@ import { posix } from "node:path";
 import { isRecord } from "./resolve.ts";
 import { sorted } from "./sorted.ts";
 
-// What the resolver uses of a `tsconfig.json`, with its relative `extends`
-// applied: `paths` keys → targets, and `baseUrl`, both repo-relative.
+// invariant: relative `extends` are already applied, and `paths` targets
+// and `baseUrl` are repo-relative, not relative to the file.
 export interface TsPaths {
   paths: Record<string, string[]>;
   baseUrl?: string;
 }
 
-// The directory of each `tsconfig.json` → its `TsPaths`. A file applies to
-// the files under its directory that no deeper `tsconfig.json` claims.
+// Keyed by directory: a `tsconfig.json` applies only to the files under it
+// that no deeper one claims.
 export type TsConfigs = Map<string, TsPaths>;
 
 interface Read {
@@ -105,7 +105,8 @@ export async function readTsconfigs(
   files: string[],
   read: (file: string, extended: boolean) => Promise<string | undefined>,
 ): Promise<ReadTsconfigs> {
-  // `undefined` for a file `read` couldn't read.
+  // invariant: `undefined` for a file still loading or one `read` couldn't
+  // read, never a missing entry, so `has` says its load started.
   const parsed = new Map<string, Parsed | undefined>();
   // A file is read once. Whoever started its read waits for it, so a
   // cycle of `extends` ends.
@@ -158,8 +159,8 @@ export async function readTsconfigs(
     return merged;
   };
 
-  // `file` and what its `extends` name, transitively, with the `.json`
-  // fallback TypeScript tries for a missing one.
+  // Takes in the `.json` name TypeScript falls back to for a missing file,
+  // so creating it counts as a change to the config.
   const chain = (file: string, into: Set<string>) => {
     if (into.has(file)) return;
     into.add(file);

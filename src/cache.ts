@@ -21,7 +21,7 @@ import type { ImportRef } from "./syntax.ts";
 // Bump on any change to what `extract` returns for some input (lexer, host
 // formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 8;
+export const SCANNER_VERSION = 9;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 
@@ -192,7 +192,8 @@ export class ExtractionCache {
   }
 }
 
-// The string table a save writes: each distinct string once, by first use.
+// invariant: each distinct string is listed once, in order of first use,
+// and its id is its index in `list`.
 interface Strings {
   list: string[];
   id: (value: string) => number;
