@@ -357,3 +357,5 @@ tests/e2e.test.ts runs on every change
 - [CI](ci.md): planning in GitHub Actions
 - [Tuning a plan](tuning.md): fixing what `check` reports
 - [API](api.md): the same plan from code
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools

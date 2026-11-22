@@ -133,3 +133,5 @@ and the generator's config, and not every change.
 
 - [Config](config.md): every key
 - [Tuning a plan](tuning.md): when a plan still runs too much
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools

@@ -146,3 +146,5 @@ and 124 MB on Node.
 - [CLI](cli.md): `plan --github` and the other commands
 - [Config](config.md): a suite's `output`, and `cache`
 - [How it works](how-it-works.md): what a plan reads
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools

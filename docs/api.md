@@ -111,10 +111,14 @@ It returns one of two shapes:
 A narrower that throws, or returns anything else,
 runs its suites in full with the reason too.
 
-carbon-components-svelte runs one over crassus.
+carbon-components-svelte runs one built on
+[crassus](https://github.com/metonym/crassus),
+a CSS cascade regression tool.
 
 ## Related
 
 - [Config](config.md): `defineConfig` and every key
 - [CLI](cli.md): the same plan from the command line
 - [How it works](how-it-works.md): the graph a plan walks
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools

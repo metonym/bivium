@@ -342,3 +342,5 @@ whatever loads an entry names it itself.
 - [Recipes](recipes.md): Vitest, Jest, Playwright, pnpm workspaces,
   generated code
 - [How it works](how-it-works.md): what the graph follows
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools

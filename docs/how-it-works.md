@@ -145,6 +145,20 @@ Other lockfiles (`yarn.lock`, `bun.lockb`, `npm-shrinkwrap.json`) are
 files like any other.
 Outside the roots, a change to one runs everything.
 
+## Not supported
+
+What bivium leaves to other tools, and what to use instead:
+
+| bivium doesn't | Instead |
+| --- | --- |
+| run your tests | `bivium run` hands the selection to your runner's command |
+| read your runner's config | name its setup files in a suite's `setup` |
+| scan CSS | `edges` from a stylesheet to its sources, or a [narrower](api.md#narrowers) |
+| parse `yarn.lock` or `bun.lockb` | they're files like any other, so a change to one doesn't seed packages |
+| select below the file | a test file is selected whole, every case in it |
+| follow an import it can't read | the file counts as depending on every change, so its tests always run |
+| build or cache outputs | Nx, Turborepo, or Bazel, which skip whole projects |
+
 ## Compared with
 
 Tools that select or skip tests differ in what they select

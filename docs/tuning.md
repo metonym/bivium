@@ -190,3 +190,5 @@ deadGlobs: [
 - [Config](config.md): every key named here
 - [CLI](cli.md): `check`, `why` and `graph`
 - [Recipes](recipes.md): settings for common runners
+- [Not supported](how-it-works.md#not-supported):
+  what bivium leaves to other tools
