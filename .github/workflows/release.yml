@@ -14,11 +14,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
+      - name: Build with boatwright
+        run: npx -y bun@1.4.5-canary.20261121.1 x --bun boatwright@0.1.0
+      - name: Point npm at the token
+        run: echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > ~/.npmrc
       - name: Publish to npm
         run: npm publish --provenance --access public
         env:
