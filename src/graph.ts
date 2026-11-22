@@ -84,6 +84,23 @@ function addPattern(
   deps.patternKinds.set(pattern, kind);
 }
 
+// A cause is listed once, however many imports or mocks name it.
+function addCause(deps: FileDeps, cause: string): void {
+  if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
+}
+
+// Pages a test opens: each is a file it depends on, and one no import
+// reaches is a page too.
+function addPages(deps: FileDeps, pages: readonly string[]): void {
+  for (const page of pages) {
+    if (!deps.files.has(page)) {
+      deps.pages ??= new Set();
+      deps.pages.add(page);
+    }
+    deps.files.add(page);
+  }
+}
+
 const NON_LITERAL_GOTO = "non-literal goto(";
 
 // The causes a `hermetic` file vouches for: what it reads or imports this
@@ -249,8 +266,7 @@ export function graphFrom(
       };
       if (resolved === undefined) {
         // `import` and `vi.mock()` of one specifier are one cause.
-        const cause = `unresolved "${specifier}"`;
-        if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
+        addCause(deps, `unresolved "${specifier}"`);
       } else if ("pkg" in resolved) {
         add(`pkg:${resolved.pkg}`);
         external.add(`pkg:${resolved.pkg}`);
@@ -263,20 +279,17 @@ export function graphFrom(
           JS_SPECIFIER.test(specifier.replace(QUERY, "")) &&
           resolved.files.every((file) => DECLARATION.test(file))
         ) {
-          const cause = `only declarations for "${specifier}"`;
-          if (!deps.unknown.includes(cause)) deps.unknown.push(cause);
+          addCause(deps, `only declarations for "${specifier}"`);
         }
-        for (const file of resolved.files) {
+        const nodes = resolved.files.flatMap((file) => {
           const barrel = names && named.get(file);
-          if (!barrel || !names) {
-            add(file);
-            continue;
-          }
+          if (!barrel || !names) return [file];
           // Unknown names (types, typos) fall back to the whole barrel.
-          for (const name of names) {
-            add(barrel.has(name) ? `${file}#${name}` : file);
-          }
-        }
+          return names.map((name) =>
+            barrel.has(name) ? `${file}#${name}` : file,
+          );
+        });
+        for (const node of nodes) add(node);
       }
     }
     for (const node of typed) {
@@ -297,27 +310,22 @@ export function graphFrom(
     if (suite) {
       for (const argument of found.gotos) {
         const url = gotoUrl(argument);
-        if (url === undefined) {
-          // Its `@depends-on` names what the file needs that the graph
-          // can't read, the pages it opens included.
-          if (found.dependsOn.length === 0) {
-            deps.unknown.push(`${NON_LITERAL_GOTO}${argument})`);
-          }
-        } else if (url !== "about:blank") {
-          const mapped = mapUrl(suite, url.replace(QUERY, ""));
-          // The page must exist; what else it loads (layouts) counts when
-          // it does.
-          if (mapped === undefined) deps.unknown.push(`goto("${url}")`);
-          else if (exists.has(mapped[0] ?? "")) {
-            for (const page of mapped.filter((file) => exists.has(file))) {
-              if (!deps.files.has(page)) {
-                deps.pages ??= new Set();
-                deps.pages.add(page);
-              }
-              deps.files.add(page);
-            }
-          } else deps.unknown.push(`missing fixture "${url}"`);
+        // Its `@depends-on` names what the file needs that the graph
+        // can't read, the pages it opens included.
+        if (url === undefined && found.dependsOn.length === 0) {
+          deps.unknown.push(`${NON_LITERAL_GOTO}${argument})`);
         }
+        if (url === undefined || url === "about:blank") continue;
+        const mapped = mapUrl(suite, url.replace(QUERY, ""));
+        // The page must exist; what else it loads (layouts) counts when it
+        // does.
+        if (mapped === undefined) deps.unknown.push(`goto("${url}")`);
+        else if (exists.has(mapped[0] ?? "")) {
+          addPages(
+            deps,
+            mapped.filter((file) => exists.has(file)),
+          );
+        } else deps.unknown.push(`missing fixture "${url}"`);
       }
     }
 
