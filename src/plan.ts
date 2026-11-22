@@ -44,13 +44,14 @@ export interface Narrowed {
   result: NarrowResult;
 }
 
-export interface PlanOptions {
+interface PlanTestsOptions {
   // Barrel-name nodes (`src/index.js#Button`) whose target moved.
   barrelNames?: string[];
   layout?: ReadonlySet<string>;
   narrowed?: Narrowed[];
   // What the changed lockfiles and `package.json` files changed.
-  packages?: PackageDiff;
+  // `undefined` when no lockfile or `package.json` changed.
+  packages?: PackageDiff | undefined;
   // What each changed `tsconfig.json` or `package.json` the package diff
   // doesn't account for can affect.
   settings?: ReadonlyMap<string, SettingChange>;
@@ -237,7 +238,7 @@ export function planTests(
     narrowed = [],
     packages,
     settings,
-  }: PlanOptions = {},
+  }: PlanTestsOptions = {},
 ): Plan {
   const { relevant, quiet, packageFiles, settingFiles, causes } = classify(
     graph,

@@ -71,7 +71,7 @@ const LEADING_DOT_SLASH = /^\.\//;
 const JS_SPECIFIER = /\.[cm]?jsx?$/;
 // A declaration file: `x.d.ts`, `x.d.mts`, `x.d.cts`, and `x.d.css.ts`
 // for an arbitrary extension. Nothing that runs loads one.
-export const DECLARATION = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
+export const DECLARATION: RegExp = /\.d(?:\.[^/.]+)?\.[cm]?ts$/;
 
 function addPattern(
   deps: FileDeps,
@@ -474,7 +474,7 @@ function literalOf(re: RegExp): string | undefined {
   if (!source.startsWith("^") || !source.endsWith("$")) return undefined;
   let path = "";
   for (let i = 1; i < source.length - 1; i++) {
-    const char = source[i];
+    const char = source.charAt(i);
     if (char === "\\") path += source[++i];
     else if (REGEX_SYNTAX.includes(char)) return undefined;
     else path += char;
@@ -687,7 +687,12 @@ export function affectedBy(
   const visitGroup = (group: PatternGroup, from: string) => {
     const { nodes, kinds } = group;
     for (let i = 0; i < nodes.length; i++) {
-      visit(nodes[i], parents && { from, kind: kinds[i] });
+      const node = nodes[i];
+      const kind = kinds[i];
+      if (node === undefined || kind === undefined) {
+        throw new Error("bivium: graph: a pattern group lost a node's kind.");
+      }
+      visit(node, parents && { from, kind });
     }
   };
 
@@ -731,6 +736,9 @@ export function affectedBy(
   };
   for (let at = 0; at < queue.length && !done; at++) {
     const path = queue[at];
+    if (path === undefined) {
+      throw new Error("bivium: graph: walked off the queue.");
+    }
     for (const dependent of dependents.get(path) ?? []) {
       visit(
         dependent,

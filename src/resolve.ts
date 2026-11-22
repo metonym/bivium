@@ -109,7 +109,10 @@ const DEP_FIELDS = [
 
 function packageName(specifier: string): string {
   const parts = specifier.split("/");
-  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+  // `split` always returns at least one part.
+  return specifier.startsWith("@")
+    ? parts.slice(0, 2).join("/")
+    : (parts[0] ?? "");
 }
 
 // `pkg:` node name for a builtin, or `undefined` if it isn't one.
@@ -120,7 +123,7 @@ function builtin(specifier: string): string | undefined {
       ? specifier
       : `node:${name.split("/")[0]}`;
   }
-  const name = specifier.split("/")[0];
+  const name = specifier.split("/")[0] ?? "";
   return BUILTINS.has(specifier) || BUILTINS.has(name)
     ? `node:${name}`
     : undefined;
@@ -240,8 +243,7 @@ export function createResolver({
   const indexes = new Map<string, [number, string][]>();
   const byTail: number[][] = [];
   const undotted: number[] = [];
-  for (let i = 0; i < extensions.length; i++) {
-    const ext = extensions[i];
+  for (const [i, ext] of extensions.entries()) {
     const dot = ext.lastIndexOf(".");
     if (dot === -1) undotted.push(i);
     else {
@@ -252,6 +254,9 @@ export function createResolver({
   }
   const addSuffixed = (i: number, file: string) => {
     const ext = extensions[i];
+    if (ext === undefined) {
+      throw new Error(`bivium: resolve: no extension at index ${i}.`);
+    }
     if (!file.endsWith(ext)) return;
     const base = file.slice(0, file.length - ext.length);
     const list = suffixed.get(base);
@@ -348,7 +353,7 @@ export function createResolver({
       const owning = pkg === -1 ? undefined : deepestFirst[pkg];
       scope = {
         owning,
-        ts: ts === -1 ? undefined : tsDeepestFirst[ts][1],
+        ts: ts === -1 ? undefined : tsDeepestFirst[ts]?.[1],
         declared: declaredIn(owning?.[0] ?? "."),
         resolved: new Map(),
       };

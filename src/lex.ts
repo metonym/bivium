@@ -1,4 +1,5 @@
 import {
+  captured,
   DEPENDS_ON,
   GLOB_REGISTRY,
   type ImportRef,
@@ -129,19 +130,27 @@ const CALL_PROPERTY = 1; // `x.require()`: a literal counts, nothing else
 const CALL_MOCK = 2; // `vi.mock()`: unknown if not literal, never a disk read
 const CALL_ACTUAL = 3; // `vi.importActual()`: may read the disk
 
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let src = "";
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let end = 0;
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let out: Lexed = createLexed();
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let dialect: Dialect = TS;
 // Next `@` / `import` at or after the last comment that looked; both only
 // move forward, so finding them is linear in the file.
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let nextAt = -1;
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let nextImport = -1;
 const LS = String.fromCharCode(0x2028);
 const PS = String.fromCharCode(0x2029);
 // Whether the file has line terminators other than `\n`.
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let oddLines = false;
 // Set by `template()`: it stopped at `${` rather than the closing backtick.
+// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let templateOpen = false;
 
 function fail(message: string, at: number): never {
@@ -219,7 +228,7 @@ for (let c = 0; c < 128; c++) {
 
 // `charCodeAt` past the end is NaN: neither.
 function isIdentStart(c: number) {
-  return c < 128 ? (IDENT[c] & 1) !== 0 : c >= 128 && !isUnicodeSpace(c);
+  return c < 128 ? ((IDENT[c] ?? 0) & 1) !== 0 : c >= 128 && !isUnicodeSpace(c);
 }
 
 function isIdentPart(c: number) {
@@ -359,7 +368,8 @@ function regex(i: number) {
 
 // Is the word `src[start, stop)` one of `words` (all of one length)?
 function isOneOf(start: number, stop: number, words: readonly string[]) {
-  if (stop - start !== words[0].length) return false;
+  const [first] = words;
+  if (first === undefined || stop - start !== first.length) return false;
   const c = src.charCodeAt(start);
   for (const word of words) {
     if (word.charCodeAt(0) === c && src.startsWith(word, start)) return true;
@@ -477,7 +487,7 @@ function code(start: number, brace: boolean): number {
   let wordIsProperty = false;
   while (i < n) {
     const c = s.charCodeAt(i);
-    if (c < 128 ? (IDENT[c] & 1) !== 0 : !isUnicodeSpace(c)) {
+    if (c < 128 ? ((IDENT[c] ?? 0) & 1) !== 0 : !isUnicodeSpace(c)) {
       let j = i + 1;
       while (j < n) {
         const d = s.charCodeAt(j);
@@ -766,14 +776,16 @@ function annotations(start: number, stop: number) {
   const prefix = src.slice(lineStart, start);
   // Code before the comment on its first line: that line doesn't count.
   const text = (BLANK.test(prefix) ? prefix : "x") + src.slice(start, stop);
-  for (const [, list] of text.matchAll(DEPENDS_ON)) {
-    out.dependsOn.push(...list.split(LIST_SEPARATOR).filter(Boolean));
+  for (const match of text.matchAll(DEPENDS_ON)) {
+    out.dependsOn.push(
+      ...captured(match, 1).split(LIST_SEPARATOR).filter(Boolean),
+    );
   }
-  for (const [, list] of text.matchAll(READS)) {
-    out.reads.push(...list.split(LIST_SEPARATOR).filter(Boolean));
+  for (const match of text.matchAll(READS)) {
+    out.reads.push(...captured(match, 1).split(LIST_SEPARATOR).filter(Boolean));
   }
-  for (const [, list] of text.matchAll(LISTS)) {
-    out.lists.push(...list.split(LIST_SEPARATOR).filter(Boolean));
+  for (const match of text.matchAll(LISTS)) {
+    out.lists.push(...captured(match, 1).split(LIST_SEPARATOR).filter(Boolean));
   }
   if (GLOB_REGISTRY.test(text)) out.registry = true;
 }
@@ -807,12 +819,11 @@ function jsdocImport(start: number, at: number, stop: number) {
     JSDOC_IMPORT_TAG.lastIndex = at - 1;
     const tag = JSDOC_IMPORT_TAG.exec(src);
     if (tag && JSDOC_IMPORT_TAG.lastIndex <= stop) {
-      const clause = tag[1].replace(JSDOC_LINE_STAR, "\n");
+      const clause = captured(tag, 1).replace(JSDOC_LINE_STAR, "\n");
       const names = clause.includes("{") ? namedBindings(clause) : undefined;
+      const specifier = captured(tag, 3);
       out.imports.push(
-        names
-          ? { specifier: tag[3], names, type: true }
-          : { specifier: tag[3], type: true },
+        names ? { specifier, names, type: true } : { specifier, type: true },
       );
     }
     return;
@@ -824,7 +835,7 @@ function jsdocImport(start: number, at: number, stop: number) {
   JSDOC_IMPORT_TYPE.lastIndex = at;
   const type = JSDOC_IMPORT_TYPE.exec(src);
   if (type && JSDOC_IMPORT_TYPE.lastIndex <= stop) {
-    out.imports.push({ specifier: type[2], type: true });
+    out.imports.push({ specifier: captured(type, 2), type: true });
   }
 }
 
@@ -1297,7 +1308,7 @@ function jsxElement(i: number): number {
     p = skipTrivia(p + 1);
     const v = src.charCodeAt(p);
     if (isQuote(v)) {
-      const e = src.indexOf(src[p], p + 1);
+      const e = src.indexOf(src.charAt(p), p + 1);
       if (e === -1 || e >= end) fail("unterminated JSX attribute", p);
       p = e + 1;
     } else if (v === 123) {

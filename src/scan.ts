@@ -28,7 +28,7 @@ import {
 // dropped.
 
 // Files whose source the scanner reads; any other file is a leaf.
-export const SCANNED = /\.(?:svelte|vue|astro|html|[cm]?[jt]sx?)$/;
+export const SCANNED: RegExp = /\.(?:svelte|vue|astro|html|[cm]?[jt]sx?)$/;
 
 // How a file is read, from its name alone: a host format (`svelte`, `vue`,
 // `astro`, `html`) or a script dialect (`ts`, `tsx`, `js`). Two files with
@@ -66,7 +66,9 @@ export function extract(format: Format, source: string): Extraction {
     // Anything else is a lexer bug (or a stack overflow on absurd nesting):
     // the regex extractor is still sound, so it reads the file instead.
     const fallback =
-      error instanceof LexError ? error.message : `lexer error: ${error}`;
+      error instanceof LexError
+        ? error.message
+        : `lexer error: ${String(error)}`;
     extraction = { ...extractRegex(source, format === "html"), fallback };
   }
   if (!isHost(format)) {
@@ -101,7 +103,8 @@ export function stringsOf(
 // until the graph is gone. A parsed string is always new; cheaper tricks
 // (`(" " + text).slice(1)`) still share it on JavaScriptCore.
 function own(text: string): string {
-  return JSON.parse(JSON.stringify(text));
+  const copy: unknown = JSON.parse(JSON.stringify(text));
+  return typeof copy === "string" ? copy : text;
 }
 
 function detach(extraction: Extraction): Extraction {

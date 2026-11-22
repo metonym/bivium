@@ -122,11 +122,9 @@ function install(
 // The last package name in a `bun.lock` key: `@scope/a/b` is `b` installed
 // under `@scope/a`.
 function installedName(key: string): string {
-  const parts = key.split("/");
-  const last = parts.length - 1;
-  return last > 0 && parts[last - 1].startsWith("@")
-    ? `${parts[last - 1]}/${parts[last]}`
-    : parts[last];
+  // A split has at least one part, so `name` is always there.
+  const [name = key, scope] = key.split("/").reverse();
+  return scope?.startsWith("@") ? `${scope}/${name}` : name;
 }
 
 // `bun.lock`: `packages` maps an install path to `["name@version", …]`,
@@ -439,13 +437,16 @@ export async function readPackageDiff(
   // An unchanged lockfile is the same in both trees.
   const [lockTexts, manifestTexts] = await Promise.all([
     Promise.all(
-      known.map((file) =>
-        lockfiles.includes(file)
-          ? read(file)
-          : head(file).then((text) => [text, text] as const),
-      ),
+      known.map(async (file) => {
+        if (lockfiles.includes(file))
+          return [file, ...(await read(file))] as const;
+        const text = await head(file);
+        return [file, text, text] as const;
+      }),
     ),
-    Promise.all(manifests.map(read)),
+    Promise.all(
+      manifests.map(async (file) => [file, ...(await read(file))] as const),
+    ),
   ]);
   const diff: PackageDiff = {
     files: new Map(),
@@ -457,8 +458,7 @@ export async function readPackageDiff(
   // The lockfiles the working tree has, parsed (`undefined` if they don't
   // parse), to check a `package.json` against.
   const present = new Map<string, Lockfile | undefined>();
-  for (const [i, file] of known.entries()) {
-    const [baseText, headText] = lockTexts[i];
+  for (const [file, baseText, headText] of lockTexts) {
     const after = parse(file, headText);
     if (headText !== undefined) present.set(file, after);
     const before = parse(file, baseText);
@@ -495,8 +495,9 @@ export async function readPackageDiff(
   // the working tree has records them, changed only what those lockfiles
   // say. Any other change to one is classified as before.
   const unread = UNREAD.some((file) => listed.includes(file));
-  for (const [i, file] of manifests.entries()) {
-    const [before, after] = manifestTexts[i].map(parseManifest);
+  for (const [file, beforeText, afterText] of manifestTexts) {
+    const before = parseManifest(beforeText);
+    const after = parseManifest(afterText);
     if (!(before && after) || unread || present.size === 0) continue;
     const others = (record: Record<string, unknown>) =>
       restOf(record, DEP_FIELDS);
@@ -594,8 +595,9 @@ export function packageSeeds(
     seen.add(name);
     const closure = new Set([name]);
     const queue = [name];
-    for (let at = 0; at < queue.length; at++) {
-      for (const dependent of diff.dependents.get(queue[at]) ?? []) {
+    // An array's iterator visits what the loop pushes, too.
+    for (const queued of queue) {
+      for (const dependent of diff.dependents.get(queued) ?? []) {
         if (closure.has(dependent)) continue;
         closure.add(dependent);
         queue.push(dependent);

@@ -7,7 +7,7 @@ import {
   TS,
   TSX,
 } from "./lex.ts";
-import { RELATIVE, URL_REF } from "./syntax.ts";
+import { captured, RELATIVE, URL_REF } from "./syntax.ts";
 
 // Files that embed scripts in markup. Only the code is lexed: `<script>`
 // blocks, and for Svelte the `{…}` expressions in markup (where an
@@ -55,7 +55,7 @@ function tagEnd(src: string, i: number) {
     const c = src.charCodeAt(j);
     if (c === 62) return j + 1;
     if (c === 34 || c === 39) {
-      const e = src.indexOf(src[j], j + 1);
+      const e = src.indexOf(src.charAt(j), j + 1);
       if (e === -1) break;
       j = e + 1;
     } else {
@@ -119,7 +119,7 @@ export function lexHost(src: string, out: Lexed, host: Host): void {
       if (generics?.index !== undefined) {
         // `<script lang="ts" generics="T extends Item">`: type parameters.
         const start = i + generics.index + generics[0].length;
-        const stop = src.indexOf(generics[1], start);
+        const stop = src.indexOf(captured(generics, 1), start);
         if (stop !== -1 && stop < open) lexRange(start, stop, TS);
       }
       const close = closeTag(src, open, "script");

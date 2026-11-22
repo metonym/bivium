@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 
 import { version } from "../package.json" with { type: "json" };
 import type { Barrel } from "./barrel.ts";
+import { nowMs } from "./env.ts";
 import type { Extraction, Format } from "./scan.ts";
 import type { ImportRef } from "./syntax.ts";
 
@@ -67,6 +68,7 @@ export function cacheDir(root: string, cache: CacheOption): string | undefined {
     : join(root, ".bivium", "cache");
 }
 
+// eslint-disable-next-line no-restricted-syntax -- a cache: its identity matters, one per run
 export class ExtractionCache {
   // Undecoded rows by key.
   #rows = new Map<string, Row>();
@@ -93,7 +95,8 @@ export class ExtractionCache {
     try {
       const parsed: unknown = JSON.parse(text);
       if (!Array.isArray(parsed)) return;
-      const [header, strings, rows]: unknown[] = parsed;
+      const fields: unknown[] = parsed;
+      const [header, strings, rows] = fields;
       if (
         !isHeader(header) ||
         !Array.isArray(strings) ||
@@ -148,7 +151,7 @@ export class ExtractionCache {
   // Errors are swallowed: the cache only saves time.
   async save(): Promise<void> {
     if (!this.dir || !this.#dirty) return;
-    const table = new Strings();
+    const table = createStrings();
     const rows: Row[] = [];
     for (const [key, extraction] of this.#used) {
       rows.push(encode(key, extraction, table));
@@ -172,7 +175,7 @@ export class ExtractionCache {
       strings: table.list.length,
     };
     const file = join(this.dir, FILE);
-    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${file}.${process.pid}.${nowMs()}.tmp`;
     try {
       await mkdir(this.dir, { recursive: true });
       // Inside a repo, the cache must not show up as an untracked change.
@@ -187,21 +190,28 @@ export class ExtractionCache {
   }
 }
 
-class Strings {
-  list: string[] = [];
-  #ids = new Map<string, number>();
-  id(value: string): number {
-    let id = this.#ids.get(value);
-    if (id === undefined) {
-      id = this.list.length;
-      this.list.push(value);
-      this.#ids.set(value, id);
+// The string table a save writes: each distinct string once, by first use.
+interface Strings {
+  list: string[];
+  id: (value: string) => number;
+  ids: (values: string[]) => number[] | 0;
+}
+
+function createStrings(): Strings {
+  const list: string[] = [];
+  const idsByValue = new Map<string, number>();
+  const id = (value: string): number => {
+    let found = idsByValue.get(value);
+    if (found === undefined) {
+      found = list.length;
+      list.push(value);
+      idsByValue.set(value, found);
     }
-    return id;
-  }
-  ids(values: string[]): number[] | 0 {
-    return values.length === 0 ? 0 : values.map((value) => this.id(value));
-  }
+    return found;
+  };
+  const ids = (values: string[]): number[] | 0 =>
+    values.length === 0 ? 0 : values.map(id);
+  return { list, id, ids };
 }
 
 function typeIndexes(imports: ImportRef[]): number[] | 0 {
@@ -277,7 +287,8 @@ function decode(row: Row, strings: unknown[]): Extraction {
   if (row[7] !== 0) extraction.fallback = str(row[7]);
   if (row[8] !== 0) {
     if (!Array.isArray(row[8])) throw new Error("bad barrel");
-    const [pairs, stars]: unknown[] = row[8];
+    const barrel: unknown[] = row[8];
+    const [pairs, stars] = barrel;
     if (!Array.isArray(pairs)) throw new Error("bad barrel names");
     const names = new Map<string, string>();
     for (let i = 0; i < pairs.length; i += 2) {

@@ -124,7 +124,7 @@ export async function readTsconfigs(
     await Promise.all(
       result.read.extends.map((target) => {
         const path = extendsPath(file, target);
-        return path === undefined ? undefined : load(path, true);
+        return path === undefined ? Promise.resolve() : load(path, true);
       }),
     );
   };

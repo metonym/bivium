@@ -27,7 +27,7 @@ function compile(
     return capture ? `(${body})` : body;
   };
   for (let i = 0; i < glob.length; i++) {
-    const char = glob[i];
+    const char = glob.charAt(i);
     if (captures && char === "$" && DIGIT.test(glob[i + 1] ?? "")) {
       let end = i + 1;
       while (DIGIT.test(glob[end] ?? "")) end++;

@@ -92,7 +92,7 @@ const TAGS: Record<GlobKind, string> = {
 const QUOTED = /"([^"]+)"/;
 
 /** How to make one of `check`'s unknown causes known. */
-export function fixFor(cause: string) {
+export function fixFor(cause: string): string {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED.exec(cause)?.[1] ?? "";
     if (specifier.startsWith("./%sveltekit.assets%/")) {
@@ -214,11 +214,14 @@ function declaredGlobs(node: string, extraction: Extraction): Declared[] {
       glob,
       pattern: globToRegExp(glob),
     })),
-    ...extraction.globs.map((glob, i): Declared => ({
-      kind: "glob",
-      glob,
-      pattern: globToRegExp(relative[i]),
-    })),
+    ...extraction.globs.map((glob, i): Declared => {
+      // finish maps each glob to one path, in order.
+      const path = relative[i];
+      if (path === undefined) {
+        throw new Error(`bivium: check: no resolved path for glob ${glob}.`);
+      }
+      return { kind: "glob", glob, pattern: globToRegExp(path) };
+    }),
   ];
 }
 

@@ -161,6 +161,17 @@ function isInertOf(inert: Globs | undefined): Matcher {
   return (name) => name === "bivium" || listed(name);
 }
 
+// `{ [key]: value }`, or `{}` when the value is missing: an optional key is
+// left out rather than set to `undefined`.
+function optional<K extends string, V>(
+  key: K,
+  value: V | undefined,
+): { [P in K]?: V } {
+  const out: { [P in K]?: V } = {};
+  if (value !== undefined) out[key] = value;
+  return out;
+}
+
 export function resolveConfig(config: Config): ResolvedConfig {
   const names = Object.keys(config.suites);
   if (names.length === 0) throw new Error("bivium config: no suites");
@@ -168,7 +179,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     ([name, suite]): ResolvedSuite => ({
       name,
       isTest: matcher(suite.tests),
-      run: suite.run,
+      ...optional("run", suite.run),
       roots: list(suite.root, ["."]).map(normalizeRoot),
       urls: Object.entries(suite.urls ?? {}).map(([key, targets]) => ({
         key,
@@ -226,8 +237,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     extensions: config.extensions ?? DEFAULT_EXTENSIONS,
     deadGlobs: config.deadGlobs ?? [],
     ...(config.knownUnknowns && { knownUnknowns: config.knownUnknowns }),
-    base: config.base,
-    cache: config.cache,
+    ...optional("base", config.base),
+    ...optional("cache", config.cache),
   };
 }
 
@@ -365,15 +376,21 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
   const globs = "a glob or a list of globs";
   return {
     tests,
-    run: field(value, "run", isString, at, "a command"),
-    root: paths(value, "root", at),
-    urls: field(value, "urls", isGlobsRecord, at, "a map of URL patterns"),
-    pages: field(value, "pages", isGlobs, at, globs),
-    wiring: field(value, "wiring", isGlobs, at, globs),
-    setup: field(value, "setup", isGlobs, at, globs),
-    nonInputs: field(value, "nonInputs", isGlobs, at, globs),
-    output: field(value, "output", isString, at, "an output name"),
-    types: field(value, "types", isBoolean, at, "a boolean"),
+    ...optional("run", field(value, "run", isString, at, "a command")),
+    ...optional("root", paths(value, "root", at)),
+    ...optional(
+      "urls",
+      field(value, "urls", isGlobsRecord, at, "a map of URL patterns"),
+    ),
+    ...optional("pages", field(value, "pages", isGlobs, at, globs)),
+    ...optional("wiring", field(value, "wiring", isGlobs, at, globs)),
+    ...optional("setup", field(value, "setup", isGlobs, at, globs)),
+    ...optional("nonInputs", field(value, "nonInputs", isGlobs, at, globs)),
+    ...optional(
+      "output",
+      field(value, "output", isString, at, "an output name"),
+    ),
+    ...optional("types", field(value, "types", isBoolean, at, "a boolean")),
   };
 }
 
@@ -434,7 +451,7 @@ function checkNarrower(value: unknown, at: string): Narrower {
     name,
     match,
     opaque,
-    suites,
+    ...optional("suites", suites),
     narrow: async (context) => {
       const result: unknown = await Reflect.apply(narrow, value, [context]);
       return checkResult(result);
@@ -524,30 +541,54 @@ export function checkConfig(value: unknown): Config {
   checkCaptures("reads", reads);
   return {
     suites,
-    narrowers: narrowers?.map((narrower, i) =>
-      checkNarrower(narrower, `narrowers[${i}]`),
+    ...optional(
+      "narrowers",
+      narrowers?.map((narrower, i) =>
+        checkNarrower(narrower, `narrowers[${i}]`),
+      ),
     ),
-    roots: paths(value, "roots", ""),
-    ignore: field(value, "ignore", isGlobs, "", globs),
-    alias: field(value, "alias", isStringRecord, "", "a map of paths"),
-    edges,
-    reads,
-    self: field(value, "self", isGlobs, "", globs),
-    importOnly: field(value, "importOnly", isGlobs, "", globs),
-    hermetic: field(value, "hermetic", isGlobs, "", globs),
-    barrels: field(value, "barrels", isGlobs, "", globs),
-    external: field(value, "external", isStrings, "", "a list of packages"),
-    inert: field(value, "inert", isGlobs, "", globs),
-    loadedByName: field(value, "loadedByName", isGlobs, "", globs),
-    extensions: field(value, "extensions", isStrings, "", "a list"),
-    deadGlobs: deadGlobs?.map((entry: unknown, i) =>
-      checkDeadGlob(entry, `deadGlobs[${i}]`),
+    ...optional("roots", paths(value, "roots", "")),
+    ...optional("ignore", field(value, "ignore", isGlobs, "", globs)),
+    ...optional(
+      "alias",
+      field(value, "alias", isStringRecord, "", "a map of paths"),
     ),
-    knownUnknowns: knownUnknowns?.map((entry: unknown, i) =>
-      checkKnownUnknown(entry, `knownUnknowns[${i}]`),
+    ...optional("edges", edges),
+    ...optional("reads", reads),
+    ...optional("self", field(value, "self", isGlobs, "", globs)),
+    ...optional("importOnly", field(value, "importOnly", isGlobs, "", globs)),
+    ...optional("hermetic", field(value, "hermetic", isGlobs, "", globs)),
+    ...optional("barrels", field(value, "barrels", isGlobs, "", globs)),
+    ...optional(
+      "external",
+      field(value, "external", isStrings, "", "a list of packages"),
     ),
-    base: field(value, "base", isString, "", "a ref"),
-    cache: field(value, "cache", isCache, "", "a directory or a boolean"),
+    ...optional("inert", field(value, "inert", isGlobs, "", globs)),
+    ...optional(
+      "loadedByName",
+      field(value, "loadedByName", isGlobs, "", globs),
+    ),
+    ...optional(
+      "extensions",
+      field(value, "extensions", isStrings, "", "a list"),
+    ),
+    ...optional(
+      "deadGlobs",
+      deadGlobs?.map((entry: unknown, i) =>
+        checkDeadGlob(entry, `deadGlobs[${i}]`),
+      ),
+    ),
+    ...optional(
+      "knownUnknowns",
+      knownUnknowns?.map((entry: unknown, i) =>
+        checkKnownUnknown(entry, `knownUnknowns[${i}]`),
+      ),
+    ),
+    ...optional("base", field(value, "base", isString, "", "a ref")),
+    ...optional(
+      "cache",
+      field(value, "cache", isCache, "", "a directory or a boolean"),
+    ),
   };
 }
 

@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 
 import {
+  captured,
   DEPENDS_ON,
   GLOB_REGISTRY,
   LIST_SEPARATOR,
@@ -67,7 +68,8 @@ export function extractRegex(source: string, html: boolean): Scan {
   };
 
   if (html) {
-    for (const [, ref] of source.matchAll(HTML_REF)) {
+    for (const match of source.matchAll(HTML_REF)) {
+      const ref = captured(match, 1);
       if (!URL_REF.test(ref)) {
         result.imports.push({
           specifier: RELATIVE.test(ref) ? ref : `./${ref}`,
@@ -76,12 +78,13 @@ export function extractRegex(source: string, html: boolean): Scan {
     }
   }
 
-  for (const [, clause, specifier] of source.matchAll(STATIC_IMPORT)) {
-    const names = namedBindings(clause.replace(COMMENTS, ""));
+  for (const match of source.matchAll(STATIC_IMPORT)) {
+    const specifier = captured(match, 2);
+    const names = namedBindings(captured(match, 1).replace(COMMENTS, ""));
     result.imports.push(names ? { specifier, names } : { specifier });
   }
-  for (const [, specifier] of source.matchAll(SIDE_EFFECT_IMPORT)) {
-    result.imports.push({ specifier });
+  for (const match of source.matchAll(SIDE_EFFECT_IMPORT)) {
+    result.imports.push({ specifier: captured(match, 1) });
   }
   // Each pattern below needs a literal substring; `includes` skips the
   // regex for the files that lack it.
@@ -89,10 +92,8 @@ export function extractRegex(source: string, html: boolean): Scan {
     source.includes("import(") ||
     source.includes("require(") ||
     source.includes("vi.");
-  for (const [, , specifier] of calls
-    ? source.matchAll(CALL_WITH_LITERAL)
-    : []) {
-    result.imports.push({ specifier });
+  for (const match of calls ? source.matchAll(CALL_WITH_LITERAL) : []) {
+    result.imports.push({ specifier: captured(match, 2) });
   }
   if (calls && (NON_LITERAL_CALL.test(source) || TEMPLATE_CALL.test(source))) {
     result.unknown.push("non-literal dynamic import");
@@ -103,8 +104,9 @@ export function extractRegex(source: string, html: boolean): Scan {
   if (globbing && globs.length !== [...source.matchAll(GLOB_CALL_ANY)].length) {
     result.unknown.push("non-literal glob import");
   }
-  for (const [, argument] of GLOB_REGISTRY.test(source) ? [] : globs) {
-    for (const [, glob] of argument.matchAll(QUOTED)) {
+  for (const call of GLOB_REGISTRY.test(source) ? [] : globs) {
+    for (const quoted of captured(call, 1).matchAll(QUOTED)) {
+      const glob = captured(quoted, 1);
       // Negated patterns only narrow the match.
       if (glob.startsWith("!")) continue;
       result.globs.push(glob.replace(QUERY, ""));
@@ -112,20 +114,26 @@ export function extractRegex(source: string, html: boolean): Scan {
   }
 
   if (source.includes(".goto(")) {
-    for (const [, argument] of source.matchAll(GOTO)) {
-      result.gotos.push(argument.trim());
+    for (const match of source.matchAll(GOTO)) {
+      result.gotos.push(captured(match, 1).trim());
     }
   }
 
   result.dependsOn = [
     ...(source.includes("@depends-on") ? source.matchAll(DEPENDS_ON) : []),
-  ].flatMap(([, list]) => list.split(LIST_SEPARATOR).filter(Boolean));
+  ].flatMap((match) =>
+    captured(match, 1).split(LIST_SEPARATOR).filter(Boolean),
+  );
   result.reads = [
     ...(source.includes("@reads") ? source.matchAll(READS) : []),
-  ].flatMap(([, list]) => list.split(LIST_SEPARATOR).filter(Boolean));
+  ].flatMap((match) =>
+    captured(match, 1).split(LIST_SEPARATOR).filter(Boolean),
+  );
   result.lists = [
     ...(source.includes("@lists") ? source.matchAll(LISTS) : []),
-  ].flatMap(([, list]) => list.split(LIST_SEPARATOR).filter(Boolean));
+  ].flatMap((match) =>
+    captured(match, 1).split(LIST_SEPARATOR).filter(Boolean),
+  );
   const disk =
     source.includes("fs") ||
     source.includes("child_process") ||

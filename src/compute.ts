@@ -125,8 +125,10 @@ async function inParallel(
   limit: number,
 ): Promise<void> {
   let next = 0;
-  const worker = (): Promise<void> =>
-    next < tasks.length ? tasks[next++]().then(worker) : Promise.resolve();
+  const worker = (): Promise<void> => {
+    const task = tasks[next++];
+    return task === undefined ? Promise.resolve() : task().then(worker);
+  };
   await Promise.all(
     Array.from({ length: Math.min(limit, tasks.length) }, worker),
   );
@@ -310,7 +312,8 @@ export async function computePlan(
       config.narrowers.some((narrower) => narrower.match(file)),
     )
   ) {
-    revision.mergeBase();
+    // The call handles its own rejection (see mergeBaseOf in git.ts).
+    void revision.mergeBase();
   }
   // A file an `extends` names is read only if git lists it, so that a
   // change to it is a change (an ignored `.svelte-kit/tsconfig.json` isn't).
@@ -434,10 +437,11 @@ export async function prepare({
   config,
   configFile,
 }: {
-  cwd?: string;
-  base?: string;
+  // `undefined`, as an option the CLI wasn't given: the default.
+  cwd?: string | undefined;
+  base?: string | undefined;
   config?: Config;
-  configFile?: string;
+  configFile?: string | undefined;
 }): Promise<Prepared> {
   const root = resolve(cwd);
   let resolved: ResolvedConfig;
@@ -467,6 +471,7 @@ export function plan<Suite extends string>(
   options: PlanOptions<Suite> & { config: Config<Suite> },
 ): Promise<PlanResult<Suite>>;
 export function plan(options?: PlanOptions): Promise<PlanResult>;
+/** Picks the tests of each suite that the changes against `base` can affect. */
 export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   const { root, base, config } = await prepare(options);
   const computed = await computePlan(root, base, config, {

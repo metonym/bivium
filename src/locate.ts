@@ -191,7 +191,10 @@ export function lineText(source: string, line: number): string {
   return source.slice(start, end === -1 ? source.length : end).trim();
 }
 
-export async function sourceOf(root: string, file: string) {
+export async function sourceOf(
+  root: string,
+  file: string,
+): Promise<string | undefined> {
   try {
     // A config file outside the repository is absolute.
     return await readFile(isAbsolute(file) ? file : join(root, file), "utf-8");

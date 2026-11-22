@@ -61,23 +61,34 @@ export function fanIn(graph: Graph, suite: ResolvedSuite): Map<string, number> {
     };
     visit(t);
     stack.push(t);
-    while (stack.length > 0) {
-      const at = stack.pop() ?? 0;
-      for (const next of forward[at]) {
+    for (let at = stack.pop(); at !== undefined; at = stack.pop()) {
+      for (const next of byId(forward, at)) {
         if (stamp[next] === t) continue;
         visit(next);
         stack.push(next);
       }
     }
-    for (const id of [...reached]) for (const read of direct[id]) visit(read);
-    for (const id of reached) counts[id]++;
+    for (const id of [...reached]) {
+      for (const read of byId(direct, id)) visit(read);
+    }
+    for (const id of reached) counts[id] = byId(counts, id) + 1;
   }
   const result = new Map<string, number>();
-  for (const [i, node] of nodes.entries()) result.set(node, counts[i]);
+  for (const [i, node] of nodes.entries()) result.set(node, byId(counts, i));
   return result;
 }
 
-export interface GraphReport {
+// Every id indexes all of fanIn's per-node arrays, which have one entry per
+// node.
+function byId<T>(list: ArrayLike<T>, id: number): T {
+  const value = list[id];
+  if (value === undefined) {
+    throw new Error(`bivium: fanin: no node with id ${id}.`);
+  }
+  return value;
+}
+
+interface GraphReport {
   // Each suite's test count, and the tests that run on any change because
   // they reach a node whose dependencies are unknown.
   suites: Record<string, { total: number; everyChange: string[] }>;

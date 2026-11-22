@@ -151,7 +151,8 @@ export async function readRevision(
   }: { blobs?: boolean; mergeBase?: boolean } = {},
 ): Promise<Revision> {
   const mergeBase = mergeBaseOf(cwd, base);
-  if (eager) mergeBase();
+  // The call handles its own rejection (see mergeBaseOf).
+  if (eager) void mergeBase();
   const diffArgs = ["--no-renames", "--merge-base", base];
   // One listing of the whole repo: the index, and untracked files, which
   // count as changed anywhere (outside the roots, they run everything).
@@ -173,9 +174,15 @@ export async function readRevision(
   const diffed: string[] = [];
   const layout = new Set(untracked);
   for (const line of lines(diff)) {
-    const entry = RAW_ENTRY.exec(line);
-    if (!entry) throw new Error(`git diff: unexpected line ${line}`);
-    const [, mode, oid, status, path] = entry;
+    const [, mode, oid, status, path] = RAW_ENTRY.exec(line) ?? [];
+    if (
+      mode === undefined ||
+      oid === undefined ||
+      status === undefined ||
+      path === undefined
+    ) {
+      throw new Error(`git diff: unexpected line ${line}`);
+    }
     diffed.push(path);
     if (status === "A" || status === "D") layout.add(path);
     if (status === "A") before.set(path, undefined);
@@ -225,6 +232,16 @@ export async function readRevision(
       continue;
     }
     const [, tag, mode, oid, stage, path] = entry;
+    // Every group in INDEX_ENTRY is required, so a match has them all.
+    if (
+      tag === undefined ||
+      mode === undefined ||
+      oid === undefined ||
+      stage === undefined ||
+      path === undefined
+    ) {
+      throw new Error(`bivium: git: unexpected ls-files line ${line}.`);
+    }
     tracked.add(path);
     // A submodule is a directory, never a file the graph reads.
     if (mode === "160000" || !underRoots(path)) continue;
@@ -266,7 +283,7 @@ export async function defaultBase(cwd: string): Promise<string> {
   const found = await Promise.all(
     refs.map((ref) => git(cwd, "rev-parse", "--verify", "--quiet", ref)),
   );
-  const branch = refs.find((_, i) => found[i].status === 0);
+  const branch = refs[found.findIndex((result) => result.status === 0)];
   if (branch) return branch;
   throw new BiviumError(
     "git",

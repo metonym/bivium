@@ -14,6 +14,7 @@ import { version } from "../package.json" with { type: "json" };
 import { check, failed, formatReport, summarize } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
+import { githubOutputPath } from "./env.ts";
 import { BiviumError, didYouMean, type ErrorKind } from "./errors.ts";
 import { formatGraph, graphReport } from "./fanin.ts";
 import { formatSelection } from "./plan.ts";
@@ -215,7 +216,7 @@ function logPlan({ plan, narrowed }: Computed) {
 }
 
 function githubOutput(): string {
-  const output = process.env.GITHUB_OUTPUT;
+  const output = githubOutputPath();
   if (!output) {
     throw usageError(
       "bivium plan: --github writes to $GITHUB_OUTPUT, which is not set (it is in a GitHub Actions step)",
@@ -229,9 +230,13 @@ function writeOutputs(
   config: ResolvedConfig,
   { plan }: Computed,
 ) {
-  const lines = config.suites.map(
-    (suite) => `${suite.output}=${formatSelection(plan.suites[suite.name])}\n`,
-  );
+  const lines = config.suites.map((suite) => {
+    const selection = plan.suites[suite.name];
+    if (selection === undefined) {
+      throw new Error(`bivium: plan: no selection for suite "${suite.name}".`);
+    }
+    return `${suite.output}=${formatSelection(selection)}\n`;
+  });
   appendFileSync(output, lines.join(""));
 }
 
@@ -446,6 +451,12 @@ async function runCommand(
     suite.run ?? "",
     selection.mode === "some" ? selection.files : [],
   );
+  // A run of only whitespace names no program.
+  if (program === undefined) {
+    throw usageError(
+      `bivium run: suite "${suite.name}" has no run command: add suites.${suite.name}.run to the config`,
+    );
+  }
   const result = spawnSync(program, args, { cwd: root, stdio: "inherit" });
   return result.status ?? 1;
 }

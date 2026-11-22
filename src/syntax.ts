@@ -27,27 +27,29 @@ export interface Scan {
   fallback?: string;
 }
 
-export const QUERY = /[?#].*$/;
+export const QUERY: RegExp = /[?#].*$/;
 
 export const UNDECLARED_READS = "reads the disk without @depends-on";
 
 // A relative specifier, as Node and TypeScript read one: `.`, `..`, or one
 // that starts with `./` or `../`. `.velite` is bare.
-export const RELATIVE = /^\.\.?(?:\/|$)/;
+export const RELATIVE: RegExp = /^\.\.?(?:\/|$)/;
 
-export const URL_REF = /^[a-z]+:|^\/\//;
+export const URL_REF: RegExp = /^[a-z]+:|^\/\//;
 
 // Commas inside `{a,b}` belong to the glob.
-export const LIST_SEPARATOR = /[\s,]+(?![^{]*\})/;
+export const LIST_SEPARATOR: RegExp = /[\s,]+(?![^{]*\})/;
 
-export const DEPENDS_ON =
+export const DEPENDS_ON: RegExp =
   /^\s*(?:\/\/|\/?\*+)\s*@depends-on\s+(.+?)\s*(?:\*\/)?\s*$/gm;
 
-export const READS = /^\s*(?:\/\/|\/?\*+)\s*@reads\s+(.+?)\s*(?:\*\/)?\s*$/gm;
+export const READS: RegExp =
+  /^\s*(?:\/\/|\/?\*+)\s*@reads\s+(.+?)\s*(?:\*\/)?\s*$/gm;
 
-export const LISTS = /^\s*(?:\/\/|\/?\*+)\s*@lists\s+(.+?)\s*(?:\*\/)?\s*$/gm;
+export const LISTS: RegExp =
+  /^\s*(?:\/\/|\/?\*+)\s*@lists\s+(.+?)\s*(?:\*\/)?\s*$/gm;
 
-export const GLOB_REGISTRY = /^\s*(?:\/\/|\/?\*+)\s*@glob-registry\b/m;
+export const GLOB_REGISTRY: RegExp = /^\s*(?:\/\/|\/?\*+)\s*@glob-registry\b/m;
 
 const AS = /\s+as\s+/;
 const TYPE_PREFIX = /^type\s+/;
@@ -60,8 +62,20 @@ export function namedBindings(clause: string): string[] | undefined {
   if (!named || DEFAULT_OR_NAMESPACE.test(clause.replace(NAMED_CLAUSE, ""))) {
     return undefined;
   }
-  return named[1]
+  return captured(named, 1)
     .split(",")
-    .map((part) => part.trim().replace(TYPE_PREFIX, "").split(AS)[0].trim())
+    .map((part) =>
+      (part.trim().replace(TYPE_PREFIX, "").split(AS)[0] ?? "").trim(),
+    )
     .filter(Boolean);
+}
+
+// Capture group `index` of a match, for a group the pattern always fills:
+// one that's unset means the pattern changed, not the input.
+export function captured(match: RegExpMatchArray, index: number): string {
+  const value = match[index];
+  if (value === undefined) {
+    throw new Error(`bivium: scan: group ${index} of ${match[0]} is unset.`);
+  }
+  return value;
 }

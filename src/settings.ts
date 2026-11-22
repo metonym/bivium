@@ -115,11 +115,13 @@ export async function settingChanges({
       tsDirs.some((dir) => tsconfigs.get(dir)?.includes(file)),
   );
   const texts = await Promise.all(
-    candidates.map((file) => Promise.all([base(file), head(file)])),
+    candidates.map(async (file) => {
+      const [before, after] = await Promise.all([base(file), head(file)]);
+      return { file, before, after };
+    }),
   );
   const result = new Map<string, SettingChange>();
-  for (const [i, file] of candidates.entries()) {
-    const [before, after] = texts[i];
+  for (const { file, before, after } of texts) {
     const manifest = MANIFEST.test(file);
     const keys = changedKeys(
       parsed(before, !manifest),

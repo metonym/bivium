@@ -37,11 +37,14 @@ export function parseReExports(source: string): Barrel | undefined {
     }
     return "";
   });
-  rest = rest.replace(STAR_EXPORT, (_, name: string | undefined, from) => {
-    if (name) barrel.names.set(name, from);
-    else barrel.stars.push(from);
-    return "";
-  });
+  rest = rest.replace(
+    STAR_EXPORT,
+    (_, name: string | undefined, from: string) => {
+      if (name) barrel.names.set(name, from);
+      else barrel.stars.push(from);
+      return "";
+    },
+  );
   if (barrel.names.size + barrel.stars.length === 0) return undefined;
   return ONLY_SEPARATORS.test(rest) ? barrel : undefined;
 }

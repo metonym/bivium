@@ -150,7 +150,7 @@ function edgeLine(
   }
   if (via.kind === "glob") {
     const relative = finish(file, extraction).globs;
-    const glob = extraction.globs.find((_, i) => matches(relative[i]));
+    const glob = extraction.globs[relative.findIndex(matches)];
     return (
       (glob === undefined ? undefined : specifierLine(source, glob)) ??
       callLine(source, "import.meta.glob")
@@ -223,11 +223,11 @@ function walks(
   from: string | undefined,
 ): Walk[] {
   const { plan, graph } = computed;
-  if (from !== undefined) return [{ seeds: [from], opaque: undefined, types }];
+  if (from !== undefined) return [{ seeds: [from], types }];
   const { quiet, layout } = plan;
   const narrowings = plan.narrowings.get(name);
   if (!narrowings) {
-    return [{ seeds: plan.seeds, quiet, layout, opaque: undefined, types }];
+    return [{ seeds: plan.seeds, quiet, layout, types }];
   }
   const matched = new Set(narrowings.flatMap((narrowing) => narrowing.matched));
   return [
@@ -235,7 +235,6 @@ function walks(
       seeds: plan.seeds.filter((seed) => !matched.has(seed)),
       quiet,
       layout,
-      opaque: undefined,
       types,
     },
     ...narrowings.map((narrowing) => ({
@@ -403,10 +402,14 @@ export async function explain(
         const alone = candidates.map((walk) => ({
           ...walk,
           seeds: walk.seeds.filter((candidate) => candidate === seed),
-          quiet: walk.quiet?.filter((candidate) => candidate === seed),
+          ...(walk.quiet && {
+            quiet: walk.quiet.filter((candidate) => candidate === seed),
+          }),
         }));
         const other = shortestChain(computed, alone, test);
-        return other && chainOf(context, other, undefined);
+        return other === undefined
+          ? Promise.resolve(undefined)
+          : chainOf(context, other, undefined);
       }),
     ),
   ]);
@@ -521,16 +524,17 @@ function header({ root, cause }: Chain) {
 
 function chained(test: string, chain: Chain): string[] {
   const unknownAt = chain.links.findIndex((link) => link.kind === "unknown");
-  if (unknownAt === -1) {
+  const unknownLink = chain.links[unknownAt];
+  if (unknownLink === undefined) {
     return [header(chain), ...steps(chain.links).map((step) => `  ${step}`)];
   }
-  const node = chain.links[unknownAt].node;
+  const node = unknownLink.node;
   const where = chain.unknown.map(({ at }) => at ?? node);
   const width = Math.max(0, ...where.map((at) => at.length));
   const lines = [`${test} runs on every change`];
-  for (const [i, { cause, fix }] of chain.unknown.entries()) {
+  for (const { at, cause, fix } of chain.unknown) {
     lines.push(
-      `  because ${where[i].padEnd(width)}  ${cause}`,
+      `  because ${(at ?? node).padEnd(width)}  ${cause}`,
       `    fix: ${fix}`,
     );
   }
@@ -551,7 +555,9 @@ function lineNumber(at: string | undefined) {
 
 function sourced(test: string, chain: Chain): string[] {
   const unknownAt = chain.links.findIndex((link) => link.kind === "unknown");
-  const hops = unknownAt === -1 ? chain.links : chain.links.slice(0, unknownAt);
+  const unknownLink = chain.links[unknownAt];
+  const hops =
+    unknownLink === undefined ? chain.links : chain.links.slice(0, unknownAt);
   const numbers = [...chain.links, ...chain.unknown].map(({ at }) =>
     lineNumber(at),
   );
@@ -565,12 +571,12 @@ function sourced(test: string, chain: Chain): string[] {
   };
   const count = plural(hops.length, "hop", "hops");
   const lines =
-    unknownAt === -1
+    unknownLink === undefined
       ? [
           `selected: ${test} ← ${chain.root} (${count}${chain.cause === "changed" ? "" : `, ${chain.cause}`})`,
         ]
       : [
-          `selected: ${test} ← every change (${unknownAt === 0 ? "its dependencies can't be read" : `${count} to ${chain.links[unknownAt].node}, whose dependencies can't be read`})`,
+          `selected: ${test} ← every change (${unknownAt === 0 ? "its dependencies can't be read" : `${count} to ${unknownLink.node}, whose dependencies can't be read`})`,
         ];
   lines.push("");
   for (const link of hops) {
@@ -579,11 +585,11 @@ function sourced(test: string, chain: Chain): string[] {
     const kind = configured ?? link.kind;
     lines.push(`${gutter}--> ${where}  ${kind}`, ...cited(link.at, link.text));
   }
-  if (unknownAt === -1) {
+  if (unknownLink === undefined) {
     lines.push(`${gutter}● ${chain.root}: ${chain.cause}`);
     return lines;
   }
-  const node = chain.links[unknownAt].node;
+  const node = unknownLink.node;
   for (const { cause, at, text, fix } of chain.unknown) {
     lines.push(
       `${gutter}✗ ${at ?? node}  ${cause}`,

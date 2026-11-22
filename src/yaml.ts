@@ -5,7 +5,7 @@
 // scalars, a flow collection over several lines) throws: the caller then
 // can't read the file, and fails closed.
 
-export type Yaml = string | Yaml[] | { [key: string]: Yaml };
+type Yaml = string | Yaml[] | { [key: string]: Yaml };
 
 interface Line {
   indent: number;
@@ -114,76 +114,69 @@ function keyOf(
   return { key: text.slice(0, colon), rest: text.slice(colon + 1) };
 }
 
-class Parser {
-  at = 0;
-  readonly lines: Line[];
-
-  constructor(lines: Line[]) {
-    this.lines = lines;
-  }
+/** One YAML document in the subset `pnpm-lock.yaml` uses. Throws otherwise. */
+export function parseYaml(text: string): Yaml {
+  const lines = linesOf(text);
+  let at = 0;
 
   // The block whose lines are indented exactly `indent`.
-  block(indent: number): Yaml {
-    const first = this.lines[this.at];
+  function block(indent: number): Yaml {
+    const first = lines[at];
     if (!first || first.indent !== indent) return "";
     return first.text === "-" || first.text.startsWith("- ")
-      ? this.sequence(indent)
-      : this.mapping(indent, {});
+      ? sequence(indent)
+      : mapping(indent, {});
   }
 
   // A value after a key or a `-`: inline, or the block indented under it.
   // An empty flow collection is an empty one; any other is its text.
-  value(rest: string, indent: number, line: Line): Yaml {
+  function value(rest: string, indent: number, line: Line): Yaml {
     const text = rest.trim();
     if (EMPTY_MAP.test(text)) return {};
     if (EMPTY_LIST.test(text)) return [];
     if (text !== "" && !text.startsWith("#")) return scalar(text, line);
-    const next = this.lines[this.at];
-    return next && next.indent > indent ? this.block(next.indent) : "";
+    const next = lines[at];
+    return next && next.indent > indent ? block(next.indent) : "";
   }
 
-  mapping(
+  function mapping(
     indent: number,
     into: { [key: string]: Yaml },
   ): { [key: string]: Yaml } {
-    for (let line = this.lines[this.at]; line; line = this.lines[this.at]) {
+    for (let line = lines[at]; line; line = lines[at]) {
       if (line.indent < indent) break;
       if (line.indent > indent) fail(line, "unexpected indentation");
       const entry = keyOf(line.text, line);
       if (!entry) fail(line, "a line that isn't a key");
       if (Object.hasOwn(into, entry.key)) fail(line, "a duplicate key");
-      this.at++;
-      into[entry.key] = this.value(entry.rest, indent, line);
+      at++;
+      into[entry.key] = value(entry.rest, indent, line);
     }
     return into;
   }
 
-  sequence(indent: number): Yaml[] {
+  function sequence(indent: number): Yaml[] {
     const items: Yaml[] = [];
-    for (let line = this.lines[this.at]; line; line = this.lines[this.at]) {
+    for (let line = lines[at]; line; line = lines[at]) {
       if (line.indent < indent) break;
       if (line.indent > indent) fail(line, "unexpected indentation");
       if (line.text !== "-" && !line.text.startsWith("- ")) break;
-      this.at++;
+      at++;
       const text = line.text.slice(1).trimStart();
       const inner = { ...line, indent: line.indent + 2, text };
       // `- key: value` opens a mapping whose other keys line up with it.
       if (text !== "" && keyOf(text, line)) {
-        this.lines.splice(this.at, 0, inner);
-        items.push(this.mapping(inner.indent, {}));
+        lines.splice(at, 0, inner);
+        items.push(mapping(inner.indent, {}));
       } else {
-        items.push(this.value(text, indent, line));
+        items.push(value(text, indent, line));
       }
     }
     return items;
   }
-}
 
-/** One YAML document in the subset `pnpm-lock.yaml` uses. Throws otherwise. */
-export function parseYaml(text: string): Yaml {
-  const parser = new Parser(linesOf(text));
-  const value = parser.block(0);
-  const left = parser.lines[parser.at];
+  const document = block(0);
+  const left = lines[at];
   if (left) fail(left, "unexpected indentation");
-  return value;
+  return document;
 }
