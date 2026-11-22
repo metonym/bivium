@@ -48,7 +48,7 @@ not only the commit under test.
 `actions/checkout` fetches one commit by default (`fetch-depth: 1`),
 with no base branch, and the plan stops with what's missing:
 
-```
+```text
 bivium: origin/main and HEAD share no commit here, so there's no merge base to diff against. The clone is shallow: fetch the history (actions/checkout: `fetch-depth: 0`).
 ```
 
@@ -57,10 +57,9 @@ Only a job that plans needs it; one that runs every test anyway,
 such as a push to the default branch, can keep the default:
 `fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}`.
 
-The history git fetches is three kinds of object:
-commits, trees
-(each directory's file names, each with the ID of its content)
-and blobs (the contents).
+The history git fetches is three kinds of object: commits;
+trees, each directory's file names with the ID of each one's content;
+and blobs, the contents.
 A plan needs the commits, to find the merge base, and the trees,
 to list what changed.
 Of the blobs it needs the working tree's, which the checkout has,

@@ -1,7 +1,7 @@
 {
   "name": "bivium",
   "version": "0.6.0",
-  "description": "Run only the tests a change can affect, and never miss one.",
+  "description": "The tests a change reaches, from a file-level dependency graph.",
   "license": "MIT",
   "author": "Eric Liu (https://github.com/metonym)",
   "repository": {

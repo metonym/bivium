@@ -38,9 +38,9 @@ or a `package.json` under `roots`: their options, `paths`,
 which no import says.
 A change to one seeds the files it governs,
 those it's the nearest of its kind to.
-A change the parsed file doesn't show (formatting, comments),
-or to a `package.json`'s metadata alone
-(`version`, `description`, `repository` and the like), seeds nothing,
+A change the parsed file doesn't show, such as formatting or comments,
+seeds nothing; so does one to a `package.json`'s metadata alone
+(`version`, `description`, `repository` and the like),
 and a dependency change is the lockfile's.
 
 A file it can't lex cleanly is read by a regex extractor instead,
@@ -51,8 +51,8 @@ CSS isn't scanned: generated stylesheets reach their inputs through
 ## Lockfiles
 
 A dependency bump changes a lockfile, which no file imports.
-When a root `bun.lock`, `package-lock.json` (v2 or v3)
-or `pnpm-lock.yaml` (v6 or v9) changes,
+When a root `bun.lock`, `package-lock.json` (v2 or v3),
+or `pnpm-lock.yaml` v6 or v9 changes,
 bivium diffs it against the merge base and seeds the walk with the
 `pkg:` nodes of the packages whose entries changed,
 and of every package that depends on one,
@@ -67,9 +67,9 @@ So when a change reaches a package that a `package.json` declares,
 or that some file imports, and that no test imports, everything runs,
 with the reason
 (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`),
-unless the package is `inert`
-(bivium itself always is: a bump changes which tests later plans pick,
-not what a test does).
+unless the package is `inert`.
+bivium itself always is: a bump changes which tests later plans pick,
+not what a test does.
 With `loadedByName` set, only a package with a `bin` in the lockfile,
 or one it lists, counts as used that way:
 a bump that reaches a library only a CMS config imports selects nothing.
@@ -88,7 +88,19 @@ unit tests: 4 of 12 files
 …
 ```
 
+## Compared with
+
+Where bivium sits among the tools that select or skip tests:
+
+| | Selects | Misses |
+|:---|:---|:---|
+| `vitest --changed`, `jest --changedSince` | Tests whose module graph reaches a changed file, from the runner's own resolver | Disk reads, fixtures, pages a test visits, config and setup wiring |
+| Playwright `--only-changed` | Test files whose imports changed | The pages a test opens and what they load |
+| Nx, Turborepo | Whole projects whose inputs changed | Nothing within a project's declared inputs, at project granularity |
+| Bazel | Targets whose declared inputs changed | Nothing, if every input is declared |
+| bivium | Test files, across runners and file types, from one graph | Nothing it can see; what it can't, it runs |
+
 ## Related
 
 - [Tuning a plan](tuning.md): the orphan rule and `check`
-- [Compared with](compared.md): other ways to select tests
+- [Config](config.md): telling it what it can't see

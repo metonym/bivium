@@ -52,11 +52,15 @@ A narrower can only narrow: its suites' selection is cut to what the
 walk without it selects.
 One that returns `{ all: reason }`, throws,
 or returns anything else runs its suites in full with the reason.
-`narrow()` gets the repository `root`,
-the merge base and the working tree as `base`
-and `head` (each with `commit` and `read(path)`),
-the matched `changed` files, and a read-only `graph`
-(`nodes()`, `importers(node)`, `dependents(nodes)`, `tests(suite)`).
+`narrow()` gets:
+
+- `root`, the repository;
+- `base` and `head`, the merge base and the working tree,
+  each with `commit` and `read(path)`;
+- `changed`, the matched files;
+- `graph`, read-only: `nodes()`, `importers(node)`,
+  `dependents(nodes)` and `tests(suite)`.
+
 carbon-components-svelte runs one over crassus.
 
 ## Related

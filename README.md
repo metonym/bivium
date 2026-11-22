@@ -1,11 +1,10 @@
 # bivium
 
-> Run only the tests a change can affect, and never miss one.
+> The tests a change reaches, from a file-level dependency graph.
 
-bivium walks a file-level dependency graph backwards from the files a
-change touches to the tests that reach them,
-across runners and file types: imports, mocks, pages a test opens,
-globs, and lockfile bumps.
+bivium walks the graph backwards from the files a change touches to the
+tests that reach them, across runners and file types: imports, mocks,
+pages a test opens, globs, and lockfile bumps.
 It fails closed: what it can't read counts as depending on everything,
 and a change it can't place runs the whole suite, with the reason.
 It has no dependencies, reads the git index instead of `node_modules`,
@@ -118,6 +117,5 @@ result.suites.unit; // { mode: "some", files: [...] }; result.suites.e2e is a ty
 - [API](https://github.com/metonym/bivium/blob/master/docs/api.md):
   `plan()`, and narrowers for generated files
 - [How it works](https://github.com/metonym/bivium/blob/master/docs/how-it-works.md):
-  what the graph follows, and lockfiles
-- [Compared with](https://github.com/metonym/bivium/blob/master/docs/compared.md):
-  `vitest --changed`, Playwright, Nx, Bazel
+  what the graph follows, lockfiles, and how bivium compares with
+  `vitest --changed`, Playwright, Nx and Bazel

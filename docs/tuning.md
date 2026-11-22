@@ -42,9 +42,9 @@ but a test that hands a path to the code under test
 or a `hermetic` one that reads it, reads nothing the graph can see.
 So `check` also reads the string literals in each test,
 and in what the tests reach under a suite's `root`,
-for repository paths: relative to the root when they have a slash
-(`join(root, "tests/fixtures")`), and relative to the file
-(`new URL("fixtures", import.meta.url)`).
+for repository paths: relative to the root when they have a slash,
+as `join(root, "tests/fixtures")` spells one, and relative to the file,
+as `new URL("fixtures", import.meta.url)` does.
 It fails on one a change to which wouldn't select the tests that reach
 the file, with the `reads`, `edges` or annotation that declares it.
 A path whose change runs the suite anyway, as `wiring`,

@@ -34,12 +34,13 @@ so a pipeline that parses stdout gets an object either way:
 { "schemaVersion": 1, "error": { "kind": "git", "code": "BV_GIT_NO_BASE", "message": "bivium: no commit nosuchref here to diff against: fetch it." } }
 ```
 
-`kind` is `usage` (bivium was called wrong),
-`config`
-(the config can't be read or is invalid; the message names the file and
-lists every unknown key at once), `git`
-(the base or its history is missing, or git refused, in its own words)
-or `other`.
+| `kind` | Means |
+| --- | --- |
+| `usage` | bivium was called wrong |
+| `config` | the config can't be read or is invalid; the message names the file and lists every unknown key at once |
+| `git` | the base or its history is missing, or git refused, in its own words |
+| `other` | a failure bivium didn't name |
+
 `code` names the failure, such as `BV_UNKNOWN_OPTION`
 or `BV_CONFIG_INVALID`, and never changes meaning:
 the `BiviumErrorCode` type lists them all, each with what it means.
@@ -52,8 +53,8 @@ and `kind`.
   `causes` (typed) for each full run, `totals` for the scale, `changed`,
   `base` and `mergeBase`.
 - `bivium why <test> --format json` gives the chain from a change to a
-  test, each link's `kind` (`import`, `type`, `goto`, `edges`…)
-  and `at` (`file:line`).
+  test, with each link's `kind`, such as `import` or `goto`, and `at`,
+  as `file:line`.
 - `bivium check --json` gives `ok` and a `summary` of what widens plans,
   then each node with a `fix`.
 - Read the exit status first: 0 done, 1 `check` found problems,
@@ -62,16 +63,18 @@ and `kind`.
 ## Reading `why`
 
 `why` names each edge by what spells it:
-`import`, `type`
-(an `import type`, `export type … from`, JSDoc type, or an edge to or
-from a declaration file), `setup` (a suite's setup file),
-`goto` (a page `page.goto()` opens),
-`html`
-(a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]`
-or an inline script's import), `name`
-(a named import bound to a barrel name)
-and `export` (the file that exports it), `glob` (`import.meta.glob`),
-`depends-on`, `edges` (the config's), `reads` and `lists`.
+
+| Edge | Spelled by |
+| --- | --- |
+| `import` | any other import: static, dynamic, `require()` or `vi.mock()` |
+| `type` | an `import type`, `export type … from`, a JSDoc type, or an edge to or from a declaration file |
+| `setup` | a suite's setup file |
+| `goto` | a page `page.goto()` opens |
+| `html` | a module an HTML page loads: `script[src]`, `link[href]`, `iframe[src]` or an inline script's import |
+| `name`, `export` | a named import bound to a barrel name, and the file that exports it |
+| `glob` | `import.meta.glob` |
+| `depends-on`, `reads`, `lists` | the annotations |
+| `edges` | the config's `edges` |
 
 ```console
 $ bunx bivium why e2e/accordion.test.ts
