@@ -114,7 +114,7 @@ function keyOf(
   return { key: text.slice(0, colon), rest: text.slice(colon + 1) };
 }
 
-/** One YAML document in the subset `pnpm-lock.yaml` uses. Throws otherwise. */
+// Only the subset pnpm-lock.yaml uses; anything else throws.
 export function parseYaml(text: string): Yaml {
   const lines = linesOf(text);
   let at = 0;

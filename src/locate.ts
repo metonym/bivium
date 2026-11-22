@@ -111,7 +111,7 @@ function bestLine(
   return found === undefined ? undefined : lineAt(source, found);
 }
 
-/** The line that spells `specifier` as a string, quoted any way. */
+// Quoted any way.
 export function specifierLine(
   source: string,
   specifier: string,
@@ -120,10 +120,7 @@ export function specifierLine(
   return bestLine(source, quoted, LOADS) ?? bestLine(source, [specifier]);
 }
 
-/**
- * The line of a `goto()` that opens a page: by its argument as written,
- * else by the page's file name.
- */
+// By the goto()'s argument as written, else by the page's file name.
 export function gotoLine(
   source: string,
   argument: string | undefined,
@@ -137,12 +134,11 @@ export function gotoLine(
   );
 }
 
-/** The line of a call such as `import.meta.glob`, in code if it can be. */
+// In code if it can be.
 export function callLine(source: string, call: string): number | undefined {
   return bestLine(source, [call]);
 }
 
-/** The line behind one of a file's unknown causes. */
 function causeLine(source: string, cause: string): number | undefined {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED_CAUSE.exec(cause)?.[1];
@@ -163,7 +159,6 @@ function causeLine(source: string, cause: string): number | undefined {
   return url === undefined ? undefined : lineOf(source, url);
 }
 
-/** The line of an annotation or call, such as `@depends-on`. */
 export function textLine(source: string, text: string): number | undefined {
   return lineOf(source, text);
 }
@@ -179,7 +174,7 @@ export function annotationLine(
   return index === -1 ? undefined : index + 1;
 }
 
-/** The text of line `line` (1-based), trimmed. */
+// line is 1-based; the text comes back trimmed.
 export function lineText(source: string, line: number): string {
   let start = 0;
   for (let n = 1; n < line; n++) {
@@ -203,13 +198,12 @@ export async function sourceOf(
   }
 }
 
-/** The file a node is in: a barrel name's barrel, or the node itself. */
+// A barrel name's file is its barrel.
 export function fileOf(node: string): string {
   const hash = node.indexOf("#");
   return hash === -1 ? node : node.slice(0, hash);
 }
 
-/** Why a node depends on every change, and where each cause is spelled. */
 export async function causesOf(
   root: string,
   computed: Computed,

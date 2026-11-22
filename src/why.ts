@@ -358,11 +358,9 @@ function unselected(
   };
 }
 
-/**
- * Why `test` is selected: the shortest chain of edges from it to a changed
- * file (or to `from`), with where each edge is spelled, and the other
- * changes that reach it (with `all`, their chains too).
- */
+// Why `test` is selected: the shortest chain of edges from it to a changed
+// file (or to `from`), with where each edge is spelled, and the other
+// changes that reach it (with `all`, their chains too).
 export async function explain(
   root: string,
   config: ResolvedConfig,
@@ -647,7 +645,6 @@ function unselectedMessage(
   ].join("\n");
 }
 
-/** `why`'s output, in one of its formats. */
 export function formatExplanation(
   explanation: Explanation,
   format: Format = "tree",

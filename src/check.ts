@@ -92,7 +92,6 @@ const TAGS: Record<GlobKind, string> = {
 
 const QUOTED = /"([^"]+)"/;
 
-/** How to make one of `check`'s unknown causes known. */
 export function fixFor(cause: string): string {
   if (cause.startsWith("unresolved ")) {
     const specifier = QUOTED.exec(cause)?.[1] ?? "";
@@ -532,7 +531,7 @@ function widening(report: Report): Unknown[] {
   return report.unknown.filter((node) => node.tests.length > 0);
 }
 
-/** Whether `check` fails: past `--max-unknown`, or on a list it keeps. */
+// Whether `check` fails: past `--max-unknown`, or on a list it keeps.
 export function failed(report: Report, max: number | undefined): boolean {
   return (
     (max !== undefined && widening(report).length > max) ||
@@ -597,7 +596,7 @@ function counted(counts: Record<string, number>): string[] {
   return Object.entries(counts).map(([what, count]) => `${count} ${what}`);
 }
 
-/** The counts `check` leads with, which `--json` prints as `summary`. */
+// The counts `check` leads with, which `--json` prints as `summary`.
 interface Summary {
   // Nodes with unknown dependencies that some test reaches, the tests they
   // make run on any change, and how many nodes each cause accounts for.

@@ -418,11 +418,9 @@ function parseManifest(text: string | undefined) {
   }
 }
 
-/**
- * Diffs the changed root lockfiles and `package.json` dependency fields
- * between the merge base (`base`) and the working tree (`head`), or
- * returns `undefined` when no such file changed.
- */
+// Diffs the changed root lockfiles and `package.json` dependency fields
+// between the merge base (`base`) and the working tree (`head`), or
+// returns `undefined` when no such file changed.
 export async function readPackageDiff(
   changed: readonly string[],
   listed: readonly string[],
@@ -543,14 +541,12 @@ interface PackageSeeds {
   reasons: { package: string; file: string; message: string }[];
 }
 
-/**
- * The `pkg:` nodes the changes of `files` seed. A changed package seeds
- * itself and every package that depends on it, transitively, that some
- * file imports. Each package it reaches that a workspace declares, that
- * nothing depends on, or that some file imports, must reach a test by an
- * import or be `inert`: otherwise a test may use it some way the graph
- * can't see (a CLI, a runner, types), and the change runs everything.
- */
+// The `pkg:` nodes the changes of `files` seed. A changed package seeds
+// itself and every package that depends on it, transitively, that some
+// file imports. Each package it reaches that a workspace declares, that
+// nothing depends on, or that some file imports, must reach a test by an
+// import or be `inert`: otherwise a test may use it some way the graph
+// can't see (a CLI, a runner, types), and the change runs everything.
 export function packageSeeds(
   graph: Graph,
   config: ResolvedConfig,

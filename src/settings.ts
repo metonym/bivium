@@ -29,7 +29,6 @@ const METADATA = new Set([
 const MANIFEST = /(?:^|\/)package\.json$/;
 const TSCONFIG = /(?:^|\/)tsconfig\.json$/;
 
-/** What a changed setting file can affect, and a line saying so. */
 export interface SettingChange {
   // The files it governs, which seed the walk: empty when nothing that
   // changed can change how a file resolves or runs.
@@ -87,16 +86,14 @@ function changedKeys(before: unknown, after: unknown): string[] | undefined {
   );
 }
 
-/**
- * The changed `tsconfig.json` files (and files one extends) and
- * `package.json` files whose change can reach files no import names: a
- * config's options and `paths`, or a package's `type` or `exports`, change
- * what the files under it import or how they compile. Each seeds the files
- * it governs, those it's the nearest of its kind to. A change the parsed
- * file doesn't show, or to `package.json` metadata alone, seeds nothing. A
- * `package.json` whose dependency change the package diff accounts for is
- * left to it.
- */
+// The changed `tsconfig.json` files (and files one extends) and
+// `package.json` files whose change can reach files no import names: a
+// config's options and `paths`, or a package's `type` or `exports`, change
+// what the files under it import or how they compile. Each seeds the files
+// it governs, those it's the nearest of its kind to. A change the parsed
+// file doesn't show, or to `package.json` metadata alone, seeds nothing. A
+// `package.json` whose dependency change the package diff accounts for is
+// left to it.
 export async function settingChanges({
   changed,
   files,

@@ -128,7 +128,7 @@ function withNames(graph: Computed["graph"], targets: string[]): string[] {
   ]);
 }
 
-export interface Spelled {
+interface Spelled {
   // A change there selects nothing through the file: `check` fails.
   undeclared: SpelledPath[];
   // A change there runs the file's suite by the orphan rule: in full, but
@@ -136,7 +136,7 @@ export interface Spelled {
   orphaned: SpelledPath[];
 }
 
-/** The paths files spell that no edge from them declares. */
+// The paths files spell that no edge from them declares.
 export async function spelledPaths(
   root: string,
   config: ResolvedConfig,

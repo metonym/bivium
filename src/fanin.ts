@@ -153,10 +153,6 @@ function buckets(total: number): [number, number][] {
   return list;
 }
 
-/**
- * `bivium graph`'s text: per suite, the files that reach the most tests,
- * and how files spread.
- */
 export function formatGraph(report: GraphReport, top: number): string {
   const lines: string[] = [];
   const files = report.nodes.filter(

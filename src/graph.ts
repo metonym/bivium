@@ -569,7 +569,6 @@ function runtimeDependents(
   return runtime;
 }
 
-/** Whether a walk from `changed` reaches a node `match` accepts. */
 export function reaches(
   graph: Graph,
   changed: Iterable<string>,
