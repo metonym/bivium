@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+
 import { version } from "../package.json" with { type: "json" };
 import type { Barrel } from "./barrel.ts";
 import type { Extraction, Format } from "./scan.ts";
@@ -19,7 +20,7 @@ import type { ImportRef } from "./syntax.ts";
 // Bump on any change to what `extract` returns for some input (lexer,
 // host formats, regex fallback, barrel parsing). `tests/cache.test.ts` fails
 // until it's bumped.
-export const SCANNER_VERSION = 6;
+export const SCANNER_VERSION = 7;
 const MAGIC = "bivium-extractions";
 const FILE = "extractions.json";
 

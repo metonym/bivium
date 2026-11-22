@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+
 import { isRecord } from "./resolve.ts";
 import { plural } from "./text.ts";
 import { parseJsonc } from "./tsconfig.ts";

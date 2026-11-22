@@ -1,13 +1,14 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
+
 import { cacheDir, ExtractionCache } from "./cache.ts";
 import {
   checkConfig,
   loadConfig,
-  type ResolvedConfig,
   resolveConfig,
+  type ResolvedConfig,
 } from "./config.ts";
-import { defaultBase, type Revision, readRevision } from "./git.ts";
+import { defaultBase, readRevision, type Revision } from "./git.ts";
 import {
   affectedBy,
   baseBarrelNames,
@@ -19,7 +20,7 @@ import {
 import { type PackageDiff, readPackageDiff } from "./lockfile.ts";
 import { classify, type Narrowed, type Plan, planTests } from "./plan.ts";
 import { type PackageJson, type Packages, toPackageJson } from "./resolve.ts";
-import { type Extraction, extract, formatOf, SCANNED } from "./scan.ts";
+import { extract, type Extraction, formatOf, SCANNED } from "./scan.ts";
 import { type SettingChange, settingChanges } from "./settings.ts";
 import { readTsconfigs, type TsConfigs } from "./tsconfig.ts";
 import type { Config, GraphView, PlanOptions, PlanResult } from "./types.ts";

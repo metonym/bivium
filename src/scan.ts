@@ -1,12 +1,13 @@
 import { posix } from "node:path";
+
 import { type Barrel, parseReExports } from "./barrel.ts";
 import { type Host, hostOf, lexHost } from "./host.ts";
 import {
   createLexed,
   dialectOf,
   JS,
-  LexError,
   type Lexed,
+  LexError,
   lexRange,
   openFile,
   TS,

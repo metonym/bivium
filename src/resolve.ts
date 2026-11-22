@@ -1,5 +1,6 @@
 import { builtinModules } from "node:module";
 import { posix } from "node:path";
+
 import type { ResolvedConfig } from "./config.ts";
 import { QUERY, RELATIVE } from "./syntax.ts";
 import type { TsConfigs, TsPaths } from "./tsconfig.ts";

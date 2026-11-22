@@ -1,7 +1,7 @@
 import {
   type Dialect,
-  LexError,
   type Lexed,
+  LexError,
   lexExpression,
   lexRange,
   TS,

@@ -8,8 +8,8 @@ import {
   type Packages,
 } from "./resolve.ts";
 import {
-  type Extraction,
   extract,
+  type Extraction,
   finish,
   formatOf,
   gotoUrl,

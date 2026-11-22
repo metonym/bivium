@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+
 import {
   DEPENDS_ON,
   GLOB_REGISTRY,

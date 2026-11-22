@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+
 import type { Computed } from "./compute.ts";
 import { inRoot, type ResolvedConfig, type ResolvedSuite } from "./config.ts";
 import { fanIn } from "./fanin.ts";
