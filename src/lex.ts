@@ -134,30 +134,25 @@ const CALL_PROPERTY = 1; // `x.require()`: a literal counts, nothing else
 const CALL_MOCK = 2; // `vi.mock()`: unknown if not literal, never a disk read
 const CALL_ACTUAL = 3; // `vi.importActual()`: may read the disk
 
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
+/* eslint-disable no-restricted-syntax -- the cursor over the one file being
+   lexed, kept in module variables on the hot path; openFile resets it */
 let src = "";
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let end = 0;
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let out: Lexed = createLexed();
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let dialect: Dialect = TS;
 // Next `@` / `import` at or after the last comment that looked; both only
 // move forward, so finding them is linear in the file.
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let nextAt = -1;
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let nextImport = -1;
 const LS = String.fromCharCode(0x2028);
 const PS = String.fromCharCode(0x2029);
 // Only a file with `\r`, U+2028 or U+2029 needs `lineEnd`'s slow scan;
 // any other takes `indexOf("\n")`.
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
 let oddLines = false;
-// Set by `template()`: it stopped at `${` rather than the closing
-// backtick.
-// eslint-disable-next-line no-restricted-syntax -- the cursor over the one file being lexed; openFile resets it
+// Set by `template()`, so its caller knows it stopped at `${` rather than
+// the closing backtick.
 let templateOpen = false;
+/* eslint-enable no-restricted-syntax */
 
 function fail(message: string, at: number): never {
   throw new LexError(`${message} at ${at}`);
