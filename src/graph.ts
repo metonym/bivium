@@ -309,8 +309,8 @@ export function graphFrom(
         }
         if (url === undefined || url === "about:blank") continue;
         const mapped = mapUrl(suite, url.replace(QUERY, ""));
-        // The page must exist; what else it loads (layouts) counts when it
-        // does.
+        // The page must exist; what else it loads (layouts) counts when
+        // it does.
         if (mapped === undefined) deps.unknown.push(`goto("${url}")`);
         else if (exists.has(mapped[0] ?? "")) {
           addPages(

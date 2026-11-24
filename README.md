@@ -33,7 +33,8 @@ e2e/accordion.test.ts
 ```
 
 It has no dependencies and runs on Node ≥ 22 or Bun.
-It started as the `test:changed` script in
+It started as the `test:changed` script
+in
 [carbon-components-svelte](https://github.com/carbon-design-system/carbon-components-svelte).
 
 ## Quick start
@@ -108,9 +109,8 @@ result.suites.unit; // { mode: "some", files: [...] }; result.suites.e2e is a ty
   Vitest, Jest, Playwright, pnpm workspaces, generated code
 - [CLI](https://github.com/metonym/bivium/blob/master/docs/cli.md):
   every command and option, the JSON, and reading `why`
-- [CI](https://github.com/metonym/bivium/blob/master/docs/ci.md):
-  GitHub Actions, the checkout a plan needs, the cache,
-  and what a plan costs
+- [CI](https://github.com/metonym/bivium/blob/master/docs/ci.md): GitHub
+  Actions, the checkout a plan needs, the cache, and what a plan costs
 - [API](https://github.com/metonym/bivium/blob/master/docs/api.md):
   `plan()`, and narrowers for generated files
 - [How it works](https://github.com/metonym/bivium/blob/master/docs/how-it-works.md):

@@ -120,8 +120,8 @@ when no key matches exactly.
 The cache lives in `node_modules/.cache/bivium`
 when `node_modules` exists, and in `.bivium/cache` otherwise.
 The plan job runs before any install, so its cache is `.bivium/cache`.
-bivium writes a `.gitignore` there, so the cache never shows up as a
-change.
+bivium writes a `.gitignore` there, so the cache never shows up as
+a change.
 
 ## What a plan costs
 
@@ -146,5 +146,5 @@ and 124 MB on Node.
 - [CLI](cli.md): `plan --github` and the other commands
 - [Config](config.md): a suite's `output`, and `cache`
 - [How it works](how-it-works.md): what a plan reads
-- [Not supported](how-it-works.md#not-supported):
-  what bivium leaves to other tools
+- [Not supported](how-it-works.md#not-supported): what bivium leaves to
+  other tools

@@ -23,8 +23,8 @@ import {
 const COMMENTS = /\/\/.*$|\/\*[\s\S]*?\*\//gm;
 const QUOTED = /["']([^"']+)["']/g;
 
-// `>` starts a statement too, so a one-line `<script>import …</script>`
-// matches.
+// `>` starts a statement too, so a one-line
+// `<script>import …</script>` matches.
 const STATIC_IMPORT =
   /(?:^|[\n;>])\s*(?:import|export)\s+(?:type\s+)?([^;"'`]*?)\s*from\s*["']([^"'\n]+)["']/g;
 const SIDE_EFFECT_IMPORT = /(?:^|[\n;>])\s*import\s*["']([^"'\n]+)["']/g;

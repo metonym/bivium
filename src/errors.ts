@@ -63,8 +63,8 @@ const KINDS: Record<BiviumErrorCode, BiviumErrorKind> = {
 };
 
 /**
- * An error bivium names: its `code` says which failure, its `kind` what to
- * do.
+ * An error bivium names: its `code` says which failure, its `kind` what
+ * to do.
  */
 export class BiviumError extends Error {
   readonly code: BiviumErrorCode;

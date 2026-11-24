@@ -137,8 +137,8 @@ export async function readTsconfigs(
     return parsed.get(`${path}.json`);
   };
   // The options `file` ends up with, each from the nearest file that sets
-  // it; `undefined` when a file in the chain doesn't parse, or extends
-  // itself.
+  // it; `undefined` when a file in the chain doesn't parse, or
+  // extends itself.
   const effective = (file: string, seen: Set<string>): Read | undefined => {
     const at = found(file);
     if (at === undefined) return { extends: [] };

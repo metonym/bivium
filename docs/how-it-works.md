@@ -118,8 +118,8 @@ A changed package can also be used in ways the graph can't see:
 a CLI a test spawns, a runner, a type package.
 So when a change reaches a package that a `package.json` declares
 or some file imports, and no test imports it, everything runs.
-The plan names the reason
-(`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`).
+The plan names the
+reason (`bun.lock: playwright 1.63.0 → 1.64.0, and no test imports it`).
 A package in `inert` is the exception:
 `inert` lists packages no test uses except by importing them,
 such as linters and formatters.

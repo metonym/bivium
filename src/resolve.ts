@@ -8,8 +8,8 @@ import type { TsConfigs, TsPaths } from "./tsconfig.ts";
 export interface PackageJson {
   name?: string;
   exports?: unknown;
-  // Subpath imports: `#name` or `#pattern/*` → targets, as `exports` spells
-  // them.
+  // Subpath imports: `#name` or `#pattern/*` → targets, as `exports`
+  // spells them.
   imports?: Record<string, unknown>;
   main?: string;
   sideEffects?: boolean | string[];

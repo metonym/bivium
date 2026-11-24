@@ -31,8 +31,8 @@ export interface SuiteConfig {
    */
   pages?: Globs;
   /**
-   * Files whose change runs the whole suite: a second harness, a runner
-   * config.
+   * Files whose change runs the whole suite: a second harness, a
+   * runner config.
    */
   wiring?: Globs;
   /**
@@ -57,8 +57,8 @@ export interface SuiteConfig {
    */
   types?: boolean;
   /**
-   * The step output `bivium plan --github` writes the selection to. Default:
-   * `<name>-tests`.
+   * The step output `bivium plan --github` writes the selection
+   * to. Default: `<name>-tests`.
    */
   output?: string;
 }
@@ -70,8 +70,8 @@ export interface Config<Suite extends string = string> {
   narrowers?: readonly Narrower<NoInfer<Suite>>[];
   /**
    * Paths (directories or files, not globs) the graph reads. A changed file
-   * outside them that isn't ignored runs everything. Default: the whole
-   * repository.
+   * outside them that isn't ignored runs everything. Default: the
+   * whole repository.
    */
   roots?: string | readonly string[];
   /**
@@ -124,8 +124,8 @@ export interface Config<Suite extends string = string> {
   barrels?: Globs;
   /**
    * Packages to treat as external though no `package.json` declares them:
-   * ones a dependency installs. Any other undeclared bare specifier is
-   * unknown.
+   * ones a dependency installs. Any other undeclared bare specifier
+   * is unknown.
    */
   external?: readonly string[];
   /**
@@ -243,8 +243,8 @@ export interface PlanResult<Suite extends string = string> {
   packages: string[];
   base: string;
   /**
-   * The merge base of `base` and `HEAD`, which the working tree is compared
-   * with.
+   * The merge base of `base` and `HEAD`, which the working tree is
+   * compared with.
    */
   mergeBase: string;
   /** The files changed since the merge base, untracked ones included. */

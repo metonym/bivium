@@ -158,8 +158,8 @@ export function classify(
 
 // What a suite's narrowers select: the walk from the matched files stops
 // at their opaque nodes, which their seeds stand in for, and the other
-// seeds walk as usual. Cut to the coarse walk, so a narrower can only
-// narrow.
+// seeds walk as usual. Cut to the coarse walk, so a narrower can
+// only narrow.
 function narrowedWalk(
   graph: Graph,
   seeds: string[],
@@ -227,8 +227,8 @@ export function orphanOf(
   return { typed };
 }
 
-// `graph` must be the head revision's: a changed file it lacks counts as
-// deleted.
+// `graph` must be the head revision's: a changed file it lacks counts
+// as deleted.
 export function planTests(
   graph: Graph,
   changed: string[],

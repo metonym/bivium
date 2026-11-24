@@ -55,8 +55,8 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 // A string, or a comma before a closing bracket, which JSON doesn't allow.
 const STRING_OR_TRAILING_COMMA = /"(?:[^"\\]|\\.)*"|,(\s*[}\]])/g;
 
-// compat: Bun writes `bun.lock` with trailing commas, which `JSON.parse`
-// rejects.
+// compat: Bun writes `bun.lock` with trailing commas, which
+// `JSON.parse` rejects.
 function parseLenient(text: string): unknown {
   return JSON.parse(
     text.replace(

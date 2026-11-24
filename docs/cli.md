@@ -217,8 +217,8 @@ A path can be repo-relative, relative to the current directory
 (`./tests/a.test.ts`), or absolute.
 
 An unknown command, option, suite, test, or `--format` is an error.
-The message names what's close, when something is:
-`unknown option --jsno (did you mean --json?)`.
+The message names what's close, when something
+is: `unknown option --jsno (did you mean --json?)`.
 
 ## Exit status
 
@@ -267,8 +267,8 @@ Each command has a JSON form that answers one question:
 - `bivium plan --json` gives the selection per suite and why:
   `causes` (typed) for each full run, `totals` for the scale,
   and `changed`, `base`, and `mergeBase`.
-- `bivium why <test> --format json` gives the chain from a change to a
-  test.
+- `bivium why <test> --format json` gives the chain from a change to
+  a test.
   Each link has a `kind`, such as `import` or `goto`, and an `at`,
   as `file:line`.
 - `bivium check --json` gives `ok` and a `summary` of what widens plans,
@@ -357,5 +357,5 @@ tests/e2e.test.ts runs on every change
 - [CI](ci.md): planning in GitHub Actions
 - [Tuning a plan](tuning.md): fixing what `check` reports
 - [API](api.md): the same plan from code
-- [Not supported](how-it-works.md#not-supported):
-  what bivium leaves to other tools
+- [Not supported](how-it-works.md#not-supported): what bivium leaves to
+  other tools

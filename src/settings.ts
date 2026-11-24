@@ -125,8 +125,8 @@ export async function settingChanges({
     );
     const counted = keys?.filter((key) => !(manifest && METADATA.has(key)));
     // A `tsconfig.json` claims its directory, as a `package.json` does,
-    // even one only the merge base has: `tsconfigs` lists the working
-    // tree's.
+    // even one only the merge base has: `tsconfigs` lists the
+    // working tree's.
     const own = posix.dirname(file);
     const dirs = manifest
       ? [own]

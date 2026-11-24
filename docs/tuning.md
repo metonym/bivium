@@ -130,14 +130,14 @@ takes `// @lists <path>`.
 ## Dead globs
 
 A dead glob is a pattern that looks fine and never selects its file,
-such as a typo'd `@depends-on`, or one that points only at files bivium
-skips.
+such as a typo'd `@depends-on`, or one that points only at files
+bivium skips.
 `check` looks for them.
 It tests these patterns against every file git lists,
 tracked or untracked, inside the roots or not:
 
-- every `@depends-on`, `@reads`, `@lists` and `import.meta.glob`
-  pattern;
+- every `@depends-on`, `@reads`, `@lists`
+  and `import.meta.glob` pattern;
 - every `edges` and `reads` value;
 - every suite's `setup`.
 
@@ -190,5 +190,5 @@ deadGlobs: [
 - [Config](config.md): every key named here
 - [CLI](cli.md): `check`, `why` and `graph`
 - [Recipes](recipes.md): settings for common runners
-- [Not supported](how-it-works.md#not-supported):
-  what bivium leaves to other tools
+- [Not supported](how-it-works.md#not-supported): what bivium leaves to
+  other tools

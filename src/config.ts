@@ -458,8 +458,8 @@ function checkNarrower(value: unknown, at: string): Narrower {
   };
 }
 
-// A reason is required: an entry without one is a dead glob nobody looked
-// at.
+// A reason is required: an entry without one is a dead glob nobody
+// looked at.
 function checkDeadGlob(value: unknown, at: string): DeadGlobEntry {
   if (!isRecord(value)) {
     throw new Error(`bivium config: ${at} must be an object`);

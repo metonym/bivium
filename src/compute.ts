@@ -478,8 +478,8 @@ export function plan<Suite extends string>(
 ): Promise<PlanResult<Suite>>;
 export function plan(options?: PlanOptions): Promise<PlanResult>;
 /**
- * Picks the tests of each suite that the changes against `base` can
- * affect.
+ * Picks the tests of each suite that the changes against `base`
+ * can affect.
  */
 export async function plan(options: PlanOptions = {}): Promise<PlanResult> {
   const { root, base, config } = await prepare(options);

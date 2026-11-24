@@ -50,15 +50,15 @@ function isHeader(value: unknown): value is Header {
   );
 }
 // `[key, imports, globs, gotos, dependsOn, reads, unknown, fallback,
-// barrel, types, lists]`, where `types` lists the indexes of the type-only
-// imports.
+// barrel, types, lists]`, where `types` lists the indexes of the
+// type-only imports.
 type Row = unknown[];
 
 type CacheOption = boolean | string | undefined;
 
 // Where the cache lives: `cache` when it's a path (relative to `root`),
-// else `node_modules/.cache/bivium`, else `.bivium/cache`. `false`:
-// nowhere.
+// else `node_modules/.cache/bivium`, else `.bivium/cache`.
+// `false`: nowhere.
 export function cacheDir(root: string, cache: CacheOption): string | undefined {
   if (cache === false) return undefined;
   if (typeof cache === "string") {

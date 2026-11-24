@@ -9,8 +9,8 @@ import {
   READS,
 } from "./syntax.ts";
 
-// One-pass JavaScript/TypeScript lexer that reads only what the graph
-// needs.
+// One-pass JavaScript/TypeScript lexer that reads only what the
+// graph needs.
 //
 // It tracks code, `//` and `/* *\/` comments, `'`/`"` strings, template
 // literals (with a stack for `${`), regular expressions, and JSX in
@@ -21,8 +21,8 @@ import {
 //
 // Anything that leaves the lexer in an inconsistent state (an unterminated
 // string, template, comment or regex, an unbalanced bracket) throws a
-// `LexError`, and the caller falls back to the regex extractor for the
-// file.
+// `LexError`, and the caller falls back to the regex extractor for
+// the file.
 //
 // Keyword handlers are lookaheads: they record what follows the keyword
 // and never consume input, so the main loop still lexes every character
@@ -1259,8 +1259,8 @@ function isJsxStart(i: number) {
   if (c === 62) return true;
   if (!isIdentStart(c)) return false;
   if (!dialect.tsx) return true;
-  // In `.tsx`, `<T,>(…) =>` and `<T extends U>(…) =>` open type parameters
-  // instead.
+  // In `.tsx`, `<T,>(…) =>` and `<T extends U>(…) =>` open type
+  // parameters instead.
   const p = skipTrivia(identEnd(i + 2));
   return src.charCodeAt(p) !== 44 && !isWord(p, "extends");
 }

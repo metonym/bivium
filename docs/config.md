@@ -93,8 +93,8 @@ The rest become edges where their files exist.
 `pages` lists the pages only a `goto()` opens.
 A listed page that no test opens is wired to no test,
 and so are the files only such pages load.
-A change to one selects nothing, and doesn't run the suite by the orphan
-rule.
+A change to one selects nothing, and doesn't run the suite by the
+orphan rule.
 
 ### `setup` and `wiring`
 
@@ -201,8 +201,8 @@ or vouch that they read nothing in the repository.
 
 ### `edges`
 
-`edges` maps a generated file to the inputs a build makes it from:
-`{ "dist/*.css": "styles/**" }`.
+`edges` maps a generated file to the inputs a build makes it
+from: `{ "dist/*.css": "styles/**" }`.
 The generated file depends on its inputs transitively,
 as with `@depends-on`.
 
@@ -212,13 +212,14 @@ An import that resolves under the key, by extension or as an index,
 then lands on that file instead of being unresolved.
 
 In a value, `$1`, `$2`… stand for what the key's wildcards matched,
-counted from the left:
-`{ "examples/*/package.json": "examples/$1/**" }`.
+counted from the
+left: `{ "examples/*/package.json": "examples/$1/**" }`.
 
 ### `reads`
 
-`reads` maps a file to the files it reads as text, as `@reads` does:
-`{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }`.
+`reads` maps a file to the files it reads as text,
+as `@reads`
+does: `{ "tests/*.test.ts": "tests/__snapshots__/$1.test.ts.snap" }`.
 Only a direct change to a read file counts:
 its imports and unknowns don't spread to the reader.
 Values take `$1`… as in `edges`.
@@ -262,8 +263,8 @@ bivium itself is always inert.
 or a plugin a config names by string.
 Setting it, even to `[]`, says every other package without a `bin` is
 loaded only by imports.
-A lockfile change that reaches one no test imports then selects only its
-importers.
+A lockfile change that reaches one no test imports
+then selects only its importers.
 A package with a `bin` always counts as one a test may run.
 
 ## What `check` allows
@@ -342,5 +343,5 @@ whatever loads an entry names it itself.
 - [Recipes](recipes.md): Vitest, Jest, Playwright, pnpm workspaces,
   generated code
 - [How it works](how-it-works.md): what the graph follows
-- [Not supported](how-it-works.md#not-supported):
-  what bivium leaves to other tools
+- [Not supported](how-it-works.md#not-supported): what bivium leaves to
+  other tools

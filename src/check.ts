@@ -134,8 +134,8 @@ function isFile(path: string): boolean {
   return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
-// Cut at the first dot, so `u.d.ts` and `u.js` share a stem and count as
-// siblings.
+// Cut at the first dot, so `u.d.ts` and `u.js` share a stem and count
+// as siblings.
 function stemOf(path: string): string {
   const slash = path.lastIndexOf("/");
   const dot = path.indexOf(".", slash + 2);
@@ -593,8 +593,8 @@ function counted(counts: Record<string, number>): string[] {
   return Object.entries(counts).map(([what, count]) => `${count} ${what}`);
 }
 
-// `--json` prints this as `summary`, so dropping or retyping a field bumps
-// `SCHEMA_VERSION`.
+// `--json` prints this as `summary`, so dropping or retyping a field
+// bumps `SCHEMA_VERSION`.
 interface Summary {
   // Nodes with unknown dependencies that some test reaches, the tests they
   // make run on any change, and how many nodes each cause accounts for.

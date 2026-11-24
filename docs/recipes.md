@@ -46,8 +46,8 @@ which the imports alone don't show:
   `src/a/Button.test.tsx` reads
   `src/a/__snapshots__/Button.test.tsx.snap`.
 
-For Jest, set `run` to your Jest command and `setup` to Jest's
-`setupFiles`.
+For Jest, set `run` to your Jest command
+and `setup` to Jest's `setupFiles`.
 bivium reads tsconfig `paths` itself, as `vite-tsconfig-paths` does,
 so they need no `alias`.
 An extensionless `vi.mock("@/x")` resolves as an import does.
@@ -75,8 +75,8 @@ Set `roots` to the packages and apps whose changes the suites need to
 see; a changed file outside them that isn't ignored runs everything.
 
 Workspace packages resolve through their `package.json` `exports`.
-A `.js` specifier into one (`@acme/ui/Button.js`) reaches its `.ts`
-source.
+A `.js` specifier into one (`@acme/ui/Button.js`) reaches its
+`.ts` source.
 A `pnpm-lock.yaml` change selects through the packages it changed
 (see [Lockfiles](how-it-works.md#lockfiles)).
 
@@ -133,5 +133,5 @@ and the generator's config, and not every change.
 
 - [Config](config.md): every key
 - [Tuning a plan](tuning.md): when a plan still runs too much
-- [Not supported](how-it-works.md#not-supported):
-  what bivium leaves to other tools
+- [Not supported](how-it-works.md#not-supported): what bivium leaves to
+  other tools

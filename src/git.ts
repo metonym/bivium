@@ -156,8 +156,8 @@ export async function readRevision(
   if (eager) void mergeBase();
   const diffArgs = ["--no-renames", "--merge-base", base];
   // The listing covers the whole repo, not only the roots, since an
-  // untracked file anywhere counts as changed (outside the roots, it runs
-  // everything).
+  // untracked file anywhere counts as changed (outside the roots, it
+  // runs everything).
   const [listing, diff, staged] = await Promise.all([
     gitOrThrow(cwd, "ls-files", "-s", "-v", "-o", "--exclude-standard"),
     gitOrThrow(cwd, "diff", "--raw", "--no-abbrev", ...diffArgs),
