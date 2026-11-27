@@ -51,8 +51,9 @@ export function createPaint(): Paint {
 
 // The person's explicit ask wins, because they know where the output
 // goes: the flag, then NO_COLOR and FORCE_COLOR (no-color.org,
-// force-color.org). Otherwise color only for a terminal no coding agent
-// reads, since escape codes are noise to a program.
+// force-color.org). Otherwise color only for a terminal that reads
+// escape codes and no coding agent reads, since they're noise to
+// a program.
 export function wantsColor(
   forced: boolean | undefined,
   terminal: boolean,
@@ -63,8 +64,14 @@ export function wantsColor(
   if ((env.NO_COLOR ?? "") !== "") return false;
   const force = env.FORCE_COLOR;
   if (force !== undefined && force !== "") return force !== "0";
-  return terminal && !agent;
+  return terminal && !agent && !isDumb(env);
 }
+
+// TERM=dumb says the terminal knows no escape sequence: no color, and no
+// carriage-return redraw, so a progress line would print every frame.
+export const isDumb = (
+  env: Readonly<Record<string, string | undefined>>,
+): boolean => env.TERM === "dumb";
 
 // "n/a", because an em dash for a missing value reads as punctuation.
 export const MISSING = "n/a";

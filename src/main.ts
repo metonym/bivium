@@ -26,6 +26,7 @@ import {
   createPaint,
   createProgress,
   headerRow,
+  isDumb,
   MEASURE,
   type Paint,
   PLAIN,
@@ -504,7 +505,11 @@ async function inspect(
   // A progress line, since check takes seconds on a large repository,
   // most of it otherwise silent.
   const progress =
-    command === "check" && out.io.stderr && !out.agent && !flags.has("--json")
+    command === "check" &&
+    out.io.stderr &&
+    !isDumb(out.io.env) &&
+    !out.agent &&
+    !flags.has("--json")
       ? createProgress(out.io.writeError, out.errorPaint, nowMs)
       : SILENT;
   progress.step("building the graph", 0);
