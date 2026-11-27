@@ -1,7 +1,7 @@
 import type { ResolvedSuite } from "./config.ts";
 import { type Graph, importersOf, walksByTypes } from "./graph.ts";
 import { sorted } from "./sorted.ts";
-import { plural } from "./text.ts";
+import { plural } from "./terminal.ts";
 
 // How many of a suite's tests a change to each node selects through the
 // graph's edges, as `plan` walks them, leaving out the tests whose

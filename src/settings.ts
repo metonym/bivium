@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 
 import { isRecord } from "./resolve.ts";
-import { plural } from "./text.ts";
+import { plural } from "./terminal.ts";
 import { parseJsonc } from "./tsconfig.ts";
 
 // `package.json` fields no resolver, runtime or bundler reads: a change to

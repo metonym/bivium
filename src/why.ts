@@ -24,7 +24,7 @@ import {
 import { createResolver, type Resolver } from "./resolve.ts";
 import { extract, finish, formatOf, SCANNED } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { plural } from "./text.ts";
+import { plural } from "./terminal.ts";
 
 // invariant: `node` depends on the next link's node, so a chain's links
 // run from the test toward the change.

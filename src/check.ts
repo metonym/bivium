@@ -19,7 +19,7 @@ import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
 import { type SpelledPath, spelledPaths } from "./spelled.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
-import { plural } from "./text.ts";
+import { plural } from "./terminal.ts";
 
 interface Unknown {
   node: string;
