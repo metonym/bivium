@@ -8,20 +8,13 @@ break, and hands those to your test runner: Vitest, Jest, Playwright,
 When it can't tell what a change touches, it runs everything,
 and says why.
 
-```console
-$ bunx bivium plan
-3 of 12 tests run for 1 changed file (unit)
-no tests run (e2e): no change reaches a test
-since origin/main (merge base 6b844dd) · config bivium.config.ts
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/plan-dark.png">
+  <img alt="bivium plan main on Hono, a branch that documents its cookie helper: 18 of 103 tests run for 1 changed file, counted by directory, ending Planned 18 tests in 67 ms" src="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/plan-light.png">
+</picture>
 
-  directory      unit
-  tests/*           2
-  tests/css/        1
-                 ────
-  2 directories     3
-
-✓ Planned 3 tests · 323 ms · --list for the files
-```
+That's [Hono](https://github.com/honojs/hono),
+a branch that edits its cookie helper.
 
 Piped, or with `--list`, it prints the files, one per line.
 
@@ -29,16 +22,19 @@ Piped, or with `--list`, it prints the files, one per line.
 `why` shows how a change reaches a test, file by file,
 with the line that connects each one:
 
-```console
-$ bunx bivium why e2e/accordion.test.ts
-e2e/accordion.test.ts
-└─ goto    e2e/fixtures/accordion.html             e2e/accordion.test.ts:13
-   └─ html    e2e/fixtures/accordion.ts            e2e/fixtures/accordion.html:10
-      └─ import  e2e/fixtures/Fixture.svelte       e2e/fixtures/accordion.ts:1
-         └─ name    src/index.js#AccordionItem     e2e/fixtures/Fixture.svelte:2
-            └─ export  src/AccordionItem.svelte    src/index.js:2
-               ● changed
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/why-dark.png">
+  <img alt="bivium why on Hono: the JWT middleware's test imports the middleware, which imports jwt.ts, which imports the changed cookie helper, each hop with the line that makes it" src="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/why-light.png">
+</picture>
+
+**It says what it can't see.**
+`check` lists every file whose dependencies it can't read,
+what each costs, and the fix:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/check-dark.png">
+  <img alt="bivium check on Hono: 1 file bivium can't follow sends 6 tests to every change, then each cause with three places and its fix, ending 4 undeclared paths in 77 ms" src="https://raw.githubusercontent.com/metonym/bivium/master/.github/assets/check-light.png">
+</picture>
 
 It has no dependencies and runs on Node ≥ 22 or Bun.
 It started as the `test:changed` script
