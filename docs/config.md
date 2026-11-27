@@ -44,6 +44,7 @@ a set of test files and the command that runs them.
 |:---|:---|:---|
 | `tests` | The suite's test files | required |
 | `run` | The command `bivium run` runs | none; `bivium run` needs one |
+| `runAll` | The command for a full run, when every test is selected | `run`, with `root` for `{files}` |
 | `root` | Where the orphan rule applies | the whole repository |
 | `urls` | URL pattern → the page a `page.goto()` opens | none |
 | `pages` | Pages only a `goto()` opens | none |
@@ -57,9 +58,12 @@ a set of test files and the command that runs them.
 
 `bivium run` puts the selected files where `{files}` is:
 `vitest run {files}` runs `vitest run tests/a.test.ts tests/b.test.ts`.
-When the whole suite is selected, `{files}` becomes nothing,
-and the command runs with no files.
+When the whole suite is selected, `{files}` becomes the suite's `root`,
+`vitest run tests`, since a bare `vitest run` or `bun test` would run
+every suite's tests; without a `root`, it becomes nothing.
 Without `{files}`, the files go at the end of the command.
+When the runner needs another command for a full run,
+set `runAll`: `runAll: "playwright test --project=e2e"`.
 
 ### `root` and the orphan rule
 

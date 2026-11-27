@@ -25,6 +25,7 @@ import {
   closingLine,
   createPaint,
   createProgress,
+  failLine,
   headerRow,
   isDumb,
   MEASURE,
@@ -34,6 +35,7 @@ import {
   RULE,
   SEPARATOR,
   SILENT,
+  textWidth,
   truncatePath,
   truncateWords,
   wantsColor,
@@ -683,17 +685,37 @@ async function runCommand(
     return 0;
   }
 
-  await logContext(base, config, computed);
-  logPlan(computed);
+  const human = out.io.stdout && !out.agent;
+  // With no suite named, the first runs, and the line says which others
+  // there are, so a person learns of them without being asked.
+  const others = flags.has("--suite")
+    ? []
+    : config.suites.slice(1).map((s) => `--suite=${s.name}`);
+  if (human) await showRun(out, base, config, computed, suite.name, others);
+  else {
+    await logContext(base, config, computed);
+    logPlan(computed);
+  }
   const selection = computed.plan.suites[suite.name];
   if (selection === undefined || selection.mode === "none") {
-    console.log(`No ${suite.name} tests affected against ${base}; skipping.`);
+    if (human) {
+      console.log(closingLine(out.paint, `Nothing to run for ${suite.name}`));
+    } else {
+      console.log(`No ${suite.name} tests affected against ${base}; skipping.`);
+    }
     return 0;
   }
-  const [program, ...args] = commandFor(
-    suite.run ?? "",
-    selection.mode === "some" ? selection.files : [],
-  );
+  // A full run names the suite's root, since a bare `bun test` or
+  // `vitest run` runs every suite's tests, not this one's.
+  const [program, ...args] =
+    selection.mode === "some"
+      ? commandFor(suite.run ?? "", selection.files)
+      : suite.runAll !== undefined
+        ? commandFor(suite.runAll, [])
+        : commandFor(
+            suite.run ?? "",
+            suite.roots.filter((root) => root !== "."),
+          );
   // A run of only whitespace names no program.
   if (program === undefined) {
     throw usageError(
@@ -701,8 +723,84 @@ async function runCommand(
       `bivium run: suite "${suite.name}" has no run command: add suites.${suite.name}.run to the config`,
     );
   }
+  if (human) {
+    const files = selection.mode === "some" ? selection.files.length : 0;
+    const bare = commandFor(suite.run ?? "", []);
+    console.log(
+      `${out.paint.dim(shownCommand([program, ...args], bare, files))}\n`,
+    );
+  }
+  const started = nowMs();
   const result = spawnSync(program, args, { cwd: root, stdio: "inherit" });
-  return result.status ?? 1;
+  // Because Ctrl-C reaches the runner too, it ends by the signal with no
+  // status, and that's an interrupted run, not a failed one (exit 130).
+  const interrupted = result.signal === "SIGINT";
+  const status = interrupted ? 130 : (result.status ?? 1);
+  if (human) {
+    const took = duration(nowMs() - started);
+    const name = suite.name;
+    console.log(
+      `\n${
+        interrupted
+          ? failLine(out.paint, `${name} interrupted`, took)
+          : status === 0
+            ? closingLine(out.paint, `${name} passed`, took)
+            : failLine(
+                out.paint,
+                `${name} failed`,
+                `${result.signal ?? `exit ${status}`}${SEPARATOR}${took}`,
+              )
+      }`,
+    );
+  }
+  return status;
+}
+
+// The command as run, to copy; when it's too long for one line, the
+// command without its files and how many, since a cut list of files would
+// run something else.
+function shownCommand(
+  whole: readonly string[],
+  bare: readonly string[],
+  files: number,
+): string {
+  const line = `$ ${whole.join(" ")}`;
+  if (textWidth(line) <= MEASURE) return line;
+  return `$ ${bare.join(" ")} ${SEPARATOR.trim()} ${plural(files, "file")}, as bivium plan --list names them`;
+}
+
+// On a terminal a run opens as plan does, so the two read alike, and
+// names the suites it skipped, so no one has to be asked which to run.
+async function showRun(
+  out: Out,
+  base: string,
+  config: ResolvedConfig,
+  computed: Computed,
+  name: string,
+  others: readonly string[],
+) {
+  const { paint } = out;
+  const selection = computed.plan.suites[name];
+  const total = computed.plan.totals[name] ?? 0;
+  const used = new Set<FullRunCause>();
+  const verdict =
+    selection === undefined
+      ? `no ${name} tests`
+      : verdictOf(name, selection, total, computed, used, paint);
+  const mergeBase = (await computed.mergeBase()).slice(0, 7);
+  const context = [
+    `since ${base} (merge base ${mergeBase})`,
+    ...(config.file ? [`config ${config.file}`] : []),
+  ].join(SEPARATOR);
+  const lines = [verdict, paint.dim(context)];
+  if (others.length > 0) {
+    lines.push(
+      paint.dim(
+        `running ${name}${SEPARATOR}${plural(others.length, "more suite")}: ${others.join(", ")}`,
+      ),
+    );
+  }
+  console.log(lines.join("\n"));
 }
 
 // The command: the first argument that's neither an option nor an

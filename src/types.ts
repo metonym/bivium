@@ -8,9 +8,16 @@ export interface SuiteConfig {
   tests: Globs;
   /**
    * The command `bivium run` runs. `{files}` is replaced by the selected
-   * files, or nothing for all of them; without it, they're appended.
+   * files; without it, they're appended. When every test is selected,
+   * `{files}` is the suite's `root`, or nothing without one.
    */
   run?: string;
+  /**
+   * The command for a full run of the suite, when every test is selected
+   * and `run` with the suite's root wouldn't run exactly this suite.
+   * Default: `run`, with the root for `{files}`.
+   */
+  runAll?: string;
   /**
    * Where the orphan rule applies: a changed file under one of these paths
    * that no test of the suite reaches is wired some other way (a setup

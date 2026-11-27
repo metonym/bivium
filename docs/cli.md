@@ -103,12 +103,31 @@ bivium run [base] [--suite <name>]
 - `--suite <name>` picks the suite.
   Default: the first one in the config.
 
-It prints the plan first, as `plan` does.
 The selected files go where the command says `{files}`, or at its end.
-When every test is selected, no files are passed,
-so the runner runs them all.
-When none is, `run` skips the command and exits 0.
-Otherwise it exits with the command's status.
+When every test is selected, the suite's `root` goes there instead,
+so a runner that would run every suite's tests runs only this one's;
+`runAll` in the config replaces the command for that case.
+When no test is selected, `run` skips the command and exits 0.
+Otherwise it exits with the command's status,
+or 130 when Ctrl-C interrupted it.
+
+On a terminal, it opens as `plan` does, names the suites it didn't run,
+echoes the command, then closes with the result:
+
+```console
+$ bivium run main
+1 of 2 tests run for 1 changed file (unit)
+since main (merge base f601cb4) · config bivium.config.ts
+running unit · 2 more suites: --suite=e2e, --suite=visual
+$ bun test tests/unit/name.test.ts
+
+…the runner's output…
+
+✓ unit passed · 247 ms
+```
+
+Piped, or for a coding agent, it prints the plan as text,
+then the runner's output.
 
 ```sh
 bivium run --suite e2e

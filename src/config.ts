@@ -36,6 +36,7 @@ export interface ResolvedSuite {
   name: string;
   isTest: Matcher;
   run?: string;
+  runAll?: string;
   roots: string[];
   urls: UrlPattern[];
   isPage: Matcher;
@@ -178,6 +179,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       name,
       isTest: matcher(suite.tests),
       ...optional("run", suite.run),
+      ...optional("runAll", suite.runAll),
       roots: list(suite.root, ["."]).map(normalizeRoot),
       urls: Object.entries(suite.urls ?? {}).map(([key, targets]) => ({
         key,
@@ -296,6 +298,7 @@ function field<T>(
 const SUITE_KEYS = new Set([
   "tests",
   "run",
+  "runAll",
   "root",
   "urls",
   "pages",
@@ -375,6 +378,7 @@ function checkSuite(name: string, value: unknown): SuiteConfig {
   return {
     tests,
     ...optional("run", field(value, "run", isString, at, "a command")),
+    ...optional("runAll", field(value, "runAll", isString, at, "a command")),
     ...optional("root", paths(value, "root", at)),
     ...optional(
       "urls",
