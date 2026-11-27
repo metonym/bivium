@@ -432,7 +432,9 @@ export function createResolver({
       const found = probe(posix.join(svelteKitRoot(fromDir), "static", rest));
       return found.length > 0 ? { files: found } : undefined;
     }
-    const found = probe(posix.join(fromDir, bare));
+    // "./" and "../" name a directory with a trailing slash, which join
+    // keeps, so its index would be looked up as "dir//index".
+    const found = probe(posix.join(fromDir, bare).replace(/(.)\/+$/, "$1"));
     return found.length > 0 ? { files: found } : undefined;
   };
 
