@@ -93,9 +93,10 @@ so bivium reads it:
 
 ```console
 $ bunx bivium plan
+4 of 12 tests run for 1 changed file
+since origin/main (merge base 1c0ffee) · config bivium.config.ts
 bun.lock: @biomejs/biome 2.5.14 → 2.6.3, inert
 bun.lock: svelte 5.57.1 → 5.57.2
-unit tests: 4 of 12 files
 …
 ```
 

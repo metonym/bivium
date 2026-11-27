@@ -10,12 +10,20 @@ and says why.
 
 ```console
 $ bunx bivium plan
-unit tests: 3 of 12 files
-  tests/Button.test.ts
-  tests/Modal.test.ts
-  tests/css/unknown.test.ts
-e2e tests: none
+3 of 12 tests run for 1 changed file (unit)
+no tests run (e2e): no change reaches a test
+since origin/main (merge base 6b844dd) · config bivium.config.ts
+
+  directory      unit
+  tests/*           2
+  tests/css/        1
+                 ────
+  2 directories     3
+
+✓ Planned 3 tests · 323 ms · --list for the files
 ```
+
+Piped, or with `--list`, it prints the files, one per line.
 
 **Every selection has a reason.**
 `why` shows how a change reaches a test, file by file,

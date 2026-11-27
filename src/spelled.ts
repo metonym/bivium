@@ -136,10 +136,13 @@ interface Spelled {
   orphaned: SpelledPath[];
 }
 
+// `done` hears the share of files read, a cell of a progress bar at a
+// time: the loop is synchronous, so no timer redraws the line meanwhile.
 export async function spelledPaths(
   root: string,
   config: ResolvedConfig,
   computed: Computed,
+  done: (ratio: number) => void = () => {},
 ): Promise<Spelled> {
   const { graph } = computed;
   const files = new Set<string>();
@@ -157,7 +160,9 @@ export async function spelledPaths(
   const spelling = spellers(config, computed);
   const nodes = [...spelling.keys()];
   const sources = await Promise.all(nodes.map((node) => sourceOf(root, node)));
+  const every = Math.max(1, Math.ceil(nodes.length / 20));
   for (const [i, node] of nodes.entries()) {
+    if (i % every === 0) done(i / nodes.length);
     const source = sources[i];
     const suites = spelling.get(node) ?? [];
     // The tests a change to the file selects: what a path it spells must

@@ -6,6 +6,7 @@ import type { ResolvedConfig } from "./config.ts";
 import { fanIn } from "./fanin.ts";
 import { globToRegExp } from "./glob.ts";
 import { walksByTypes } from "./graph.ts";
+import { duration, wrapped } from "./human.ts";
 import {
   annotationLine,
   causesOf,
@@ -19,7 +20,19 @@ import { type Extraction, finish } from "./scan.ts";
 import { sorted } from "./sorted.ts";
 import { type SpelledPath, spelledPaths } from "./spelled.ts";
 import { QUERY, RELATIVE, UNDECLARED_READS } from "./syntax.ts";
-import { plural } from "./terminal.ts";
+import {
+  branch,
+  closingLine,
+  failLine,
+  MEASURE,
+  NOTE_INDENT,
+  type Paint,
+  plural,
+  SEPARATOR,
+  textWidth,
+  truncatePath,
+  truncateWords,
+} from "./terminal.ts";
 
 interface Unknown {
   node: string;
@@ -433,11 +446,15 @@ function unreachedFiles(
   return found;
 }
 
+// `step` hears each phase start, with the share of the work done, so a
+// progress line can show it: a large repository takes seconds.
 export async function check(
   root: string,
   config: ResolvedConfig,
   computed: Computed,
+  step: (what: string, done: number) => void = () => {},
 ): Promise<Report> {
+  step("finding what the graph can't read", 0.05);
   const nodes = [...computed.graph]
     .filter(([, deps]) => deps.unknown.length > 0)
     .map(([node]) => node);
@@ -478,8 +495,15 @@ export async function check(
     file,
     reason,
   }));
+  step("finding dead globs", 0.1);
   const dead = await findDeadGlobs(root, config, computed);
-  const spelled = await spelledPaths(root, config, computed);
+  // The longest phase by far, since it reads every string in every file
+  // a test reaches.
+  const spelling = "finding paths nothing declares";
+  const spelled = await spelledPaths(root, config, computed, (ratio) =>
+    step(spelling, 0.15 + 0.8 * ratio),
+  );
+  step("finding files no test reaches", 0.95);
   const unreached = unreachedFiles(config, computed, [
     ...spelled.undeclared,
     ...spelled.orphaned,
@@ -540,28 +564,6 @@ export function failed(report: Report, max: number | undefined): boolean {
   );
 }
 
-// Each fix is spelled out at the first node it's for; a later one points
-// back to it, so a report of many alike nodes isn't one sentence repeated.
-function pushUnknown(
-  lines: string[],
-  { node, causes, tests, known }: Unknown,
-  shown: Map<string, string>,
-) {
-  lines.push(known === undefined ? node : `${node}    (known: ${known})`);
-  for (const { cause, at, fix } of causes) {
-    const first = shown.get(fix);
-    if (first === undefined) shown.set(fix, node);
-    lines.push(
-      `  ✗ ${cause}${at ? `    ${at}` : ""}`,
-      `    fix: ${first === undefined ? fix : `as for ${first}`}`,
-    );
-  }
-  if (tests.length > 0) {
-    const more = tests.length > 3 ? `, and ${tests.length - 3} more` : "";
-    lines.push(`  runs on any change: ${tests.slice(0, 3).join(", ")}${more}`);
-  }
-}
-
 // What a cause is, without what it names: the line `check` counts it on.
 function categoryOf(cause: string): string {
   if (cause.startsWith("unresolved ")) {
@@ -580,17 +582,12 @@ function categoryOf(cause: string): string {
 }
 
 const POSITION = /(?: in <>)? at \d+.*$/;
-const BLANK_LINES = /\n{3,}/g;
 
 // Largest first, then by name, so the order is stable.
 function byCount(counts: Map<string, number>): Record<string, number> {
   return Object.fromEntries(
     [...counts].sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1)),
   );
-}
-
-function counted(counts: Record<string, number>): string[] {
-  return Object.entries(counts).map(([what, count]) => `${count} ${what}`);
 }
 
 // `--json` prints this as `summary`, so dropping or retyping a field
@@ -646,212 +643,382 @@ export function summarize(report: Report): Summary {
   };
 }
 
-// Counts by cause first, so a long report is actionable from its head.
-function summaryLines(report: Report): string[] {
-  const counts = summarize(report);
+// A section of the human report says what a cause is, how much of it
+// there is, and a few places it's at, so the fix is said only once.
+interface Example {
+  place: string;
+  detail?: string;
+  fix?: string;
+}
+
+interface Section {
+  title: string;
+  count: string;
+  examples: Example[];
+}
+
+interface ReportView {
+  paint: Paint;
+  // Every example, and each fix whole.
+  all: boolean;
+  elapsedMs: number;
+}
+
+const SHOWN = 3;
+const BRANCH_WIDTH = "  ├ ".length;
+
+// The fix most examples share, said once under them, so it isn't one
+// sentence repeated. An example with another fix carries it in a note;
+// when no two share one, each does.
+function sharedFix(examples: readonly Example[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const { fix } of examples) {
+    if (fix !== undefined) counts.set(fix, (counts.get(fix) ?? 0) + 1);
+  }
+  const [top] = [...counts].sort(([, a], [, b]) => b - a);
+  if (top === undefined) return undefined;
+  return top[1] > 1 || examples.length === 1 ? top[0] : undefined;
+}
+
+function fixLines(
+  { paint, all }: ReportView,
+  first: string,
+  fix: string,
+): { lines: string[]; cut: boolean } {
+  const label = `${first}${paint.good("fix")} `;
+  if (all) {
+    return {
+      lines: wrapped(fix, label, " ".repeat(textWidth(label))),
+      cut: false,
+    };
+  }
+  const shown = truncateWords(fix, MEASURE - textWidth(label));
+  return { lines: [`${label}${shown}`], cut: shown !== fix };
+}
+
+function renderSection(
+  view: ReportView,
+  { title, count, examples }: Section,
+): { lines: string[]; cut: boolean } {
+  const { paint, all } = view;
+  const lines = [`${paint.bold(title)}${paint.dim(`${SEPARATOR}${count}`)}`];
+  const shared = sharedFix(examples);
+  const shown = all ? examples : examples.slice(0, SHOWN);
+  const hidden = examples.length - shown.length;
+  let cut = hidden > 0;
+  // A detail gets up to 40 columns and a place the rest, never under 30,
+  // so a place keeps its file name and a detail its point.
+  const detailWidth = Math.min(
+    40,
+    Math.max(0, ...shown.map(({ detail }) => textWidth(detail ?? ""))),
+  );
+  const placeMax = Math.max(
+    30,
+    MEASURE - BRANCH_WIDTH - (detailWidth > 0 ? detailWidth + 2 : 0),
+  );
+  const places = shown.map(({ place }) => {
+    const fitted = all ? place : truncatePath(place, placeMax);
+    cut ||= fitted !== place;
+    return fitted;
+  });
+  const placeWidth = Math.max(0, ...places.map(textWidth));
+  for (const [i, example] of shown.entries()) {
+    const glyph = paint.dim(
+      branch(i, hidden > 0 ? shown.length + 1 : shown.length),
+    );
+    const place = places[i] ?? "";
+    let detail = example.detail ?? "";
+    if (detail !== "" && !all) {
+      const room = MEASURE - BRANCH_WIDTH - placeWidth - 2;
+      const fitted = truncateWords(detail, room);
+      cut ||= fitted !== detail;
+      detail = fitted;
+    }
+    lines.push(
+      detail === ""
+        ? `  ${glyph}${place}`
+        : `  ${glyph}${place.padEnd(placeWidth)}  ${paint.dim(detail)}`,
+    );
+    if (example.fix !== undefined && example.fix !== shared) {
+      const note = fixLines(view, NOTE_INDENT, example.fix);
+      lines.push(...note.lines);
+      cut ||= note.cut;
+    }
+  }
+  if (hidden > 0) {
+    lines.push(`  ${paint.dim(`└ ${hidden} more`)}`);
+  }
+  if (shared !== undefined) {
+    const line = fixLines(view, "  ", shared);
+    lines.push(...line.lines);
+    cut ||= line.cut;
+  }
+  return { lines, cut };
+}
+
+const UNRESOLVED = "unresolved ";
+
+// How many of a cause: imports count in files, since one file can
+// have several.
+function countOf(hits: number, files: number, noun: string): string {
+  return hits === files && noun !== "import"
+    ? plural(files, "file")
+    : `${plural(hits, noun)} in ${plural(files, "file")}`;
+}
+
+// One section per cause, largest first, so the head of a long report is
+// what to fix first.
+function causeSections(widen: readonly Unknown[]): Section[] {
+  const byCategory = new Map<string, { node: string; example: Example }[]>();
+  for (const { node, causes, known } of widen) {
+    for (const { cause, at, fix } of causes) {
+      const category = categoryOf(cause);
+      const named = cause.startsWith(UNRESOLVED)
+        ? cause.slice(UNRESOLVED.length)
+        : cause === category
+          ? ""
+          : cause;
+      const detail = [named, known === undefined ? "" : `known: ${known}`]
+        .filter((part) => part !== "")
+        .join(SEPARATOR);
+      const example: Example = { place: at ?? node, fix };
+      if (detail !== "") example.detail = detail;
+      const hits = byCategory.get(category) ?? [];
+      hits.push({ node, example });
+      byCategory.set(category, hits);
+    }
+  }
+  return [...byCategory]
+    .map(([category, hits]) => {
+      const files = new Set(hits.map(({ node }) => node)).size;
+      const noun = category.includes("import") ? "import" : "place";
+      return {
+        files,
+        section: {
+          title: category,
+          count: countOf(hits.length, files, noun),
+          examples: hits.map(({ example }) => example),
+        },
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.files - a.files || (a.section.title < b.section.title ? -1 : 1),
+    )
+    .map(({ section }) => section);
+}
+
+const filesIn = (entries: readonly { file: string }[]) =>
+  new Set(entries.map(({ file }) => file)).size;
+
+function otherSections(report: Report): Section[] {
+  const sections: Section[] = [];
+  const add = (section: Section) => {
+    if (section.examples.length > 0) sections.push(section);
+  };
+  const spelled = report.undeclaredPaths;
+  add({
+    title: "path spelled in code that nothing declares",
+    count: `${plural(spelled.length, "path")} in ${plural(filesIn(spelled), "file")}`,
+    examples: spelled.map(({ file, path, dir, at, fix }) => ({
+      place: at ?? file,
+      detail: dir ? `${path}/` : path,
+      fix,
+    })),
+  });
+  const dead = report.deadGlobs;
+  add({
+    title: "dead glob: a change to what it matches selects nothing",
+    count: `${plural(dead.length, "glob")} in ${plural(new Set(dead.map(({ node }) => node)).size, "file")}`,
+    examples: dead.map((found) => ({
+      place: found.at ?? found.node,
+      detail: `${found.kind} ${found.glob}: ${summary(found)}`,
+      fix: found.fix,
+    })),
+  });
+  add({
+    title: "`deadGlobs` entry that matches no dead glob",
+    count: plural(report.staleDeadGlobs.length, "entry", "entries"),
+    examples: report.staleDeadGlobs.map(({ file, glob, fix }) => ({
+      place: file,
+      detail: glob,
+      fix,
+    })),
+  });
+  add({
+    title: "unknown not in `knownUnknowns`",
+    count: plural(report.unlistedUnknowns.length, "file"),
+    examples: report.unlistedUnknowns.map((node) => ({
+      place: node,
+      fix: "make its dependencies known, or list it in `knownUnknowns` with a reason",
+    })),
+  });
+  add({
+    title: "`knownUnknowns` entry whose dependencies are known",
+    count: plural(report.staleKnownUnknowns.length, "entry", "entries"),
+    examples: report.staleKnownUnknowns.map(({ file, reason, fix }) => ({
+      place: file,
+      detail: reason,
+      fix,
+    })),
+  });
+  for (const suite of new Set(report.unreached.map(({ suite }) => suite))) {
+    const entries = report.unreached.filter((entry) => entry.suite === suite);
+    add({
+      title: "no test reaches: a change runs the whole suite",
+      count: `${plural(entries.length, "file")} in suite ${suite}`,
+      examples: entries.map(({ file, fix }) => ({ place: file, fix })),
+    });
+  }
+  add({
+    title: "tsconfig that doesn't parse, whose `paths` are ignored",
+    count: plural(report.unparsedTsconfigs.length, "file"),
+    examples: report.unparsedTsconfigs.map(({ file, reason }) => ({
+      place: file,
+      detail: reason,
+    })),
+  });
+  add({
+    title: "read by the regex extractor",
+    count: `${plural(report.fallbacks.length, "file")} the lexer couldn't read`,
+    examples: report.fallbacks.map(({ file, reason }) => ({
+      place: file,
+      detail: reason,
+    })),
+  });
+  const idle = report.unknown.filter((node) => node.tests.length === 0);
+  add({
+    title: "unknown, but no test reaches it, so it widens nothing",
+    count: plural(idle.length, "file"),
+    examples: idle.flatMap(({ node, causes, known }) =>
+      causes.map(({ cause, at }) => ({
+        place: at ?? node,
+        detail:
+          known === undefined ? cause : `${cause}${SEPARATOR}known: ${known}`,
+      })),
+    ),
+  });
+  return sections;
+}
+
+function verdict(paint: Paint, counts: Summary): string {
+  const { unknown, testsOnAnyChange: tests } = counts;
+  if (unknown === 0) {
+    return paint.good("bivium can follow every file a test reaches");
+  }
+  return `${paint.bad(`${plural(unknown, "file")} bivium can't follow`)} ${unknown === 1 ? "sends" : "send"} ${paint.bold(String(tests))} ${tests === 1 ? "test" : "tests"} to every change`;
+}
+
+// The counts the sections below open with, so the head is the whole
+// report in one line; split at a separator to stay in the measure.
+function context(counts: Summary, max: number | undefined): string[] {
+  const parts = [
+    max === undefined ? "" : `at most ${max} allowed`,
+    counts.undeclaredPaths > 0
+      ? plural(counts.undeclaredPaths, "undeclared path")
+      : "",
+    counts.deadGlobs > 0 ? plural(counts.deadGlobs, "dead glob") : "",
+    counts.staleDeadGlobs > 0
+      ? plural(
+          counts.staleDeadGlobs,
+          "stale `deadGlobs` entry",
+          "stale `deadGlobs` entries",
+        )
+      : "",
+    counts.unlistedUnknowns > 0
+      ? `${counts.unlistedUnknowns} not in \`knownUnknowns\``
+      : "",
+    counts.staleKnownUnknowns > 0
+      ? plural(
+          counts.staleKnownUnknowns,
+          "stale `knownUnknowns` entry",
+          "stale `knownUnknowns` entries",
+        )
+      : "",
+    counts.unreached > 0
+      ? `${plural(counts.unreached, "file")} no test reaches`
+      : "",
+    counts.unparsedTsconfigs > 0
+      ? plural(
+          counts.unparsedTsconfigs,
+          "tsconfig that doesn't parse",
+          "tsconfigs that don't parse",
+        )
+      : "",
+    counts.fallbacks > 0
+      ? `${plural(counts.fallbacks, "file")} the lexer couldn't read`
+      : "",
+    counts.unknownNoTestReaches > 0
+      ? `${counts.unknownNoTestReaches} more unknown no test reaches`
+      : "",
+  ].filter((part) => part !== "");
   const lines: string[] = [];
-  if (counts.unknown > 0) {
-    const { unknown, testsOnAnyChange: tests } = counts;
-    lines.push(
-      `${plural(unknown, "node")} with unknown dependencies ${unknown === 1 ? "reaches" : "reach"} ${plural(tests, "test")}, which ${tests === 1 ? "runs" : "run"} on any change:`,
-    );
-    lines.push(...counted(counts.unknownByCause).map((line) => `  ${line}`));
+  for (const part of parts) {
+    const last = lines.at(-1);
+    if (
+      last !== undefined &&
+      textWidth(last) + SEPARATOR.length + textWidth(part) <= MEASURE
+    ) {
+      lines[lines.length - 1] = `${last}${SEPARATOR}${part}`;
+    } else lines.push(part);
   }
-  if (counts.unknownNoTestReaches > 0) {
-    lines.push(
-      `${plural(counts.unknownNoTestReaches, "more node")} with unknown dependencies no test reaches`,
-    );
-  }
-  if (counts.fallbacks > 0) {
-    lines.push(
-      `${plural(counts.fallbacks, "file")} read by the regex extractor: ${counted(counts.fallbackReasons).join(", ")}`,
-    );
-  }
-  const problems = [
+  return lines;
+}
+
+// What made the check fail, short so its last line fits: the sections
+// above name each in full.
+function failures(counts: Summary, max: number | undefined): string[] {
+  const parts: [number, string, string][] = [
     [
-      counts.unparsedTsconfigs,
-      "tsconfig file that doesn't parse",
-      "tsconfig files that don't parse",
+      max !== undefined && counts.unknown > max ? counts.unknown : 0,
+      `unknown, over --max-unknown ${max}`,
+      `unknown, over --max-unknown ${max}`,
     ],
+    [counts.unlistedUnknowns, "unlisted unknown", "unlisted unknowns"],
+    [counts.undeclaredPaths, "undeclared path", "undeclared paths"],
     [counts.deadGlobs, "dead glob", "dead globs"],
     [
-      counts.staleDeadGlobs,
-      "stale `deadGlobs` entry",
-      "stale `deadGlobs` entries",
+      counts.staleKnownUnknowns + counts.staleDeadGlobs,
+      "stale entry",
+      "stale entries",
     ],
-    [
-      counts.unlistedUnknowns,
-      "unknown not in `knownUnknowns`",
-      "unknowns not in `knownUnknowns`",
-    ],
-    [
-      counts.staleKnownUnknowns,
-      "stale `knownUnknowns` entry",
-      "stale `knownUnknowns` entries",
-    ],
-    [
-      counts.undeclaredPaths,
-      "path spelled in code that nothing declares",
-      "paths spelled in code that nothing declares",
-    ],
-    [
-      counts.unreached,
-      "file under a suite's root that no test reaches",
-      "files under a suite's root that no test reaches",
-    ],
-  ] as const;
-  for (const [count, one, many] of problems) {
-    if (count > 0) lines.push(plural(count, one, many));
-  }
-  return lines.length === 0
-    ? []
-    : ["Summary:", ...lines.map((line) => `  ${line}`), ""];
+  ];
+  return parts.flatMap(([count, one, many]) =>
+    count > 0 ? [plural(count, one, many)] : [],
+  );
 }
 
-const UNREACHED_SHOWN = 10;
-
-function pushUnreached(lines: string[], unreached: Report["unreached"]) {
-  if (unreached.length === 0) return;
-  lines.push(
+// The verdict first, so one line answers; then the counts, a section per
+// cause with a few places and its fix, and whether the check passes.
+// `--all` shows every place and each fix whole; `--json` has the rest,
+// such as the tests each unknown runs.
+export function formatReport(
+  report: Report,
+  max: number | undefined,
+  view: ReportView,
+): string {
+  const { paint } = view;
+  const counts = summarize(report);
+  const lines = [
+    verdict(paint, counts),
+    ...context(counts, max).map((line) => paint.dim(line)),
     "",
-    "Files under a suite's root that no test reaches: a change to one runs the whole suite:",
-  );
-  for (const suite of new Set(unreached.map((entry) => entry.suite))) {
-    const entries = unreached.filter((entry) => entry.suite === suite);
-    lines.push(`  ${suite} (${entries.length})`);
-    for (const { file, fix } of entries.slice(0, UNREACHED_SHOWN)) {
-      lines.push(`    ${file}`, `      fix: ${fix}`);
-    }
-    const rest = entries.slice(UNREACHED_SHOWN);
-    if (rest.length === 0) continue;
-    const dirs = new Map<string, number>();
-    for (const { file } of rest) {
-      const dir = posix.dirname(file);
-      dirs.set(dir, (dirs.get(dir) ?? 0) + 1);
-    }
-    const counts = [...dirs]
-      .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
-      .map(([dir, count]) => `${dir}/ (${count})`);
-    lines.push(
-      `    … ${rest.length} more in ${counts.slice(0, 5).join(", ")}${counts.length > 5 ? ", …" : ""} (--json lists each)`,
-    );
+  ];
+  let cut = false;
+  for (const section of [
+    ...causeSections(widening(report)),
+    ...otherSections(report),
+  ]) {
+    const rendered = renderSection(view, section);
+    lines.push(...rendered.lines, "");
+    cut ||= rendered.cut;
   }
-}
-
-function pushUndeclared(lines: string[], spelled: Report["undeclaredPaths"]) {
-  if (spelled.length === 0) return;
+  const detail = `checked in ${duration(view.elapsedMs)}${cut ? `${SEPARATOR}--all for every file` : ""}`;
+  const failed = failures(counts, max);
   lines.push(
-    "",
-    "Paths spelled in code that nothing declares: a change there doesn't select the tests that reach the file:",
+    failed.length > 0
+      ? failLine(paint, failed.join(SEPARATOR), detail)
+      : closingLine(paint, "Check passes", detail),
   );
-  let file: string | undefined;
-  for (const { file: node, path, dir, at, fix } of spelled) {
-    if (node !== file) lines.push(`  ${node}`);
-    file = node;
-    lines.push(
-      `    ✗ ${dir ? `${path}/` : path}${at ? `    ${at}` : ""}`,
-      `      fix: ${fix}`,
-    );
-  }
-}
-
-export function formatReport(report: Report, max: number | undefined): string {
-  const lines: string[] = summaryLines(report);
-  const widen = widening(report);
-  const shown = new Map<string, string>();
-  for (const unknown of widen) pushUnknown(lines, unknown, shown);
-  const idle = report.unknown.filter((node) => node.tests.length === 0);
-  if (idle.length > 0) {
-    lines.push(
-      "",
-      "Unknown, but no test depends on them, so they widen nothing:",
-    );
-    for (const unknown of idle) pushUnknown(lines, unknown, shown);
-  }
-  if (report.fallbacks.length > 0) {
-    lines.push(
-      "",
-      "Read by the regex extractor, which the lexer couldn't read:",
-    );
-    for (const { file, reason } of report.fallbacks) {
-      lines.push(`  ${file}: ${reason}`);
-    }
-  }
-  pushUndeclared(lines, report.undeclaredPaths);
-  pushUnreached(lines, report.unreached);
-  if (report.unparsedTsconfigs.length > 0) {
-    lines.push(
-      "",
-      "tsconfig files that don't parse, whose `paths` are ignored:",
-    );
-    for (const { file, reason } of report.unparsedTsconfigs) {
-      lines.push(`  ${file}: ${reason}`);
-    }
-  }
-  if (report.deadGlobs.length > 0) {
-    lines.push(
-      "",
-      "Dead globs: a change to what they match, or to some of it, selects nothing:",
-    );
-    let node: string | undefined;
-    for (const dead of report.deadGlobs) {
-      if (dead.node !== node) lines.push(`  ${dead.node}`);
-      node = dead.node;
-      lines.push(
-        `    ✗ ${dead.kind} ${dead.glob}: ${summary(dead)}${dead.at ? `    ${dead.at}` : ""}`,
-        `      fix: ${dead.fix}`,
-      );
-    }
-  }
-  if (report.staleDeadGlobs.length > 0) {
-    lines.push("", "`deadGlobs` entries that match no dead glob:");
-    for (const { file, glob, fix } of report.staleDeadGlobs) {
-      lines.push(`  ${file}: ${glob}`, `    fix: ${fix}`);
-    }
-  }
-  if (report.staleKnownUnknowns.length > 0) {
-    lines.push("", "`knownUnknowns` entries whose dependencies are known:");
-    for (const { file, fix } of report.staleKnownUnknowns) {
-      lines.push(`  ${file}`, `    fix: ${fix}`);
-    }
-  }
-  const count = widen.length;
-  const limit = max === undefined ? "" : ` (at most ${max})`;
-  lines.push(
-    "",
-    `${count} ${count === 1 ? "node" : "nodes"} with unknown dependencies ${count === 1 ? "reaches" : "reach"} a test${limit}: each such test runs on any change.`,
-  );
-  const unlisted = report.unlistedUnknowns.length;
-  if (unlisted > 0) {
-    lines.push(
-      `${unlisted} of them not in \`knownUnknowns\`: fix ${unlisted === 1 ? "it" : "them"}, or list ${unlisted === 1 ? "it" : "them"} with a reason.`,
-    );
-  }
-  if (idle.length > 0) {
-    lines.push(`${idle.length} more no test reaches.`);
-  }
-  const staleKnown = report.staleKnownUnknowns.length;
-  if (staleKnown > 0) {
-    lines.push(
-      `${plural(staleKnown, "stale `knownUnknowns` entry", "stale `knownUnknowns` entries")}.`,
-    );
-  }
-  const undeclared = report.undeclaredPaths.length;
-  if (undeclared > 0) {
-    lines.push(
-      `${plural(undeclared, "path", "paths")} spelled in code that nothing declares.`,
-    );
-  }
-  const dead = report.deadGlobs.length;
-  const stale = report.staleDeadGlobs.length;
-  if (dead > 0) {
-    lines.push(`${plural(dead, "dead glob")} not in \`deadGlobs\`.`);
-  }
-  if (stale > 0) {
-    lines.push(
-      `${plural(stale, "stale `deadGlobs` entry", "stale `deadGlobs` entries")}.`,
-    );
-  }
-  // Sections each open with a blank line, and the summary ends with one.
-  return lines.join("\n").replace(BLANK_LINES, "\n\n").trimStart();
+  return lines.join("\n");
 }

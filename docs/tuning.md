@@ -10,26 +10,30 @@ or `vitest.config.ts` runs the whole suite:
 
 ```console
 $ bunx bivium plan
-Full run: README.md: no unit test imports it
-Full run: vitest.config.ts: no unit test imports it
-unit tests: all (full run)
+all 4 tests run: README.md: no unit test imports it
+since origin/main (merge base 9236bd3) · config bivium.config.ts
+full run: vitest.config.ts: no unit test imports it
+
+✓ Planned 4 tests · 256 ms
 ```
 
 `bivium check` lists those files before they change, each with a fix:
 
 ```console
-$ bunx bivium check
-Summary:
-  2 files under a suite's root that no test reaches
+$ bunx bivium check --all
+bivium can follow every file a test reaches
+2 files no test reaches
 
-Files under a suite's root that no test reaches: a change to one runs the whole suite:
-  unit (2)
-    README.md
-      fix: if a test reads or runs it, say so with `reads` or `@depends-on` in that test or what loads it; if none can observe it, list it in the suite's `nonInputs`, or delete it if it's dead
-    vitest.config.ts
-      fix: if the runner loads it, name it in the suite's `wiring` (or `setup`, if it runs before every test), which makes the full run deliberate
+no test reaches: a change runs the whole suite · 2 files in suite unit
+  ├ README.md
+    fix if a test reads or runs it, say so with `reads` or `@depends-on` in that
+        test or what loads it; if none can observe it, list it in the suite's
+        `nonInputs`, or delete it if it's dead
+  └ vitest.config.ts
+    fix if the runner loads it, name it in the suite's `wiring` (or `setup`, if
+        it runs before every test), which makes the full run deliberate
 
-0 nodes with unknown dependencies reach a test: each such test runs on any change.
+✓ Check passes · checked in 254 ms
 ```
 
 ## A change no test reaches
@@ -151,16 +155,16 @@ It reports a pattern with one of these problems:
 
 ```console
 $ bunx bivium check
-Summary:
-  2 dead globs
+bivium can follow every file a test reaches
+2 dead globs
 
-Dead globs: a change to what they match, or to some of it, selects nothing:
-  tests/a.test.ts
-    ✗ depends-on docs/**: matches only ignored files (1: docs/a.md)    tests/a.test.ts:1
-      fix: point it at files the selector reads, or allowlist it in `deadGlobs` with a reason
-    ✗ reads src/tokns.css: matches nothing    tests/a.test.ts:2
-      fix: fix the path
-…
+dead glob: a change to what it matches selects nothing · 2 globs in 1 file
+  ├ tests/a.test.ts:1  depends-on docs/**: matches only ignored files (1…
+    fix point it at files the selector reads, or allowlist it in `deadGlobs`…
+  └ tests/a.test.ts:2  reads src/tokns.css: matches nothing
+    fix fix the path
+
+✗ 2 dead globs · checked in 241 ms · --all for every file
 ```
 
 A config value with captures (`$1`) is dead only when it matches nothing

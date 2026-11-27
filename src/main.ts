@@ -14,57 +14,31 @@ import { version } from "../package.json" with { type: "json" };
 import { check, failed, formatReport, summarize } from "./check.ts";
 import { type Computed, computePlan, prepare } from "./compute.ts";
 import type { ResolvedConfig } from "./config.ts";
-import { githubOutputPath } from "./env.ts";
+import { agentVariable, githubOutputPath, nowMs } from "./env.ts";
 import { BiviumError, type BiviumErrorCode, didYouMean } from "./errors.ts";
 import { formatGraph, graphReport } from "./fanin.ts";
+import { usage } from "./help.ts";
+import { duration } from "./human.ts";
 import { formatSelection } from "./plan.ts";
-import type { Selection } from "./types.ts";
+import {
+  aligned,
+  closingLine,
+  createPaint,
+  createProgress,
+  headerRow,
+  MEASURE,
+  type Paint,
+  PLAIN,
+  plural,
+  RULE,
+  SEPARATOR,
+  SILENT,
+  truncatePath,
+  truncateWords,
+  wantsColor,
+} from "./terminal.ts";
+import type { FullRunCause, Selection } from "./types.ts";
 import { explain, formatExplanation, isFormat } from "./why.ts";
-
-const USAGE = `Usage:
-  bivium plan [base] [--json] [--github]   print the tests a change can affect
-  bivium run [base] [--suite <name>]       run a suite's selected tests
-  bivium why <test> [file] [--base <ref>]  the chain from a change (or file) to a test
-             [--format <f>] [--all] [--json]
-  bivium check [--max-unknown <n>] [--json]
-                                           what the graph can't read, and dead globs
-  bivium graph [--suite <name>] [--top <n>] [--json]
-                                           each file's test fan-in, and the graph
-  bivium --version                         print the version
-  bivium --help                            print this
-
-  base defaults to the config's base, else the upstream default branch.
-  Options go before or after the command, as --flag value or --flag=value.
-  Paths may be repo-relative, relative to the current directory, or
-  absolute.
-
-Options:
-  --config <file>   config file (default: bivium.config.{ts,mts,mjs,js,json})
-  --cwd <dir>       repository (default: the current directory)
-  --no-cache        read every file; don't read or write the extraction cache
-  --suite <name>    for run: the suite (default: the first one); for graph:
-                    only this suite (default: every one)
-  --json            for plan, why, check and graph: print JSON
-  --github          for plan: also write each suite's selection to
-                    $GITHUB_OUTPUT as <output>=all|none|<files>
-  --base <ref>      for why and check: the base ref
-  --format <f>      for why: tree (default), chain (from the change to the
-                    test), source (each hop's line of source) or json
-  --all             for why: every change's chain to the test, not only the
-                    shortest
-  --max-unknown <n> for check: fail when more unknown nodes than this reach
-                    a test
-  --top <n>         for graph: how many files to list per suite (default: 10)
-
-Exit status: 0 done; 1 check found problems; 2 a usage, configuration or
-git error. run exits with its command's status. With --json, an error is
-also printed to stdout as { "schemaVersion", "error": { "kind", "message" } },
-kind one of usage, config, git or other.
-
-Examples:
-  bivium plan origin/main --json
-  bivium why tests/Button.test.ts src/Button.svelte --format chain
-  bivium check --json`;
 
 const WHITESPACE = /\s+/;
 const VALUED = new Set([
@@ -76,12 +50,12 @@ const VALUED = new Set([
   "--max-unknown",
   "--top",
 ]);
-const COMMON = ["--config", "--cwd", "--no-cache"];
+const COMMON = ["--config", "--cwd", "--no-cache", "--color", "--no-color"];
 const FLAGS: Record<string, readonly string[]> = {
-  plan: [...COMMON, "--json", "--github"],
+  plan: [...COMMON, "--json", "--github", "--list"],
   run: [...COMMON, "--suite"],
   why: [...COMMON, "--base", "--json", "--format", "--all"],
-  check: [...COMMON, "--base", "--max-unknown", "--json"],
+  check: [...COMMON, "--base", "--max-unknown", "--json", "--all"],
   graph: [...COMMON, "--suite", "--top", "--json"],
 };
 const POSITIONAL: Record<string, number> = {
@@ -95,6 +69,61 @@ const POSITIONAL: Record<string, number> = {
 interface Args {
   flags: Map<string, string>;
   positional: string[];
+}
+
+/** Where output goes, and what the environment says about it. */
+export interface Io {
+  // Whether stdout and stderr are terminals.
+  stdout: boolean;
+  stderr: boolean;
+  env: Readonly<Record<string, string | undefined>>;
+  writeError: (text: string) => void;
+}
+
+// A caller in the same process, such as a test, gets what a pipe gets,
+// so its output doesn't depend on where the process's own stdout goes:
+// no color, no progress line, the plan as a list.
+const PIPED: Io = {
+  stdout: false,
+  stderr: false,
+  env: {},
+  writeError: () => {},
+};
+
+// How this run prints, settled once so every command agrees: the paint
+// for each stream, whether a coding agent reads it, and when it started,
+// for the closing line's cost.
+interface Out {
+  io: Io;
+  paint: Paint;
+  errorPaint: Paint;
+  agent: boolean;
+  startMs: number;
+}
+
+// The person's ask, the later flag winning, since a wrapper may add one
+// and the caller another: --color, --no-color.
+function colorAsked(argv: readonly string[]): boolean | undefined {
+  let forced: boolean | undefined;
+  for (const arg of argv) {
+    if (arg === "--color" || arg === "--color=true") forced = true;
+    if (arg === "--no-color" || arg === "--no-color=true") forced = false;
+  }
+  return forced;
+}
+
+function outFor(io: Io, argv: readonly string[], startMs: number): Out {
+  const agent = agentVariable(io.env) !== undefined;
+  const forced = colorAsked(argv);
+  return {
+    io,
+    paint: wantsColor(forced, io.stdout, io.env, agent) ? createPaint() : PLAIN,
+    errorPaint: wantsColor(forced, io.stderr, io.env, agent)
+      ? createPaint()
+      : PLAIN,
+    agent,
+    startMs,
+  };
 }
 
 // invariant: a change that drops or retypes a field of a JSON output must
@@ -224,6 +253,146 @@ function logPlan({ plan, narrowed }: Computed) {
   }
 }
 
+// On a terminal: a verdict per suite, then a count of the selected tests
+// by directory. `--list`, a pipe and an agent get the files instead.
+function verdictOf(
+  name: string,
+  selection: Selection,
+  total: number,
+  { plan, changed }: Computed,
+  used: Set<FullRunCause>,
+  paint: Paint,
+): string {
+  const suite = Object.keys(plan.suites).length > 1 ? ` (${name})` : "";
+  if (selection.mode === "some") {
+    return `${paint.bold(String(selection.files.length))} of ${plural(total, "test")} run for ${plural(changed.length, "changed file")}${suite}`;
+  }
+  if (selection.mode === "none") {
+    const why =
+      changed.length === 0 ? "nothing changed" : "no change reaches a test";
+    return `no tests run${suite}: ${why}`;
+  }
+  const cause = plan.full.includes(name)
+    ? plan.causes.find((candidate) => candidate.suites.includes(name))
+    : undefined;
+  if (cause !== undefined) used.add(cause);
+  const why = plan.full.includes(name)
+    ? (cause?.message ?? "a full run")
+    : "each reaches a change";
+  const every = total === 1 ? "the 1 test runs" : `all ${total} tests run`;
+  return `${every}${suite}: ${why}`;
+}
+
+// The longest folder every file is in, so a repository of one `tests/`
+// counts by what's under it.
+function commonDir(files: readonly string[]): string {
+  const [first = ""] = files;
+  let prefix = first.slice(0, first.lastIndexOf("/") + 1);
+  for (const file of files) {
+    while (!file.startsWith(prefix)) {
+      prefix = prefix.slice(0, prefix.lastIndexOf("/", prefix.length - 2) + 1);
+    }
+  }
+  return prefix;
+}
+
+// A test in a folder under the common one counts under that folder; one
+// right in it, under `<folder>/*`, so the row can't read as a subtotal.
+function dirOf(file: string, prefix: string): string {
+  const slash = file.indexOf("/", prefix.length);
+  return slash === -1 ? `${prefix}*` : file.slice(0, slash + 1);
+}
+
+function countTable(paint: Paint, { plan }: Computed): string[] {
+  const suites = Object.entries(plan.suites).flatMap(([name, selection]) =>
+    selection.mode === "some" ? [{ name, files: selection.files }] : [],
+  );
+  const prefix = commonDir(suites.flatMap(({ files }) => files));
+  const counts = new Map<string, number[]>();
+  for (const [i, { files }] of suites.entries()) {
+    for (const file of files) {
+      const dir = dirOf(file, prefix);
+      const row = counts.get(dir) ?? suites.map(() => 0);
+      row[i] = (row[i] ?? 0) + 1;
+      counts.set(dir, row);
+    }
+  }
+  if (counts.size < 2) return [];
+  const sum = (row: readonly number[]) => row.reduce((a, b) => a + b, 0);
+  const rows = [...counts].sort(
+    ([a, x], [b, y]) => sum(y) - sum(x) || (a < b ? -1 : 1),
+  );
+  // With several suites each column is named, since "tests" would be
+  // ambiguous; with one, it's its tests.
+  const several = Object.keys(plan.suites).length > 1;
+  const heads = several ? suites.map(({ name }) => name) : ["tests"];
+  const right = heads.map((_, i) => i + 1);
+  return aligned(
+    [
+      headerRow(paint, ["directory", ...heads]),
+      ...rows.map(([dir, row]) => [truncatePath(dir, 48), ...row.map(String)]),
+      ["", ...heads.map(() => RULE)],
+      [
+        paint.dim(plural(rows.length, "directory", "directories")),
+        ...suites.map(({ files }) => String(files.length)),
+      ],
+    ],
+    right,
+    paint.dim,
+  );
+}
+
+async function showPlan(
+  out: Out,
+  base: string,
+  config: ResolvedConfig,
+  computed: Computed,
+) {
+  const { paint } = out;
+  const { plan, narrowed } = computed;
+  const used = new Set<FullRunCause>();
+  const lines: string[] = [];
+  let planned = 0;
+  for (const [name, selection] of Object.entries(plan.suites)) {
+    const total = plan.totals[name] ?? 0;
+    lines.push(verdictOf(name, selection, total, computed, used, paint));
+    if (selection.mode === "some") planned += selection.files.length;
+    if (selection.mode === "all") planned += total;
+  }
+  const mergeBase = (await computed.mergeBase()).slice(0, 7);
+  const notes = [
+    [
+      `since ${base} (merge base ${mergeBase})`,
+      ...(config.file ? [`config ${config.file}`] : []),
+    ].join(SEPARATOR),
+    ...plan.causes
+      .filter((cause) => !used.has(cause))
+      .map((cause) => `full run: ${cause.message}`),
+    ...plan.packages,
+    ...plan.settings,
+    ...narrowed.flatMap(({ narrower, result }) =>
+      "note" in result && result.note
+        ? [`${narrower.name}: ${result.note}`]
+        : [],
+    ),
+  ];
+  lines.push(...notes.map((note) => paint.dim(truncateWords(note, MEASURE))));
+  const table = countTable(paint, computed);
+  if (table.length > 0) lines.push("", ...table);
+  // `--list` names files only for a suite that runs some of its tests.
+  const some = Object.values(plan.suites).some(({ mode }) => mode === "some");
+  const cost = duration(nowMs() - out.startMs);
+  lines.push(
+    "",
+    closingLine(
+      paint,
+      `Planned ${plural(planned, "test")}`,
+      some ? `${cost}${SEPARATOR}--list for the files` : cost,
+    ),
+  );
+  console.log(lines.join("\n"));
+}
+
 function githubOutput(): string {
   const output = githubOutputPath();
   if (!output) {
@@ -308,6 +477,7 @@ function repoPath(root: string, arg: string, known: (path: string) => boolean) {
 async function inspect(
   command: "why" | "check",
   { flags, positional }: Args,
+  out: Out,
 ): Promise<0 | 1> {
   const format = flags.get("--format") ?? "tree";
   if (format !== "json" && !isFormat(format)) {
@@ -324,32 +494,64 @@ async function inspect(
       "bivium check: --max-unknown takes a whole number",
     );
   }
-  const [testArg, fileArg] = positional;
+  const [testArg] = positional;
   if (command === "why" && testArg === undefined) {
     throw usageError(
       "BV_MISSING_ARGUMENT",
       "bivium why: which test? bivium why <test> [file]",
     );
   }
-  const { root, base, config } = await prepare({
-    cwd: flags.get("--cwd"),
-    // What the graph can't read doesn't depend on the base.
-    base: flags.get("--base") ?? (command === "check" ? "HEAD" : undefined),
-    configFile: flags.get("--config"),
-  });
-  const computed = await computePlan(root, base, config, {
-    ...(flags.has("--no-cache") && { cache: false }),
-  });
-  if (command === "check") {
-    const report = await check(root, config, computed);
-    const ok = !failed(report, max);
-    console.log(
-      flags.has("--json")
-        ? json({ ok, summary: summarize(report), ...report })
-        : formatReport(report, max),
-    );
-    return ok ? 0 : 1;
+  // A progress line, since check takes seconds on a large repository,
+  // most of it otherwise silent.
+  const progress =
+    command === "check" && out.io.stderr && !out.agent && !flags.has("--json")
+      ? createProgress(out.io.writeError, out.errorPaint, nowMs)
+      : SILENT;
+  progress.step("building the graph", 0);
+  try {
+    const { root, base, config } = await prepare({
+      cwd: flags.get("--cwd"),
+      // What the graph can't read doesn't depend on the base.
+      base: flags.get("--base") ?? (command === "check" ? "HEAD" : undefined),
+      configFile: flags.get("--config"),
+    });
+    const computed = await computePlan(root, base, config, {
+      ...(flags.has("--no-cache") && { cache: false }),
+    });
+    if (command === "check") {
+      const report = await check(root, config, computed, (what, done) =>
+        progress.step(what, done),
+      );
+      progress.clear();
+      const ok = !failed(report, max);
+      console.log(
+        flags.has("--json")
+          ? json({ ok, summary: summarize(report), ...report })
+          : formatReport(report, max, {
+              paint: out.paint,
+              all: flags.has("--all"),
+              elapsedMs: nowMs() - out.startMs,
+            }),
+      );
+      return ok ? 0 : 1;
+    }
+    return await whyCommand(root, config, computed, flags, positional, out);
+  } catch (error) {
+    // An error prints on a line of its own, not after the bar.
+    progress.clear();
+    throw error;
   }
+}
+
+async function whyCommand(
+  root: string,
+  config: ResolvedConfig,
+  computed: Computed,
+  flags: Map<string, string>,
+  [testArg, fileArg]: string[],
+  out: Out,
+): Promise<0> {
+  const format = flags.get("--format") ?? "tree";
   const inGraph = (path: string) => computed.graph.has(path);
   const isTest = (path: string) =>
     config.suites.some((suite) => suite.isTest(path));
@@ -381,7 +583,11 @@ async function inspect(
   console.log(
     flags.has("--json") || format === "json"
       ? json(explanation)
-      : formatExplanation(explanation, format),
+      : formatExplanation(
+          explanation,
+          isFormat(format) ? format : "tree",
+          out.paint,
+        ),
   );
   return 0;
 }
@@ -413,6 +619,7 @@ async function graphCommand({ flags }: Args): Promise<number> {
 async function runCommand(
   command: string,
   { flags, positional }: Args,
+  out: Out,
 ): Promise<number> {
   // Checked before planning, so a failed step prints no plan.
   const output = flags.has("--github") ? githubOutput() : undefined;
@@ -461,6 +668,8 @@ async function runCommand(
           narrowed,
         }),
       );
+    } else if (out.io.stdout && !out.agent && !flags.has("--list")) {
+      await showPlan(out, base, config, computed);
     } else {
       await logContext(base, config, computed);
       logPlan(computed);
@@ -525,9 +734,10 @@ function fail(argv: string[], error: BiviumError): 2 {
   return 2;
 }
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[], io: Io = PIPED): Promise<number> {
+  const out = outFor(io, argv, nowMs());
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(USAGE);
+    console.log(usage(out.paint));
     return 0;
   }
   if (argv.includes("--version") || argv.includes("-v")) {
@@ -537,7 +747,7 @@ export async function main(argv: string[]): Promise<number> {
   const at = commandAt(argv);
   const command = at === -1 ? undefined : argv[at];
   if (command === "help") {
-    console.log(USAGE);
+    console.log(usage(out.paint));
     return 0;
   }
   if (command === undefined) {
@@ -562,9 +772,9 @@ export async function main(argv: string[]): Promise<number> {
   try {
     const args = parseArgs(command, rest);
     if (command === "why" || command === "check")
-      return await inspect(command, args);
+      return await inspect(command, args, out);
     if (command === "graph") return await graphCommand(args);
-    return await runCommand(command, args);
+    return await runCommand(command, args, out);
   } catch (error) {
     if (error instanceof BiviumError) return fail(argv, error);
     // Anything else is a bug or an environment problem bivium didn't name.

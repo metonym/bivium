@@ -30,21 +30,18 @@ export const PLAIN: Paint = {
 
 // The 16 ANSI colors, never a fixed hex: each terminal theme defines
 // its own green or gray, picked to read on its own background, light,
-// dark or pink. Bun.color gives each code from a named color.
+// dark or pink. The codes are written out, not asked of Bun.color, so
+// a package that also runs on Node prints the same.
 export function createPaint(): Paint {
-  const wrap = (name: string) => {
-    const code = Bun.color(name, "ansi-16") ?? "";
-    return (text: string) =>
-      code === "" || text === "" ? text : `${code}${text}\x1b[39m`;
-  };
+  const wrap = (code: number) => (text: string) =>
+    text === "" ? text : `\x1b[${code}m${text}\x1b[39m`;
   return {
-    good: wrap("green"),
-    warn: wrap("olive"),
-    bad: wrap("maroon"),
+    good: wrap(32),
+    warn: wrap(33),
+    bad: wrap(31),
     // Bright black, the gray every theme dims secondary text with.
-    dim: wrap("#6e7681"),
-    // Bold is a weight, not a color, so it's an SGR code Bun.color can't
-    // give: names and section heads.
+    dim: wrap(90),
+    // Bold is a weight, not a color: names and section heads.
     bold: (text) => (text === "" ? text : `\x1b[1m${text}\x1b[22m`),
     // Faint is the text color at lower intensity, so a table's header
     // recedes in every theme, even one whose gray is odd.
@@ -161,6 +158,17 @@ export function withGutter(
   });
 }
 
+// eslint-disable-next-line no-control-regex -- escape codes are what it strips
+const ESCAPE = /\x1b\[[0-9;]*m/g;
+
+// Widths come from Bun when it runs, since it counts wide characters;
+// a package that also runs on Node counts one column per code point,
+// because the text these tools print has no wide ones.
+export const textWidth = (text: string): number =>
+  typeof Bun === "undefined"
+    ? [...text.replace(ESCAPE, "")].length
+    : Bun.stringWidth(text);
+
 // 80 columns, because that's the width a terminal opens at.
 export const MEASURE = 80;
 
@@ -188,10 +196,9 @@ export function aligned(
   const right = [...used]
     .sort((a, b) => a - b)
     .flatMap((column, i) => (rightColumns.includes(column) ? [i] : []));
-  // Bun.stringWidth skips ANSI codes, so a colored cell pads as wide as
+  // Escape codes take no columns, so a colored cell pads as wide as
   // it shows.
-  const cellWidth = (cell: string) =>
-    cell === RULE ? 0 : Bun.stringWidth(cell);
+  const cellWidth = (cell: string) => (cell === RULE ? 0 : textWidth(cell));
   const widths: number[] = [];
   for (const row of rows) {
     for (const [i, cell] of row.entries()) {
@@ -233,16 +240,16 @@ export function fitted(
   paintRule: (text: string) => string = asIs,
 ): string[] {
   const lines = aligned(table, rightColumns, paintRule);
-  if (lines.every((line) => Bun.stringWidth(line) <= MEASURE)) return lines;
+  if (lines.every((line) => textWidth(line) <= MEASURE)) return lines;
   const shrunk = table.map((row, r) => {
-    const over = Bun.stringWidth(lines[r] ?? "") - MEASURE;
+    const over = textWidth(lines[r] ?? "") - MEASURE;
     const last = row.length - 1;
     const cell = row[last] ?? "";
     if (r === 0 || over <= 0 || cell === RULE || cell.includes("\x1b")) {
       return row;
     }
     const copy = [...row];
-    copy[last] = shrink(cell, Bun.stringWidth(cell) - over);
+    copy[last] = shrink(cell, textWidth(cell) - over);
     return copy;
   });
   return aligned(shrunk, rightColumns, paintRule);

@@ -24,11 +24,39 @@ It has five commands:
 `plan` prints the tests each suite needs for the changes since a base.
 
 ```sh
-bivium plan [base] [--json] [--github]
+bivium plan [base] [--json] [--github] [--list]
 ```
 
 `base` defaults to the config's `base`,
 else the upstream default branch.
+
+On a terminal, each suite gets a verdict first:
+how many of its tests run, and for how many changed files;
+or that all of them run, or none, and why.
+A gray line says what it planned against: the base, its merge base,
+and the config file.
+Lines for each other full-run cause,
+package change and narrower note follow it.
+Then a table counts the selected tests by folder,
+and a last line says how many tests it planned and what that took:
+
+```console
+$ bunx bivium plan
+3 of 12 tests run for 1 changed file (unit)
+no tests run (e2e): no change reaches a test
+since origin/main (merge base 6b844dd) · config bivium.config.ts
+
+  directory      unit
+  tests/*           2
+  tests/css/        1
+                 ────
+  2 directories     3
+
+✓ Planned 3 tests · 323 ms · --list for the files
+```
+
+Piped, run by a coding agent, or with `--list`,
+it prints the files instead.
 The first line says what it planned against: the base, its merge base,
 how many files changed, and the config file.
 Then each suite gets one line:
@@ -42,6 +70,7 @@ Then each suite gets one line:
 
 Options:
 
+- `--list` prints the files on a terminal too, as a pipe gets them.
 - `--json` prints the plan as data, with the fields below.
 - `--github` also writes each suite's selection to `$GITHUB_OUTPUT` as
   `<output>=all`, `none`, or the files separated by spaces.
@@ -128,7 +157,7 @@ bivium why tests/Button.test.ts src/Button.svelte --format chain
 each with where it is and how to fix it.
 
 ```sh
-bivium check [--base <ref>] [--max-unknown <n>] [--json]
+bivium check [--base <ref>] [--max-unknown <n>] [--all] [--json]
 ```
 
 A node is a file, a barrel name, or a package in the graph.
@@ -138,9 +167,34 @@ Every test that reaches one runs on every change.
 A changed file under a suite's `root` that no test reaches runs the
 whole suite: the orphan rule.
 
-`check` leads with counts by cause, then lists:
+`check` leads with a verdict: how many files it can't follow,
+and how many tests those run on every change.
+A gray line counts the rest.
+Then each cause gets a section: the cause, how many,
+up to three places it's at, and its fix once.
+A place whose fix differs carries its own.
+A last line says whether the check passes, and what failed:
 
-- every unknown, with where and how to fix each cause;
+```console
+$ bunx bivium check
+2 files bivium can't follow send 2 tests to every change
+
+reads the disk without @depends-on · 2 files
+  ├ test/u.test.js:1
+  └ test/w.test.js:1
+  fix name what it reads: `// @depends-on <glob>`, or `// @reads <glob>` for…
+
+unresolved relative import · 1 import in 1 file
+  └ test/u.test.js:2  "./gone.js"
+  fix no file at that path: fix the import, or add an `edges` entry if a build…
+
+✓ Check passes · checked in 152 ms · --all for every file
+```
+
+The sections cover:
+
+- every unknown a test reaches, by cause,
+  with where and how to fix each;
 - unknowns no test depends on, apart and not counted toward
   `--max-unknown`: plans only run tests, so these widen nothing;
 - files under a suite's `root` that no test reaches,
@@ -161,6 +215,8 @@ whole suite: the orphan rule.
 
 Options:
 
+- `--all` lists every place, and each fix whole.
+  `--json` has the rest, such as the tests each unknown runs.
 - `--max-unknown <n>` fails when more than `n` unknowns reach a test.
 - `--base <ref>` sets the base.
   Default: `HEAD`.
@@ -208,6 +264,9 @@ These work with every command, before or after it:
 - `--cwd <dir>`: the repository.
   Default: the current directory.
 - `--no-cache`: read every file, and skip the extraction cache.
+- `--color` or `--no-color`: force color on or off.
+  Default: on when stdout is a terminal and no coding agent runs it;
+  `NO_COLOR` and `FORCE_COLOR` are read too.
 - `--help` or `-h`: print usage.
 - `--version` or `-v`: print the version.
 

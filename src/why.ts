@@ -24,7 +24,7 @@ import {
 import { createResolver, type Resolver } from "./resolve.ts";
 import { extract, finish, formatOf, SCANNED } from "./scan.ts";
 import { sorted } from "./sorted.ts";
-import { plural } from "./terminal.ts";
+import { type Paint, PLAIN, plural } from "./terminal.ts";
 
 // invariant: `node` depends on the next link's node, so a chain's links
 // run from the test toward the change.
@@ -458,18 +458,29 @@ function nameOf(node: string) {
   return node.slice(node.indexOf("#") + 1);
 }
 
-function aligned(rows: [string, string | undefined][]): string[] {
+// A row's text as it prints and as it's measured, since paint adds
+// columns no terminal shows; and where it's spelled, if anywhere.
+type Row = [shown: string, plain: string, at: string | undefined];
+
+function aligned(rows: Row[], paint: Paint): string[] {
   const width = Math.max(
     0,
-    ...rows.filter(([, at]) => at !== undefined).map(([text]) => text.length),
+    ...rows.filter(([, , at]) => at !== undefined).map(([, t]) => t.length),
   );
-  return rows.map(([text, at]) =>
-    at === undefined ? text : `${text.padEnd(width)}    ${at}`,
+  return rows.map(([shown, plain, at]) =>
+    at === undefined
+      ? shown
+      : `${shown}${" ".repeat(width - plain.length)}    ${paint.dim(at)}`,
   );
 }
 
-function tree(test: string, chain: Chain): string[] {
-  const rows: [string, string | undefined][] = [[test, undefined]];
+function tree(test: string, chain: Chain, paint: Paint): string[] {
+  const rows: Row[] = [[paint.bold(test), test, undefined]];
+  const row = (indent: string, glyph: string, shown: string, plain: string) =>
+    [
+      `${indent}${paint.dim(glyph)}${shown}`,
+      `${indent}${glyph}${plain}`,
+    ] as const;
   const width = Math.max(
     0,
     ...chain.links
@@ -480,20 +491,32 @@ function tree(test: string, chain: Chain): string[] {
   for (const [i, link] of chain.links.entries()) {
     const next = chain.links[i + 1]?.node ?? chain.root;
     if (link.kind === "unknown") {
-      rows.push([`${indent}└─ depends on every change:`, undefined]);
+      const every = "depends on every change:";
+      rows.push([...row(indent, "└─ ", every, every), undefined]);
       for (const { cause, at } of chain.unknown) {
-        rows.push([`${indent}   ✗ ${cause}`, at]);
+        const plain = `${indent}   ✗ ${cause}`;
+        rows.push([`${indent}   ${paint.bad("✗")} ${cause}`, plain, at]);
       }
       indent += "   ";
-      rows.push([`${indent}└─ ${next}`, undefined]);
+      rows.push([...row(indent, "└─ ", next, next), undefined]);
       indent += "   ";
       break;
     }
-    rows.push([`${indent}└─ ${link.kind.padEnd(width)}  ${next}`, link.at]);
+    const kind = link.kind.padEnd(width);
+    rows.push([
+      ...row(
+        indent,
+        "└─ ",
+        `${paint.faint(kind)}  ${next}`,
+        `${kind}  ${next}`,
+      ),
+      link.at,
+    ]);
     indent += "   ";
   }
-  rows.push([`${indent}● ${chain.cause}`, undefined]);
-  return aligned(rows);
+  const end = `${indent}● ${chain.cause}`;
+  rows.push([end, end, undefined]);
+  return aligned(rows, paint);
 }
 
 function verbOf(link: Link) {
@@ -508,14 +531,15 @@ function whereOf(link: Link) {
   return link.at ?? link.node;
 }
 
-function steps(links: Link[]): string[] {
+function steps(links: Link[], paint: Paint): string[] {
   const rows = [...links]
     .reverse()
     .map((link): [string, string] => [verbOf(link), whereOf(link)]);
   const width = Math.max(0, ...rows.map(([verb]) => verb.length));
-  return rows.map(
-    ([verb, where], i) =>
-      `${verb.padEnd(width)}  ${where}${i === rows.length - 1 ? "  ← selected" : ""}`,
+  return rows.map(([verb, where], i) =>
+    i === rows.length - 1
+      ? `${paint.faint(verb.padEnd(width))}  ${paint.bold(where)}  ← selected`
+      : `${paint.faint(verb.padEnd(width))}  ${paint.dim(where)}`,
   );
 }
 
@@ -525,26 +549,31 @@ function header({ root, cause }: Chain) {
   return `${root}: ${cause}`;
 }
 
-function chained(test: string, chain: Chain): string[] {
+function chained(test: string, chain: Chain, paint: Paint): string[] {
   const unknownAt = chain.links.findIndex((link) => link.kind === "unknown");
   const unknownLink = chain.links[unknownAt];
   if (unknownLink === undefined) {
-    return [header(chain), ...steps(chain.links).map((step) => `  ${step}`)];
+    return [
+      header(chain),
+      ...steps(chain.links, paint).map((step) => `  ${step}`),
+    ];
   }
   const node = unknownLink.node;
   const where = chain.unknown.map(({ at }) => at ?? node);
   const width = Math.max(0, ...where.map((at) => at.length));
-  const lines = [`${test} runs on every change`];
+  const lines = [`${paint.bold(test)} runs on every change`];
   for (const { at, cause, fix } of chain.unknown) {
     lines.push(
-      `  because ${(at ?? node).padEnd(width)}  ${cause}`,
-      `    fix: ${fix}`,
+      `  because ${paint.dim((at ?? node).padEnd(width))}  ${cause}`,
+      `    ${paint.good("fix")}: ${fix}`,
     );
   }
   if (unknownAt > 0) {
     lines.push(
       `  reached via ${node}`,
-      ...steps(chain.links.slice(0, unknownAt)).map((step) => `    ${step}`),
+      ...steps(chain.links.slice(0, unknownAt), paint).map(
+        (step) => `    ${step}`,
+      ),
     );
   }
   return lines;
@@ -556,7 +585,7 @@ function lineNumber(at: string | undefined) {
   return at === undefined ? undefined : LINE_NUMBER.exec(at)?.[1];
 }
 
-function sourced(test: string, chain: Chain): string[] {
+function sourced(test: string, chain: Chain, paint: Paint): string[] {
   const unknownAt = chain.links.findIndex((link) => link.kind === "unknown");
   const unknownLink = chain.links[unknownAt];
   const hops =
@@ -570,23 +599,26 @@ function sourced(test: string, chain: Chain): string[] {
     const n = lineNumber(at);
     return n === undefined || text === undefined
       ? []
-      : [`${n.padStart(width)} | ${text}`];
+      : [`${paint.dim(`${n.padStart(width)} |`)} ${text}`];
   };
   const count = plural(hops.length, "hop", "hops");
   const lines =
     unknownLink === undefined
       ? [
-          `selected: ${test} ← ${chain.root} (${count}${chain.cause === "changed" ? "" : `, ${chain.cause}`})`,
+          `selected: ${paint.bold(test)} ← ${chain.root} (${count}${chain.cause === "changed" ? "" : `, ${chain.cause}`})`,
         ]
       : [
-          `selected: ${test} ← every change (${unknownAt === 0 ? "its dependencies can't be read" : `${count} to ${unknownLink.node}, whose dependencies can't be read`})`,
+          `selected: ${paint.bold(test)} ← every change (${unknownAt === 0 ? "its dependencies can't be read" : `${count} to ${unknownLink.node}, whose dependencies can't be read`})`,
         ];
   lines.push("");
   for (const link of hops) {
     const configured = CONFIGURED[link.kind];
     const where = configured === undefined ? (link.at ?? link.node) : link.node;
     const kind = configured ?? link.kind;
-    lines.push(`${gutter}--> ${where}  ${kind}`, ...cited(link.at, link.text));
+    lines.push(
+      `${gutter}${paint.dim("-->")} ${paint.dim(where)}  ${paint.faint(kind)}`,
+      ...cited(link.at, link.text),
+    );
   }
   if (unknownLink === undefined) {
     lines.push(`${gutter}● ${chain.root}: ${chain.cause}`);
@@ -595,15 +627,18 @@ function sourced(test: string, chain: Chain): string[] {
   const node = unknownLink.node;
   for (const { cause, at, text, fix } of chain.unknown) {
     lines.push(
-      `${gutter}✗ ${at ?? node}  ${cause}`,
+      `${gutter}${paint.bad("✗")} ${paint.dim(at ?? node)}  ${cause}`,
       ...cited(at, text),
-      `${gutter} = fix: ${fix}`,
+      `${gutter} = ${paint.good("fix")}: ${fix}`,
     );
   }
   return lines;
 }
 
-const RENDER: Record<Format, (test: string, chain: Chain) => string[]> = {
+const RENDER: Record<
+  Format,
+  (test: string, chain: Chain, paint: Paint) => string[]
+> = {
   tree,
   chain: chained,
   source: sourced,
@@ -645,6 +680,7 @@ function unselectedMessage(
 export function formatExplanation(
   explanation: Explanation,
   format: Format = "tree",
+  paint: Paint = PLAIN,
 ): string {
   if (explanation.kind === "full") {
     return [
@@ -655,8 +691,10 @@ export function formatExplanation(
   if (explanation.kind === "unselected") return unselectedMessage(explanation);
   const { test, more, others } = explanation;
   const render = RENDER[format];
-  const lines = render(test, explanation);
-  if (more.length > 0) lines.push(moreLine(more, others.length > 0));
-  for (const other of others) lines.push("", ...render(test, other));
+  const lines = render(test, explanation, paint);
+  if (more.length > 0) {
+    lines.push(paint.dim(moreLine(more, others.length > 0)));
+  }
+  for (const other of others) lines.push("", ...render(test, other, paint));
   return lines.join("\n");
 }
