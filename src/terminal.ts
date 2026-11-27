@@ -167,6 +167,8 @@ export function withGutter(
 
 // eslint-disable-next-line no-control-regex -- escape codes are what it strips
 const ESCAPE = /\x1b\[[0-9;]*m/g;
+// eslint-disable-next-line no-control-regex -- escape codes are what it skips
+const LEADING_ESCAPE = /^\x1b\[[0-9;]*m/;
 
 // Widths come from Bun when it runs, since it counts wide characters;
 // a package that also runs on Node counts one column per code point,
@@ -178,6 +180,82 @@ export const textWidth = (text: string): number =>
 
 // 80 columns, because that's the width a terminal opens at.
 export const MEASURE = 80;
+
+// Because a help table's second column starts after a run of two or more
+// spaces, a wrapped description continues there, not at the margin.
+function hangOf(line: string): number {
+  const plain = line.replace(ESCAPE, "");
+  const lead = /^ */.exec(plain)?.[0].length ?? 0;
+  const gap = /^ *\S.*? {2,}(?=\S)/.exec(plain);
+  return gap ? textWidth(gap[0]) : lead;
+}
+
+// Columns count only what shows, since a color code in the first half
+// would otherwise put the split early.
+function splitAt(line: string, columns: number): [string, string] {
+  let seen = 0;
+  let i = 0;
+  while (i < line.length && seen < columns) {
+    const escape = LEADING_ESCAPE.exec(line.slice(i));
+    if (escape) {
+      i += escape[0].length;
+      continue;
+    }
+    const ch = String.fromCodePoint(line.codePointAt(i) ?? 32);
+    seen += textWidth(ch);
+    i += ch.length;
+  }
+  return [line.slice(0, i), line.slice(i)];
+}
+
+// Text whose lines are wider than `width`, wrapped at words: help on a
+// narrow terminal, where a long line would wrap mid-word. A continuation
+// line starts under its line's second column, or under its indent, so a
+// table of options and their descriptions stays a table.
+// Help and other prose for a person: fit to the terminal, at most 80
+// columns, and left whole when piped, since a program reads whole lines.
+export const fitTerminal = (
+  text: string,
+  terminal: boolean,
+  columns: number | undefined,
+): string =>
+  terminal ? fitWidth(text, Math.min(MEASURE, columns || MEASURE)) : text;
+
+export function fitWidth(text: string, width: number): string {
+  return text
+    .split("\n")
+    .flatMap((line) => {
+      if (textWidth(line) <= width) return [line];
+      let hang = hangOf(line);
+      if (hang > width / 2)
+        hang = /^ */.exec(line.replace(ESCAPE, ""))?.[0].length ?? 0;
+      const [head, rest] = splitAt(line, hang);
+      const room = Math.max(1, width - hang);
+      const lines: string[] = [];
+      let current = "";
+      // The separator stays with the word after it, so no line ends on
+      // a dangling "·".
+      const words: string[] = [];
+      for (const word of rest.split(/ +/)) {
+        const last = words.at(-1);
+        if (last !== undefined && last.replace(ESCAPE, "") === "·") {
+          words[words.length - 1] = `${last} ${word}`;
+        } else if (word !== "") words.push(word);
+      }
+      for (const word of words) {
+        const next = current === "" ? word : `${current} ${word}`;
+        if (current !== "" && textWidth(next) > room) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = next;
+        }
+      }
+      if (current !== "") lines.push(current);
+      return lines.map((part, k) => (k === 0 ? head : " ".repeat(hang)) + part);
+    })
+    .join("\n");
+}
 
 // A cell that draws a rule as wide as its column, so totals read apart
 // from the rows above them.

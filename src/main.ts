@@ -26,6 +26,7 @@ import {
   createPaint,
   createProgress,
   failLine,
+  fitTerminal,
   headerRow,
   isDumb,
   MEASURE,
@@ -840,7 +841,9 @@ function fail(argv: string[], error: BiviumError): 2 {
 export async function main(argv: string[], io: Io = PIPED): Promise<number> {
   const out = outFor(io, argv, nowMs());
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(usage(out.paint));
+    console.log(
+      fitTerminal(usage(out.paint), out.io.stdout, process.stdout.columns),
+    );
     return 0;
   }
   if (argv.includes("--version") || argv.includes("-v")) {
@@ -850,7 +853,9 @@ export async function main(argv: string[], io: Io = PIPED): Promise<number> {
   const at = commandAt(argv);
   const command = at === -1 ? undefined : argv[at];
   if (command === "help") {
-    console.log(usage(out.paint));
+    console.log(
+      fitTerminal(usage(out.paint), out.io.stdout, process.stdout.columns),
+    );
     return 0;
   }
   if (command === undefined) {
